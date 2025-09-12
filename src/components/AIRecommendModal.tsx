@@ -59,6 +59,10 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
             timestamp: msg.timestamp || new Date().toISOString()
           })));
           return; // 有缓存就不显示欢迎消息
+        } else {
+          // 🔥 修复Bug #2: 超过30分钟时真正删除localStorage中的过期数据
+          console.log('AI聊天记录已超过30分钟，自动清除缓存');
+          localStorage.removeItem('ai-recommend-messages');
         }
       }
       
@@ -71,6 +75,8 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
       setMessages([welcomeMessage]);
     } catch (error) {
       console.error("Failed to load messages from cache", error);
+      // 发生错误时也清除可能损坏的缓存
+      localStorage.removeItem('ai-recommend-messages');
     }
   }, []);
 
@@ -78,9 +84,22 @@ export default function AIRecommendModal({ isOpen, onClose }: AIRecommendModalPr
   useEffect(() => {
     scrollToBottom();
     try {
+      // 🔥 修复Bug #1: 保持原有时间戳，不要每次都重置
+      const existingCache = localStorage.getItem('ai-recommend-messages');
+      let existingTimestamp = new Date().getTime(); // 默认当前时间
+      
+      if (existingCache) {
+        try {
+          const parsed = JSON.parse(existingCache);
+          existingTimestamp = parsed.timestamp || existingTimestamp;
+        } catch {
+          // 解析失败时使用当前时间
+        }
+      }
+      
       const cache = {
         messages,
-        timestamp: new Date().getTime()
+        timestamp: existingTimestamp // 保持原有时间戳，不重置
       };
       localStorage.setItem('ai-recommend-messages', JSON.stringify(cache));
     } catch (error) {
