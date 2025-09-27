@@ -332,6 +332,9 @@ async function cleanupInactiveUsers() {
     const config = await getConfig();
     console.log('✅ 配置获取成功');
 
+    // 清理策略：基于登入时间而不是播放记录
+    // 删除条件：注册时间 >= X天 且 (从未登入 或 最后登入时间 >= X天)
+
     // 预热 Redis 连接，避免冷启动
     console.log('🔥 预热数据库连接...');
     try {
@@ -424,18 +427,24 @@ async function cleanupInactiveUsers() {
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('getUserPlayStat超时')), 5000)
             )
-          ]) as { lastPlayTime: number; totalPlays: number; [key: string]: any };
+          ]) as { lastLoginTime?: number; firstLoginTime?: number; loginCount?: number; [key: string]: any };
           console.log(`  📈 用户统计结果:`, userStats);
         } catch (err) {
           console.error(`  ❌ 获取用户统计失败: ${err}, 跳过该用户`);
           continue;
         }
 
-        // 检查是否满足删除条件：从未播放过内容
-        const hasNeverPlayed = userStats.lastPlayTime === 0 || userStats.totalPlays === 0;
+        // 检查是否满足删除条件：基于登入时间而不是播放记录
+        const lastLoginTime = userStats.lastLoginTime || userStats.lastLoginDate || userStats.firstLoginTime || 0;
+        const hasNeverLoggedIn = lastLoginTime === 0 || (userStats.loginCount || 0) === 0;
+        const loginTooOld = lastLoginTime > 0 && lastLoginTime < cutoffTime;
 
-        if (isOldEnough && hasNeverPlayed) {
-          console.log(`🗑️ 删除非活跃用户: ${user.username} (注册于: ${new Date(userCreatedAt).toISOString()}, 播放次数: ${userStats.totalPlays}, 设置阈值: ${inactiveUserDays}天)`);
+        // 删除条件：注册时间够久 且 (从未登入 或 最后登入时间超过阈值)
+        const shouldDelete = isOldEnough && (hasNeverLoggedIn || loginTooOld);
+
+        if (shouldDelete) {
+          const deleteReason = hasNeverLoggedIn ? '从未登入' : `最后登入时间过久: ${new Date(lastLoginTime).toISOString()}`;
+          console.log(`🗑️ 删除非活跃用户: ${user.username} (注册于: ${new Date(userCreatedAt).toISOString()}, 登入次数: ${userStats.loginCount || 0}, 原因: ${deleteReason}, 阈值: ${inactiveUserDays}天)`);
 
           // 从数据库删除用户数据
           await db.deleteUser(user.username);
@@ -448,7 +457,14 @@ async function cleanupInactiveUsers() {
 
           deletedCount++;
         } else {
-          const reason = !isOldEnough ? `注册时间不足${inactiveUserDays}天` : '用户有播放记录';
+          let reason;
+          if (!isOldEnough) {
+            reason = `注册时间不足${inactiveUserDays}天`;
+          } else if (!hasNeverLoggedIn && !loginTooOld) {
+            reason = `最近有登入活动 (最后登入: ${lastLoginTime > 0 ? new Date(lastLoginTime).toISOString() : '未知'})`;
+          } else {
+            reason = '其他原因';
+          }
           console.log(`✅ 保留用户 ${user.username}: ${reason}`);
         }
 
