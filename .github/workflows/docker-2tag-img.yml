@@ -4,14 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker 镜像的版本标签 (例如: 1.2.3)'
-        required: true
-        default: ''
+        description: 'Docker 标签 (可选, 默认 latest)。若填写, 会同时打上 latest 和你输入的标签。'
+        required: false # 改为 false，允许不输入
         type: string
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,13 +25,13 @@ jobs:
           - platform: linux/amd64
             os: ubuntu-latest
           - platform: linux/arm64
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Prepare platform name
         run: |
-          echo "PLATFORM_NAME=$(echo '${{ matrix.platform }}' | sed 's|/|-|g')" >> $GITHUB_ENV
+          echo "PLATFORM_NAME=${{ matrix.platform }}" | sed 's|/|-|g' >> $GITHUB_ENV
 
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -55,13 +50,19 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      # --- 修改部分 1 ---
+      # 调整 metadata-action 逻辑以处理可选输入:
+      # 1. 'latest' 标签: 总是生成。
+      # 2. 输入的标签: 仅当用户提供了输入 (不为空) 且该输入不等于 'latest' 时才生成。
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' && github.event.inputs.tag != 'latest' }}
 
-      # --- [ 这是核心修正部分 ] ---
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v5
@@ -70,19 +71,15 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # 修正：即使是按摘要推送，也需要一个 "临时" 标签来指定目标仓库。
-          # 我们使用 Git SHA 和 platform 来确保它的唯一性。
-          # 这个标签最终不会被用户看到，因为它会被 merge 任务中的 manifest list 标签覆盖。
-          tags: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:build-${{ github.sha }}-${{ env.PLATFORM_NAME }}
-          outputs: type=image,name-canonical=true,push=true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv,name-canonical=true,push=true
+          no-cache: true
+          pull: true
 
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
-          echo "Digest for ${{ matrix.platform }} is ${digest}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
@@ -93,12 +90,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # merge 和 cleanup-refresh 任务保持不变，它们已经是正确的
   merge:
     runs-on: ubuntu-latest
     needs:
       - build
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -120,33 +115,24 @@ jobs:
       - name: Set lowercase repository owner
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-        
-      - name: Prepare tags for manifest
-        id: manifest_tags
-        run: |
-          IMAGE_NAME="ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv"
-          BASE_TAG="${{ github.event.inputs.tag || 'latest' }}"
-          echo "Base tag is: ${BASE_TAG}"
-          
-          TAG_ARGS="-t ${IMAGE_NAME}:${BASE_TAG}"
-          
-          if [ "${BASE_TAG}" != "latest" ]; then
-            echo "Adding 'latest' tag as well."
-            TAG_ARGS="$TAG_ARGS -t ${IMAGE_NAME}:latest"
-          fi
-          
-          echo "Final tag arguments: ${TAG_ARGS}"
-          echo "tags=${TAG_ARGS}" >> $GITHUB_OUTPUT
 
+      # --- 修改部分 2 ---
+      # 在 merge job 中使用与 build job 完全相同的逻辑来生成最终的标签列表
+      - name: Extract metadata for merge
+        id: meta_merge
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' && github.event.inputs.tag != 'latest' }}
+      
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          if [ -z "$(ls -A .)" ]; then
-            echo "No digests found to create manifest. Exiting."
-            exit 1
-          fi
-          echo "Creating manifest with tags: ${{ steps.manifest_tags.outputs.tags }}"
-          docker buildx imagetools create ${{ steps.manifest_tags.outputs.tags }} \
+          TAG_ARGS=$(echo "${{ steps.meta_merge.outputs.tags }}" | xargs -I {} printf -- "-t {} ")
+
+          docker buildx imagetools create ${TAG_ARGS} \
             $(printf 'ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv@sha256:%s ' *)
 
   cleanup-refresh:
