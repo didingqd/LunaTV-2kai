@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker 标签'
-        required: false
-        default: 'latest'
+        description: 'Docker 标签 (可选, 默认 latest)。若填写, 会同时打上 latest 和你输入的标签。'
+        required: false # 改为 false，允许不输入
         type: string
 
 concurrency:
@@ -51,13 +50,18 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      # --- 修改部分 1 ---
+      # 调整 metadata-action 逻辑以处理可选输入:
+      # 1. 'latest' 标签: 总是生成。
+      # 2. 输入的标签: 仅当用户提供了输入 (不为空) 且该输入不等于 'latest' 时才生成。
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv
           tags: |
-            type=raw,value=${{ github.event.inputs.tag || 'latest' }},enable={{is_default_branch}}
+            type=raw,value=latest
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' && github.event.inputs.tag != 'latest' }}
 
       - name: Build and push by digest
         id: build
@@ -67,7 +71,7 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          tags: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ github.event.inputs.tag || 'latest' }}
+          tags: ${{ steps.meta.outputs.tags }}
           outputs: type=image,name=ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv,name-canonical=true,push=true
           no-cache: true
           pull: true
@@ -112,10 +116,23 @@ jobs:
         id: lowercase
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
+      # --- 修改部分 2 ---
+      # 在 merge job 中使用与 build job 完全相同的逻辑来生成最终的标签列表
+      - name: Extract metadata for merge
+        id: meta_merge
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' && github.event.inputs.tag != 'latest' }}
+      
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv:${{ github.event.inputs.tag || 'latest' }} \
+          TAG_ARGS=$(echo "${{ steps.meta_merge.outputs.tags }}" | xargs -I {} printf -- "-t {} ")
+
+          docker buildx imagetools create ${TAG_ARGS} \
             $(printf 'ghcr.io/${{ steps.lowercase.outputs.owner }}/lunatv@sha256:%s ' *)
 
   cleanup-refresh:
