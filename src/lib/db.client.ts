@@ -142,6 +142,8 @@ class HybridCacheManager {
    */
   private saveUserCache(username: string, cache: UserCacheStore): void {
     if (typeof window === 'undefined') return;
+    // 🔑 修复：使用 Kvrocks/Redis 时不应该往 localStorage 存数据
+    if (STORAGE_TYPE !== 'localstorage') return;
 
     try {
       // 检查缓存大小，超过15MB时清理旧数据
@@ -624,8 +626,37 @@ export function generateStorageKey(source: string, id: string): string {
  * - 用户看第7集 → original_episodes 更新为 8（用户已消费这次更新）
  * - 下次更新到第10集 → 提醒"2集新增"（10-8），而不是"4集新增"（10-6）
  */
-async function checkShouldUpdateOriginalEpisodes(existingRecord: PlayRecord, newRecord: PlayRecord): Promise<{ shouldUpdate: boolean; latestTotalEpisodes: number }> {
-  const originalEpisodes = existingRecord.original_episodes || existingRecord.total_episodes;
+async function checkShouldUpdateOriginalEpisodes(existingRecord: PlayRecord, newRecord: PlayRecord, recordKey: string): Promise<{ shouldUpdate: boolean; latestTotalEpisodes: number }> {
+  // 🔑 关键修复：从数据库读取最新的 original_episodes，不信任缓存中的值
+  let originalEpisodes = existingRecord.original_episodes || existingRecord.total_episodes;
+  let freshRecord = existingRecord;
+
+  try {
+    console.log(`🔍 从数据库读取最新的 original_episodes (${recordKey})...`);
+    const freshRecordsResponse = await fetch('/api/playrecords');
+    if (freshRecordsResponse.ok) {
+      const freshRecords = await freshRecordsResponse.json();
+
+      // 🔑 关键修复：直接用 recordKey 匹配，确保是同一个 source+id
+      if (freshRecords[recordKey]) {
+        freshRecord = freshRecords[recordKey];
+        originalEpisodes = freshRecord.original_episodes || freshRecord.total_episodes;
+
+        // 🔧 自动修复：如果 original_episodes 大于当前 total_episodes，说明之前存错了
+        if (originalEpisodes > freshRecord.total_episodes) {
+          console.warn(`⚠️ 检测到错误数据：original_episodes(${originalEpisodes}) > total_episodes(${freshRecord.total_episodes})，自动修正为 ${freshRecord.total_episodes}`);
+          originalEpisodes = freshRecord.total_episodes;
+          freshRecord.original_episodes = freshRecord.total_episodes;
+        }
+
+        console.log(`📚 从数据库读取到最新 original_episodes: ${existingRecord.title} (${recordKey}) = ${originalEpisodes}集`);
+      } else {
+        console.warn(`⚠️ 数据库中未找到记录: ${recordKey}`);
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ 从数据库读取 original_episodes 失败，使用缓存值', error);
+  }
 
   // 条件1：用户观看进度超过了原始集数（说明用户已经看了新更新的集数）
   const hasWatchedBeyondOriginal = newRecord.index > originalEpisodes;
@@ -638,33 +669,11 @@ async function checkShouldUpdateOriginalEpisodes(existingRecord: PlayRecord, new
     return { shouldUpdate: false, latestTotalEpisodes: newRecord.total_episodes };
   }
 
-  // 🔑 关键修复：用户看了超过原始集数的集数，从数据库获取最新的 total_episodes
+  // 用户看了超过原始集数的集数，获取最新的 total_episodes
+  console.log(`🔍 用户看了第${newRecord.index}集（超过原始${originalEpisodes}集），从数据库获取最新集数...`);
+
   try {
-    console.log(`🔍 用户看了第${newRecord.index}集（超过原始${originalEpisodes}集），从数据库获取最新集数...`);
-
-    // 从数据库重新读取最新的播放记录
-    const freshRecordsResponse = await fetch('/api/playrecords');
-    if (!freshRecordsResponse.ok) {
-      console.warn('⚠️ 无法从数据库读取最新集数，使用传入的值');
-      return { shouldUpdate: true, latestTotalEpisodes: Math.max(newRecord.total_episodes, originalEpisodes) };
-    }
-
-    const freshRecords = await freshRecordsResponse.json();
-    const recordKey = Object.keys(freshRecords).find(key => {
-      const record = freshRecords[key];
-      return record.title === existingRecord.title &&
-             record.source_name === existingRecord.source_name &&
-             record.year === existingRecord.year;
-    });
-
-    if (!recordKey) {
-      console.warn('⚠️ 数据库中未找到对应记录，使用传入的值');
-      return { shouldUpdate: true, latestTotalEpisodes: Math.max(newRecord.total_episodes, originalEpisodes) };
-    }
-
-    const freshRecord = freshRecords[recordKey];
     const latestTotalEpisodes = Math.max(freshRecord.total_episodes, originalEpisodes);
-
     console.log(`✓ 应更新原始集数: ${existingRecord.title} - 用户看了第${newRecord.index}集（超过原始${originalEpisodes}集），数据库最新集数${freshRecord.total_episodes}集 → 更新原始集数为${latestTotalEpisodes}集`);
 
     return { shouldUpdate: true, latestTotalEpisodes };
@@ -768,12 +777,15 @@ export async function savePlayRecord(
   } else if (existingRecord?.original_episodes) {
     // 检查用户是否观看了超过原始集数的新集数
     // 如果是，说明用户已经"消费"了这次更新提醒，应该更新 original_episodes
-    const updateResult = await checkShouldUpdateOriginalEpisodes(existingRecord, record);
+    const updateResult = await checkShouldUpdateOriginalEpisodes(existingRecord, record, key);
     if (updateResult.shouldUpdate) {
       record.original_episodes = updateResult.latestTotalEpisodes;
       // 🔑 同时更新 total_episodes 为最新值
       record.total_episodes = updateResult.latestTotalEpisodes;
       console.log(`✓ 更新原始集数: ${key} = ${existingRecord.original_episodes}集 -> ${updateResult.latestTotalEpisodes}集（用户已观看新集数）`);
+
+      // 🔑 标记需要清除缓存（在数据库更新成功后执行）
+      (record as any)._shouldClearCache = true;
     } else {
       // 保持现有的原始集数不变
       record.original_episodes = existingRecord.original_episodes;
@@ -803,6 +815,23 @@ export async function savePlayRecord(
         },
         body: JSON.stringify({ key, record }),
       });
+
+      // 🔑 关键修复：数据库更新成功后，如果更新了 original_episodes，清除相关缓存
+      if ((record as any)._shouldClearCache) {
+        try {
+          // 清除 watching-updates 缓存
+          localStorage.removeItem('moontv_watching_updates');
+          localStorage.removeItem('moontv_last_update_check');
+
+          // 🔑 关键：强制刷新播放记录缓存，确保下次检查使用最新数据
+          cacheManager.forceRefreshPlayRecordsCache();
+
+          console.log('✅ 数据库更新成功，已清除 watching-updates 和播放记录缓存');
+          delete (record as any)._shouldClearCache;
+        } catch (cacheError) {
+          console.warn('清除缓存失败:', cacheError);
+        }
+      }
 
       // 异步更新用户统计数据（不阻塞主流程）
       updateUserStats(record).catch(err => {
