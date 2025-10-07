@@ -340,13 +340,15 @@ async function checkSingleRecordUpdate(record: PlayRecord, videoId: string, stor
       if (latestEpisodes > record.total_episodes) {
         console.log(`🔄 更新播放记录集数: ${record.title} ${record.total_episodes} -> ${latestEpisodes}`);
         try {
-          // 🔒 关键修复：更新前必须确保 original_episodes 已正确设置
-          // 使用我们已经获取到的 originalTotalEpisodes（来自 getOriginalEpisodes）
+          // 🔑 关键修复：检测新集数时，不应该覆盖 original_episodes
+          // original_episodes 应该保持为用户首次观看时的集数，或者用户已消费更新后的值
+          // 只在缺失时才设置，否则保持不变，让 savePlayRecord 中的逻辑来决定是否更新
           const updatedRecord: PlayRecord = {
             ...record,
             total_episodes: latestEpisodes,
-            // ✅ 使用已经通过 getOriginalEpisodes 获取/修复的原始集数
-            original_episodes: originalTotalEpisodes
+            // ✅ 保持现有的 original_episodes，不要覆盖它
+            // 如果缺失，才使用从数据库获取的值
+            original_episodes: record.original_episodes || originalTotalEpisodes
           };
 
           await savePlayRecord(storageSourceName || record.source_name, videoId, updatedRecord);
