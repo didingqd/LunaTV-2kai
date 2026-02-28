@@ -66,9 +66,10 @@ export type VideoCardHandle = {
   setDoubanId: (id?: number) => void;
 };
 
+import { loadedImageUrls } from '@/lib/imageCache';
+
 // Module-level cache: tracks poster URLs already loaded by the browser.
 // Survives VirtuosoGrid remount cycles so re-entering items skip the skeleton.
-const loadedImageUrls = new Set<string>();
 
 const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard(
   {
@@ -843,10 +844,12 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
             loading={priority ? undefined : 'lazy'}
             priority={priority}
             quality={75}
-            onLoadingComplete={() => {
+            onLoad={() => {
               loadedImageUrls.add(processImageUrl(actualPoster));
-              setIsLoading(true);
-              setImageLoaded(true);
+              if (!imageLoaded) {
+                setIsLoading(true);
+                setImageLoaded(true);
+              }
             }}
             onError={(e) => {
               // 图片加载失败时的处理
