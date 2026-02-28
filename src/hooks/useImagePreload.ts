@@ -24,8 +24,8 @@ export function useImagePreload(imageUrls: string[], enabled = true) {
   useEffect(() => {
     if (!enabled || !imageUrls.length) return;
 
-    // Preload first few images
-    const urlsToPreload = imageUrls.slice(0, Math.min(30, imageUrls.length));
+    // Preload all provided URLs (caller is responsible for limiting count)
+    const urlsToPreload = imageUrls;
 
     urlsToPreload.forEach((url) => {
       if (!url) return;

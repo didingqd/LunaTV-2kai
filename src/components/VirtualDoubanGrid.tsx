@@ -91,9 +91,13 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
     }, []);
 
     const imagesToPreload = useMemo(() => {
-      return doubanData
+      const all = doubanData
         .map((item) => item.poster ? processImageUrl(item.poster) : '')
         .filter(Boolean) as string[];
+      // Preload first 30 (initial viewport) + last 35 (newly loaded via load-more)
+      const head = all.slice(0, 30);
+      const tail = all.slice(-35);
+      return [...new Set([...head, ...tail])];
     }, [doubanData]);
 
     useImagePreload(imagesToPreload, doubanData.length > 0);
@@ -198,14 +202,7 @@ export const VirtualDoubanGrid = React.forwardRef<VirtualDoubanGridRef, VirtualD
         endReached={() => {
           if (hasMore && !isLoadingMore) onLoadMore();
         }}
-        scrollSeekConfiguration={{
-          enter: (velocity) => Math.abs(velocity) > 600,
-          exit: (velocity) => Math.abs(velocity) < 80,
-        }}
         components={{
-          List: ListContainer,
-          Item: ItemContainer,
-          ScrollSeekPlaceholder: () => <DoubanCardSkeleton />,
           Footer: () =>
             isLoadingMore ? (
               <div className='flex justify-center mt-8 py-8'>
