@@ -20,13 +20,12 @@ describe('player-seek utils', () => {
     expect(clampSeekTarget(118, 10, 120)).toBe(120);
   });
 
-  test('readSeekConfigFromStorage: 默认值为 10/10/true', () => {
-    // 修改点：新增本地配置默认值读取测试
+  test('readSeekConfigFromStorage: 默认值为 10/true', () => {
+    // 修改点：统一快进快退秒数后，验证默认配置读取
     const storage = new Map<string, string>();
     const getItem = (k: string) => storage.get(k) ?? null;
     expect(readSeekConfigFromStorage(getItem)).toEqual({
-      backward: 10,
-      forward: 10,
+      seekSeconds: 10,
       showControls: true,
     });
   });

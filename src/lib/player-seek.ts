@@ -16,11 +16,13 @@ export function clampSeekTarget(currentTime: number, deltaSeconds: number, durat
   return next;
 }
 
-// 修改点：新增快进快退配置读取，统一默认值与持久化解析
+// 修改点：快进快退时长合并为统一配置，兼容旧键值读取
 export function readSeekConfigFromStorage(getItem: (key: string) => string | null) {
-  const backward = sanitizeSeekSeconds(getItem('play_seek_backward_seconds'), 10);
-  const forward = sanitizeSeekSeconds(getItem('play_seek_forward_seconds'), 10);
+  const unified = getItem('play_seek_seconds');
+  const legacyBackward = getItem('play_seek_backward_seconds');
+  const legacyForward = getItem('play_seek_forward_seconds');
+  const seekSeconds = sanitizeSeekSeconds(unified ?? legacyForward ?? legacyBackward, 10);
   const rawShow = getItem('play_show_seek_controls');
   const showControls = rawShow === null ? true : rawShow === 'true';
-  return { backward, forward, showControls };
+  return { seekSeconds, showControls };
 }

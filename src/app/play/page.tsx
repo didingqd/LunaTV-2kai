@@ -354,23 +354,20 @@ function PlayPageClient() {
   const [websrCompareEnabled, setWebsrCompareEnabled] = useState(false);
   const [websrComparePosition, setWebsrComparePosition] = useState(50);
 
-  // 修改点：新增快进快退秒数与按钮显示开关状态
-  const [seekBackwardSeconds, setSeekBackwardSeconds] = useState<number>(10);
-  const [seekForwardSeconds, setSeekForwardSeconds] = useState<number>(10);
+  // 修改点：快进快退时长合并为统一秒数，并保留按钮显示开关状态
+  const [seekSeconds, setSeekSeconds] = useState<number>(10);
   const [showSeekControls, setShowSeekControls] = useState<boolean>(true);
 
-  // 修改点：新增快进快退秒数引用，避免键盘监听闭包读取旧值
-  const seekBackwardSecondsRef = useRef(seekBackwardSeconds);
-  const seekForwardSecondsRef = useRef(seekForwardSeconds);
+  // 修改点：新增统一快进快退秒数引用，避免键盘监听闭包读取旧值
+  const seekSecondsRef = useRef(seekSeconds);
   // 修改点：新增控制栏可见性监听清理引用，确保销毁与切源时都能释放
   const controlVisibilityCleanupRef = useRef<(() => void) | null>(null);
 
-  // 修改点：播放页初始化时读取快进快退持久化配置
+  // 修改点：播放页初始化时读取统一快进快退持久化配置
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const { backward, forward, showControls } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
-    setSeekBackwardSeconds(backward);
-    setSeekForwardSeconds(forward);
+    const { seekSeconds, showControls } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
+    setSeekSeconds(seekSeconds);
     setShowSeekControls(showControls);
   }, []);
 
@@ -421,11 +418,10 @@ function PlayPageClient() {
     websrNetworkSizeRef.current = websrNetworkSize;
   }, [websrEnabled, websrMode, websrContentType, websrNetworkSize]);
 
-  // 修改点：同步快进快退秒数引用，供键盘监听实时读取
+  // 修改点：同步统一快进快退秒数引用，供键盘监听实时读取
   useEffect(() => {
-    seekBackwardSecondsRef.current = seekBackwardSeconds;
-    seekForwardSecondsRef.current = seekForwardSeconds;
-  }, [seekBackwardSeconds, seekForwardSeconds]);
+    seekSecondsRef.current = seekSeconds;
+  }, [seekSeconds]);
 
   // 标准化年份用于匹配（处理 unknown、0、null 等无效值）
   const normalizeYearForMatch = (value: string): string => {
@@ -3709,8 +3705,8 @@ function PlayPageClient() {
     // 左箭头 = 快退
     if (!e.altKey && e.key === 'ArrowLeft') {
       if (artPlayerRef.current) {
-        // 修改点：键盘左键复用统一 seekBy 逻辑
-        seekBy(-seekBackwardSecondsRef.current);
+        // 修改点：键盘左键复用统一 seekBy 逻辑与统一秒数配置
+        seekBy(-seekSecondsRef.current);
         e.preventDefault();
       }
     }
@@ -3718,8 +3714,8 @@ function PlayPageClient() {
     // 右箭头 = 快进
     if (!e.altKey && e.key === 'ArrowRight') {
       if (artPlayerRef.current) {
-        // 修改点：键盘右键复用统一 seekBy 逻辑
-        seekBy(seekForwardSecondsRef.current);
+        // 修改点：键盘右键复用统一 seekBy 逻辑与统一秒数配置
+        seekBy(seekSecondsRef.current);
         e.preventDefault();
       }
     }
@@ -4646,40 +4642,24 @@ function PlayPageClient() {
             },
           },
           {
-            name: '快退秒数',
-            html: '快退秒数',
-            tooltip: `${seekBackwardSeconds}秒`,
+            name: '快进快退秒数',
+            html: '快进快退秒数',
+            tooltip: `${seekSeconds}秒`,
             selector: [5, 10, 15, 30].map((v) => ({
               html: `${v}秒`,
               value: v,
-              default: seekBackwardSeconds === v,
+              default: seekSeconds === v,
             })),
             onSelect: function (item: any) {
-              // 修改点：新增快退秒数设置并持久化
+              // 修改点：快进快退时长合并为统一设置并持久化
               const value = sanitizeSeekSeconds(item.value, 10);
-              setSeekBackwardSeconds(value);
-              localStorage.setItem('play_seek_backward_seconds', String(value));
-              return `${value}秒`;
-            },
-          },
-          {
-            name: '快进秒数',
-            html: '快进秒数',
-            tooltip: `${seekForwardSeconds}秒`,
-            selector: [5, 10, 15, 30].map((v) => ({
-              html: `${v}秒`,
-              value: v,
-              default: seekForwardSeconds === v,
-            })),
-            onSelect: function (item: any) {
-              // 修改点：新增快进秒数设置并持久化
-              const value = sanitizeSeekSeconds(item.value, 10);
-              setSeekForwardSeconds(value);
-              localStorage.setItem('play_seek_forward_seconds', String(value));
+              setSeekSeconds(value);
+              localStorage.setItem('play_seek_seconds', String(value));
               return `${value}秒`;
             },
           },
           ...(webGPUSupported ? [
+            // 修改点：将“显示模式”放到“超分设置”上方
             {
               name: '超分设置',
               html: '超分设置',
@@ -6096,19 +6076,19 @@ function PlayPageClient() {
                         <div className='moontv-seek-side-controls-layer'>
                           <button
                             type='button'
-                            aria-label={`快退${seekBackwardSeconds}秒`}
-                            onClick={() => seekBy(-seekBackwardSeconds)}
+                            aria-label={`快退${seekSeconds}秒`}
+                            onClick={() => seekBy(-seekSeconds)}
                             className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
-                            {`↺${seekBackwardSeconds}`}
+                            {`↺${seekSeconds}`}
                           </button>
                           <button
                             type='button'
-                            aria-label={`快进${seekForwardSeconds}秒`}
-                            onClick={() => seekBy(seekForwardSeconds)}
+                            aria-label={`快进${seekSeconds}秒`}
+                            onClick={() => seekBy(seekSeconds)}
                             className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
-                            {`↻${seekForwardSeconds}`}
+                            {`↻${seekSeconds}`}
                           </button>
                         </div>,
                         portalContainer
@@ -6117,19 +6097,19 @@ function PlayPageClient() {
                         <div className='moontv-seek-side-controls-layer'>
                           <button
                             type='button'
-                            aria-label={`快退${seekBackwardSeconds}秒`}
-                            onClick={() => seekBy(-seekBackwardSeconds)}
+                            aria-label={`快退${seekSeconds}秒`}
+                            onClick={() => seekBy(-seekSeconds)}
                             className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
-                            {`↺${seekBackwardSeconds}`}
+                            {`↺${seekSeconds}`}
                           </button>
                           <button
                             type='button'
-                            aria-label={`快进${seekForwardSeconds}秒`}
-                            onClick={() => seekBy(seekForwardSeconds)}
+                            aria-label={`快进${seekSeconds}秒`}
+                            onClick={() => seekBy(seekSeconds)}
                             className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
-                            {`↻${seekForwardSeconds}`}
+                            {`↻${seekSeconds}`}
                           </button>
                         </div>
                       )
