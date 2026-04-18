@@ -49,7 +49,7 @@
 /* 修改点：按钮整体上移，避免与锁定按钮位置重合 */
 .moontv-seek-side-controls-layer .moontv-seek-side-controls {
   position: absolute;
-  top: 42%;
+  top: 39%;
   transform: translateY(-50%);
   opacity: 1;
   visibility: visible;
