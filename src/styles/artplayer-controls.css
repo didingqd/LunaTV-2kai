@@ -79,5 +79,5 @@
 
 /* 修改点：锁定按钮再次下移，进一步避免与快进快退按钮液态玻璃背景重叠 */
 .artplayer .art-control-lock {
-  transform: translateY(26px);
+  transform: translateY(35px);
 }
