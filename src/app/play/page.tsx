@@ -400,6 +400,35 @@ function PlayPageClient() {
     websrNetworkSizeRef.current = websrNetworkSize;
   }, [websrEnabled, websrMode, websrContentType, websrNetworkSize]);
 
+  // 标准化年份用于匹配（处理 unknown、0、null 等无效值）
+  const normalizeYearForMatch = (value: string): string => {
+    const normalized = value.trim().toLowerCase();
+    if (
+      !normalized ||
+      normalized === 'unknown' ||
+      normalized === '0' ||
+      normalized === 'null' ||
+      normalized === 'undefined'
+    ) {
+      return '';
+    }
+
+    const matchedYear = normalized.match(/\d{4}/)?.[0];
+    return matchedYear || '';
+  };
+
+  const matchesRequestedYear = (
+    resultYear: string,
+    requestedYear: string,
+  ): boolean => {
+    const normalizedRequestedYear = normalizeYearForMatch(requestedYear);
+    if (!normalizedRequestedYear) {
+      return true;
+    }
+
+    return normalizeYearForMatch(resultYear) === normalizedRequestedYear;
+  };
+
   // 获取 HLS 缓冲配置（根据用户设置的模式）
   const getHlsBufferConfig = () => {
     const mode =
@@ -2727,10 +2756,14 @@ function PlayPageClient() {
     // 🔥 标记正在切换集数（只在非换源时）
     if (!isSourceChangingRef.current) {
       isEpisodeChangingRef.current = true;
-      // 🔑 立即重置 SkipController 触发标志，允许新集数自动跳过片头片尾
-      isSkipControllerTriggeredRef.current = false;
+      // 🔥 关键修复：延迟重置 SkipController 触发标志，避免新集数立即触发跳过
+      // 给 SkipController 的冷却时间（3秒）足够的时间来防止重复触发
+      setTimeout(() => {
+        isSkipControllerTriggeredRef.current = false;
+        console.log('✅ 延迟重置自动跳过标志，允许新集数自动跳过片头片尾');
+      }, 3500); // 比 SkipController 的冷却时间（3000ms）稍长
       videoEndedHandledRef.current = false;
-      console.log('🔄 开始切换集数，重置自动跳过标志');
+      console.log('🔄 开始切换集数');
     }
 
     updateVideoUrl(detail, currentEpisodeIndex);
@@ -2901,9 +2934,10 @@ function PlayPageClient() {
             const queryTitle = videoTitleRef.current.replaceAll(' ', '').toLowerCase();
 
             const matchYearAndType = (result: SearchResult) => {
-              const yearMatch = videoYearRef.current
-                ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
-                : true;
+              const yearMatch = matchesRequestedYear(
+                result.year || '',
+                videoYearRef.current
+              );
               const typeMatch = searchType
                 ? (searchType === 'tv' && result.episodes.length > 1) ||
                   (searchType === 'movie' && result.episodes.length === 1)
