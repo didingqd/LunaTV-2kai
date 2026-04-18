@@ -6088,14 +6088,14 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：快进快退按钮改为常显，仅受 showSeekControls 开关控制 */}
-                {showSeekControls && (
-                  <>
+                {/* 修改点：快进快退按钮改为挂载到 ArtPlayer 内，确保全屏/网页全屏可见，并跟随控制栏显隐 */}
+                {showSeekControls && portalContainer && createPortal(
+                  <div className='moontv-seek-side-controls-layer'>
                     <button
                       type='button'
                       aria-label={`快退${seekBackwardSeconds}秒`}
                       onClick={() => seekBy(-seekBackwardSeconds)}
-                      className='absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↺${seekBackwardSeconds}`}
                     </button>
@@ -6103,11 +6103,12 @@ function PlayPageClient() {
                       type='button'
                       aria-label={`快进${seekForwardSeconds}秒`}
                       onClick={() => seekBy(seekForwardSeconds)}
-                      className='absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↻${seekForwardSeconds}`}
                     </button>
-                  </>
+                  </div>,
+                  portalContainer
                 )}
 
                 {/* WebSR 分屏对比分割线 */}

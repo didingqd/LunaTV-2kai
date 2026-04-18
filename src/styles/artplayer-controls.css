@@ -37,3 +37,36 @@
     max-width: calc(100vw - 40px) !important;
   }
 }
+
+/* 修改点：快进快退按钮层挂载到 ArtPlayer 内，兼容普通/网页全屏/全屏 */
+.moontv-seek-side-controls-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+/* 修改点：按钮默认隐藏，仅在控制栏显示时可见并可点击 */
+.moontv-seek-side-controls-layer .moontv-seek-side-controls {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease, background-color 0.2s ease;
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls--left {
+  left: 12px;
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls--right {
+  right: 12px;
+}
+
+.artplayer.art-control-show .moontv-seek-side-controls-layer .moontv-seek-side-controls {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
