@@ -358,8 +358,6 @@ function PlayPageClient() {
   const [seekBackwardSeconds, setSeekBackwardSeconds] = useState<number>(10);
   const [seekForwardSeconds, setSeekForwardSeconds] = useState<number>(10);
   const [showSeekControls, setShowSeekControls] = useState<boolean>(true);
-  // 修改点：新增控制栏可见状态，用于同步侧边快进快退按钮显示
-  const [isControlBarVisible, setIsControlBarVisible] = useState(true);
 
   // 修改点：新增快进快退秒数引用，避免键盘监听闭包读取旧值
   const seekBackwardSecondsRef = useRef(seekBackwardSeconds);
@@ -3681,20 +3679,6 @@ function PlayPageClient() {
     player.currentTime = clampSeekTarget(player.currentTime, deltaSeconds, player.duration);
   }, []);
 
-  // 修改点：统一同步控制栏可见性，供侧边快进快退按钮跟随显示
-  const syncControlBarVisibility = useCallback(() => {
-    const root = artRef.current;
-    if (!root || typeof window === 'undefined') return;
-    const controls = root.querySelector('.art-controls') as HTMLElement | null;
-    if (!controls) return;
-    const style = window.getComputedStyle(controls);
-    const visible =
-      style.display !== 'none' &&
-      style.visibility !== 'hidden' &&
-      Number(style.opacity || '1') > 0.01;
-    setIsControlBarVisible(visible);
-  }, []);
-
   // 处理全局快捷键
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     // 忽略输入框中的按键事件
@@ -4950,26 +4934,6 @@ function PlayPageClient() {
 
       // 监听播放器事件
       artPlayerRef.current.on('ready', async () => {
-        // 修改点：先释放上一轮控制栏监听，防止重复绑定
-        controlVisibilityCleanupRef.current?.();
-        controlVisibilityCleanupRef.current = null;
-        // 修改点：播放器就绪后初始化控制栏可见状态
-        syncControlBarVisibility();
-        // 修改点：监听用户交互以同步控制栏可见状态（供侧边按钮同显同隐）
-        const events = ['mousemove', 'click', 'touchstart', 'keydown'];
-        const onUserAction = () => requestAnimationFrame(syncControlBarVisibility);
-        events.forEach((evt) => document.addEventListener(evt, onUserAction, { passive: true }));
-        const controlTimer = window.setInterval(syncControlBarVisibility, 250);
-        // 修改点：监听 ArtPlayer 控制栏显隐事件，确保全屏/网页全屏状态也能精准同步
-        const onControlVisibilityChange = (visible: boolean) => {
-          setIsControlBarVisible(Boolean(visible));
-        };
-        artPlayerRef.current?.on('control', onControlVisibilityChange);
-        controlVisibilityCleanupRef.current = () => {
-          events.forEach((evt) => document.removeEventListener(evt, onUserAction));
-          window.clearInterval(controlTimer);
-          artPlayerRef.current?.off('control', onControlVisibilityChange);
-        };
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
 
@@ -5669,10 +5633,8 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreen ? 'block' : 'none';
         }
-        // 修改点：全屏状态切换后主动同步一次控制栏可见性
-        requestAnimationFrame(syncControlBarVisibility);
         if (isFullscreen) {
-          // 进入全屏后，延迟100ms触发控制栏自动隐藏
+          // 修改点：保留原全屏体验，进入全屏后主动触发一次控制栏显示
           setTimeout(() => {
             if (artPlayerRef.current?.controls) {
               artPlayerRef.current.controls.show = true;
@@ -5687,8 +5649,6 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
         }
-        // 修改点：网页全屏状态切换后主动同步一次控制栏可见性
-        requestAnimationFrame(syncControlBarVisibility);
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
@@ -6128,14 +6088,14 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：新增左右侧快进快退按钮，跟随控制栏可见状态 */}
-                {showSeekControls && isControlBarVisible && (
+                {/* 修改点：按钮显隐不再依赖 JS 同步状态，改为交由 .art-control-show 统一控制 */}
+                {showSeekControls && (
                   <>
                     <button
                       type='button'
                       aria-label={`快退${seekBackwardSeconds}秒`}
                       onClick={() => seekBy(-seekBackwardSeconds)}
-                      className='absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='moontv-seek-side-controls absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↺${seekBackwardSeconds}`}
                     </button>
@@ -6143,7 +6103,7 @@ function PlayPageClient() {
                       type='button'
                       aria-label={`快进${seekForwardSeconds}秒`}
                       onClick={() => seekBy(seekForwardSeconds)}
-                      className='absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='moontv-seek-side-controls absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↻${seekForwardSeconds}`}
                     </button>

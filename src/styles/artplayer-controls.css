@@ -1,8 +1,18 @@
-/* ============================================
-   ArtPlayer Controls Styles
-   控制栏样式 - 模块化重构版
-   ⚠️ 重要：保留所有 !important 确保正确覆盖
-   ============================================ */
+/* ===== Seek Side Controls Visibility ===== */
+/* 修改点：侧边快进快退按钮默认隐藏，仅在控制栏显示时同步展示 */
+.moontv-seek-side-controls {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+/* 修改点：跟随 ArtPlayer 控制栏显隐，覆盖普通/网页全屏/全屏场景 */
+.artplayer.art-control-show .moontv-seek-side-controls {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
 
 /* ===== Poster (封面图) ===== */
 .art-poster {
