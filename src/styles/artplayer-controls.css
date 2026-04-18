@@ -54,7 +54,10 @@
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transition: opacity 0.18s ease, visibility 0.18s ease, background-color 0.2s ease;
+  transition:
+    opacity 0.18s ease,
+    visibility 0.18s ease,
+    background-color 0.2s ease;
 }
 
 .moontv-seek-side-controls-layer .moontv-seek-side-controls--left {
@@ -66,13 +69,15 @@
 }
 
 /* 修改点：锁屏时隐藏侧边按钮，避免移动端锁定误触 */
-.artplayer.art-lock .moontv-seek-side-controls-layer .moontv-seek-side-controls {
+.artplayer.art-lock
+  .moontv-seek-side-controls-layer
+  .moontv-seek-side-controls {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-/* 修改点：锁定按钮整体下移，避免与快进快退按钮液态玻璃背景重叠 */
+/* 修改点：锁定按钮再次下移，进一步避免与快进快退按钮液态玻璃背景重叠 */
 .artplayer .art-control-lock {
-  transform: translateY(12px);
+  transform: translateY(20px);
 }
