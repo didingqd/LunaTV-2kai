@@ -46,14 +46,14 @@
   pointer-events: none;
 }
 
-/* 修改点：按钮默认隐藏，仅在控制栏显示时可见并可点击 */
+/* 修改点：按钮在半屏默认可见，避免初始化时看不到；仍保留控制栏联动能力 */
 .moontv-seek-side-controls-layer .moontv-seek-side-controls {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transition: opacity 0.18s ease, visibility 0.18s ease, background-color 0.2s ease;
 }
 
@@ -65,8 +65,9 @@
   right: 12px;
 }
 
-.artplayer.art-control-show .moontv-seek-side-controls-layer .moontv-seek-side-controls {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
+/* 修改点：锁屏时隐藏侧边按钮，避免移动端锁定误触 */
+.artplayer.art-lock .moontv-seek-side-controls-layer .moontv-seek-side-controls {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }

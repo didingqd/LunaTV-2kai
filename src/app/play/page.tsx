@@ -6088,27 +6088,50 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：快进快退按钮改为挂载到 ArtPlayer 内，确保全屏/网页全屏可见，并跟随控制栏显隐 */}
-                {showSeekControls && portalContainer && createPortal(
-                  <div className='moontv-seek-side-controls-layer'>
-                    <button
-                      type='button'
-                      aria-label={`快退${seekBackwardSeconds}秒`}
-                      onClick={() => seekBy(-seekBackwardSeconds)}
-                      className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
-                    >
-                      {`↺${seekBackwardSeconds}`}
-                    </button>
-                    <button
-                      type='button'
-                      aria-label={`快进${seekForwardSeconds}秒`}
-                      onClick={() => seekBy(seekForwardSeconds)}
-                      className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
-                    >
-                      {`↻${seekForwardSeconds}`}
-                    </button>
-                  </div>,
+                {/* 修改点：快进快退按钮优先挂载到 ArtPlayer 内，半屏/网页全屏/全屏都可稳定显示 */}
+                {showSeekControls && (
                   portalContainer
+                    ? createPortal(
+                        <div className='moontv-seek-side-controls-layer'>
+                          <button
+                            type='button'
+                            aria-label={`快退${seekBackwardSeconds}秒`}
+                            onClick={() => seekBy(-seekBackwardSeconds)}
+                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                          >
+                            {`↺${seekBackwardSeconds}`}
+                          </button>
+                          <button
+                            type='button'
+                            aria-label={`快进${seekForwardSeconds}秒`}
+                            onClick={() => seekBy(seekForwardSeconds)}
+                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                          >
+                            {`↻${seekForwardSeconds}`}
+                          </button>
+                        </div>,
+                        portalContainer
+                      )
+                    : (
+                        <div className='moontv-seek-side-controls-layer'>
+                          <button
+                            type='button'
+                            aria-label={`快退${seekBackwardSeconds}秒`}
+                            onClick={() => seekBy(-seekBackwardSeconds)}
+                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                          >
+                            {`↺${seekBackwardSeconds}`}
+                          </button>
+                          <button
+                            type='button'
+                            aria-label={`快进${seekForwardSeconds}秒`}
+                            onClick={() => seekBy(seekForwardSeconds)}
+                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                          >
+                            {`↻${seekForwardSeconds}`}
+                          </button>
+                        </div>
+                      )
                 )}
 
                 {/* WebSR 分屏对比分割线 */}
