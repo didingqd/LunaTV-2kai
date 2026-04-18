@@ -4582,6 +4582,21 @@ function PlayPageClient() {
               return '打开弹幕设置面板';
             },
           },
+          // 修改点：将“显示快进快退按钮”与“显示模式”在设置面板中的位置对调
+          {
+            name: '显示快进快退按钮',
+            html: '显示快进快退按钮',
+            tooltip: showSeekControls ? '已开启' : '已关闭',
+            switch: showSeekControls,
+            onSwitch: function (item: any) {
+              // 修改点：新增快进快退按钮显示开关并持久化（默认开启）
+              const next = !item.switch;
+              setShowSeekControls(next);
+              localStorage.setItem('play_show_seek_controls', String(next));
+              item.tooltip = next ? '已开启' : '已关闭';
+              return next;
+            },
+          },
           {
             width: 200,
             html: '显示模式',
@@ -4662,20 +4677,6 @@ function PlayPageClient() {
               setSeekForwardSeconds(value);
               localStorage.setItem('play_seek_forward_seconds', String(value));
               return `${value}秒`;
-            },
-          },
-          {
-            name: '显示快进快退按钮',
-            html: '显示快进快退按钮',
-            tooltip: showSeekControls ? '已开启' : '已关闭',
-            switch: showSeekControls,
-            onSwitch: function (item: any) {
-              // 修改点：新增快进快退按钮显示开关并持久化（默认开启）
-              const next = !item.switch;
-              setShowSeekControls(next);
-              localStorage.setItem('play_show_seek_controls', String(next));
-              item.tooltip = next ? '已开启' : '已关闭';
-              return next;
             },
           },
           ...(webGPUSupported ? [
