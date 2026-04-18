@@ -4593,6 +4593,24 @@ function PlayPageClient() {
               return next;
             },
           },
+          // 修改点：调整设置项顺序为“快进快退秒数 → 显示模式 → 超分设置”
+          {
+            name: '快进快退秒数',
+            html: '快进快退秒数',
+            tooltip: `${seekSeconds}秒`,
+            selector: [5, 10, 15, 30].map((v) => ({
+              html: `${v}秒`,
+              value: v,
+              default: seekSeconds === v,
+            })),
+            onSelect: function (item: any) {
+              // 修改点：快进快退时长合并为统一设置并持久化
+              const value = sanitizeSeekSeconds(item.value, 10);
+              setSeekSeconds(value);
+              localStorage.setItem('play_seek_seconds', String(value));
+              return `${value}秒`;
+            },
+          },
           {
             width: 200,
             html: '显示模式',
@@ -4600,9 +4618,9 @@ function PlayPageClient() {
             tooltip: (() => {
               const mode = localStorage.getItem('video_object_fit') || 'contain';
               const modeNames: Record<string, string> = {
-                'contain': '默认(完整显示)',
-                'cover': '填充(裁切)',
-                'fill': '拉伸(变形)'
+                contain: '默认(完整显示)',
+                cover: '填充(裁切)',
+                fill: '拉伸(变形)',
               };
               return modeNames[mode] || '默认(完整显示)';
             })(),
@@ -4633,29 +4651,12 @@ function PlayPageClient() {
               }
 
               const modeNames: Record<string, string> = {
-                'contain': '默认(完整显示)',
-                'cover': '填充(裁切)',
-                'fill': '拉伸(变形)'
+                contain: '默认(完整显示)',
+                cover: '填充(裁切)',
+                fill: '拉伸(变形)',
               };
 
               return modeNames[mode] || item.html;
-            },
-          },
-          {
-            name: '快进快退秒数',
-            html: '快进快退秒数',
-            tooltip: `${seekSeconds}秒`,
-            selector: [5, 10, 15, 30].map((v) => ({
-              html: `${v}秒`,
-              value: v,
-              default: seekSeconds === v,
-            })),
-            onSelect: function (item: any) {
-              // 修改点：快进快退时长合并为统一设置并持久化
-              const value = sanitizeSeekSeconds(item.value, 10);
-              setSeekSeconds(value);
-              localStorage.setItem('play_seek_seconds', String(value));
-              return `${value}秒`;
             },
           },
           ...(webGPUSupported ? [
