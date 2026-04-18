@@ -6088,14 +6088,14 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：按钮显隐不再依赖 JS 同步状态，改为交由 .art-control-show 统一控制 */}
+                {/* 修改点：快进快退按钮改为常显，仅受 showSeekControls 开关控制 */}
                 {showSeekControls && (
                   <>
                     <button
                       type='button'
                       aria-label={`快退${seekBackwardSeconds}秒`}
                       onClick={() => seekBy(-seekBackwardSeconds)}
-                      className='moontv-seek-side-controls absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↺${seekBackwardSeconds}`}
                     </button>
@@ -6103,7 +6103,7 @@ function PlayPageClient() {
                       type='button'
                       aria-label={`快进${seekForwardSeconds}秒`}
                       onClick={() => seekBy(seekForwardSeconds)}
-                      className='moontv-seek-side-controls absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                      className='absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                     >
                       {`↻${seekForwardSeconds}`}
                     </button>
