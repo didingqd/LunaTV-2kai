@@ -4960,9 +4960,15 @@ function PlayPageClient() {
         const onUserAction = () => requestAnimationFrame(syncControlBarVisibility);
         events.forEach((evt) => document.addEventListener(evt, onUserAction, { passive: true }));
         const controlTimer = window.setInterval(syncControlBarVisibility, 250);
+        // 修改点：监听 ArtPlayer 控制栏显隐事件，确保全屏/网页全屏状态也能精准同步
+        const onControlVisibilityChange = (visible: boolean) => {
+          setIsControlBarVisible(Boolean(visible));
+        };
+        artPlayerRef.current?.on('control', onControlVisibilityChange);
         controlVisibilityCleanupRef.current = () => {
           events.forEach((evt) => document.removeEventListener(evt, onUserAction));
           window.clearInterval(controlTimer);
+          artPlayerRef.current?.off('control', onControlVisibilityChange);
         };
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
@@ -5663,6 +5669,8 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreen ? 'block' : 'none';
         }
+        // 修改点：全屏状态切换后主动同步一次控制栏可见性
+        requestAnimationFrame(syncControlBarVisibility);
         if (isFullscreen) {
           // 进入全屏后，延迟100ms触发控制栏自动隐藏
           setTimeout(() => {
@@ -5679,6 +5687,8 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
         }
+        // 修改点：网页全屏状态切换后主动同步一次控制栏可见性
+        requestAnimationFrame(syncControlBarVisibility);
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
