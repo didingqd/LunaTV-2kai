@@ -55,6 +55,7 @@ import {
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekSeconds } from '@/lib/player-seek';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { useWatchRoomSync } from './hooks/useWatchRoomSync';
 import {
@@ -353,6 +354,28 @@ function PlayPageClient() {
   const [websrCompareEnabled, setWebsrCompareEnabled] = useState(false);
   const [websrComparePosition, setWebsrComparePosition] = useState(50);
 
+  // 修改点：新增快进快退秒数与按钮显示开关状态
+  const [seekBackwardSeconds, setSeekBackwardSeconds] = useState<number>(10);
+  const [seekForwardSeconds, setSeekForwardSeconds] = useState<number>(10);
+  const [showSeekControls, setShowSeekControls] = useState<boolean>(true);
+  // 修改点：新增控制栏可见状态，用于同步侧边快进快退按钮显示
+  const [isControlBarVisible, setIsControlBarVisible] = useState(true);
+
+  // 修改点：新增快进快退秒数引用，避免键盘监听闭包读取旧值
+  const seekBackwardSecondsRef = useRef(seekBackwardSeconds);
+  const seekForwardSecondsRef = useRef(seekForwardSeconds);
+  // 修改点：新增控制栏可见性监听清理引用，确保销毁与切源时都能释放
+  const controlVisibilityCleanupRef = useRef<(() => void) | null>(null);
+
+  // 修改点：播放页初始化时读取快进快退持久化配置
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const { backward, forward, showControls } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
+    setSeekBackwardSeconds(backward);
+    setSeekForwardSeconds(forward);
+    setShowSeekControls(showControls);
+  }, []);
+
   const websrRef = useRef<{
     instance: any;
     gpu: GPUDevice | null;
@@ -399,6 +422,12 @@ function PlayPageClient() {
     websrContentTypeRef.current = websrContentType;
     websrNetworkSizeRef.current = websrNetworkSize;
   }, [websrEnabled, websrMode, websrContentType, websrNetworkSize]);
+
+  // 修改点：同步快进快退秒数引用，供键盘监听实时读取
+  useEffect(() => {
+    seekBackwardSecondsRef.current = seekBackwardSeconds;
+    seekForwardSecondsRef.current = seekForwardSeconds;
+  }, [seekBackwardSeconds, seekForwardSeconds]);
 
   // 标准化年份用于匹配（处理 unknown、0、null 等无效值）
   const normalizeYearForMatch = (value: string): string => {
@@ -2309,8 +2338,9 @@ function PlayPageClient() {
       episodeSwitchTimeoutRef.current = null;
     }
 
-    // 清理弹幕状态引用
-    danmuPluginStateRef.current = null;
+    // 修改点：先清理控制栏可见性监听，避免切源/销毁后残留监听器
+    controlVisibilityCleanupRef.current?.();
+    controlVisibilityCleanupRef.current = null;
 
     if (artPlayerRef.current) {
       try {
@@ -3644,9 +3674,27 @@ function PlayPageClient() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // 键盘快捷键
-  // ---------------------------------------------------------------------------
+  // 修改点：统一快进快退入口，按钮与键盘共享同一逻辑
+  const seekBy = useCallback((deltaSeconds: number) => {
+    if (!artPlayerRef.current) return;
+    const player = artPlayerRef.current;
+    player.currentTime = clampSeekTarget(player.currentTime, deltaSeconds, player.duration);
+  }, []);
+
+  // 修改点：统一同步控制栏可见性，供侧边快进快退按钮跟随显示
+  const syncControlBarVisibility = useCallback(() => {
+    const root = artRef.current;
+    if (!root || typeof window === 'undefined') return;
+    const controls = root.querySelector('.art-controls') as HTMLElement | null;
+    if (!controls) return;
+    const style = window.getComputedStyle(controls);
+    const visible =
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      Number(style.opacity || '1') > 0.01;
+    setIsControlBarVisible(visible);
+  }, []);
+
   // 处理全局快捷键
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     // 忽略输入框中的按键事件
@@ -3676,19 +3724,18 @@ function PlayPageClient() {
 
     // 左箭头 = 快退
     if (!e.altKey && e.key === 'ArrowLeft') {
-      if (artPlayerRef.current && artPlayerRef.current.currentTime > 5) {
-        artPlayerRef.current.currentTime -= 10;
+      if (artPlayerRef.current) {
+        // 修改点：键盘左键复用统一 seekBy 逻辑
+        seekBy(-seekBackwardSecondsRef.current);
         e.preventDefault();
       }
     }
 
     // 右箭头 = 快进
     if (!e.altKey && e.key === 'ArrowRight') {
-      if (
-        artPlayerRef.current &&
-        artPlayerRef.current.currentTime < artPlayerRef.current.duration - 5
-      ) {
-        artPlayerRef.current.currentTime += 10;
+      if (artPlayerRef.current) {
+        // 修改点：键盘右键复用统一 seekBy 逻辑
+        seekBy(seekForwardSecondsRef.current);
         e.preventDefault();
       }
     }
@@ -4599,6 +4646,54 @@ function PlayPageClient() {
               return modeNames[mode] || item.html;
             },
           },
+          {
+            name: '快退秒数',
+            html: '快退秒数',
+            tooltip: `${seekBackwardSeconds}秒`,
+            selector: [5, 10, 15, 30].map((v) => ({
+              html: `${v}秒`,
+              value: v,
+              default: seekBackwardSeconds === v,
+            })),
+            onSelect: function (item: any) {
+              // 修改点：新增快退秒数设置并持久化
+              const value = sanitizeSeekSeconds(item.value, 10);
+              setSeekBackwardSeconds(value);
+              localStorage.setItem('play_seek_backward_seconds', String(value));
+              return `${value}秒`;
+            },
+          },
+          {
+            name: '快进秒数',
+            html: '快进秒数',
+            tooltip: `${seekForwardSeconds}秒`,
+            selector: [5, 10, 15, 30].map((v) => ({
+              html: `${v}秒`,
+              value: v,
+              default: seekForwardSeconds === v,
+            })),
+            onSelect: function (item: any) {
+              // 修改点：新增快进秒数设置并持久化
+              const value = sanitizeSeekSeconds(item.value, 10);
+              setSeekForwardSeconds(value);
+              localStorage.setItem('play_seek_forward_seconds', String(value));
+              return `${value}秒`;
+            },
+          },
+          {
+            name: '显示快进快退按钮',
+            html: '显示快进快退按钮',
+            tooltip: showSeekControls ? '已开启' : '已关闭',
+            switch: showSeekControls,
+            onSwitch: function (item: any) {
+              // 修改点：新增快进快退按钮显示开关并持久化（默认开启）
+              const next = !item.switch;
+              setShowSeekControls(next);
+              localStorage.setItem('play_show_seek_controls', String(next));
+              item.tooltip = next ? '已开启' : '已关闭';
+              return next;
+            },
+          },
           ...(webGPUSupported ? [
             {
               name: '超分设置',
@@ -4855,6 +4950,20 @@ function PlayPageClient() {
 
       // 监听播放器事件
       artPlayerRef.current.on('ready', async () => {
+        // 修改点：先释放上一轮控制栏监听，防止重复绑定
+        controlVisibilityCleanupRef.current?.();
+        controlVisibilityCleanupRef.current = null;
+        // 修改点：播放器就绪后初始化控制栏可见状态
+        syncControlBarVisibility();
+        // 修改点：监听用户交互以同步控制栏可见状态（供侧边按钮同显同隐）
+        const events = ['mousemove', 'click', 'touchstart', 'keydown'];
+        const onUserAction = () => requestAnimationFrame(syncControlBarVisibility);
+        events.forEach((evt) => document.addEventListener(evt, onUserAction, { passive: true }));
+        const controlTimer = window.setInterval(syncControlBarVisibility, 250);
+        controlVisibilityCleanupRef.current = () => {
+          events.forEach((evt) => document.removeEventListener(evt, onUserAction));
+          window.clearInterval(controlTimer);
+        };
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
 
@@ -5524,6 +5633,13 @@ function PlayPageClient() {
         requestWakeLock();
       }
 
+      // 修改点：注册播放器销毁时清理控制栏可见性监听
+      const releaseControlVisibility = () => {
+        controlVisibilityCleanupRef.current?.();
+        controlVisibilityCleanupRef.current = null;
+      };
+      artPlayerRef.current.on('destroy', releaseControlVisibility);
+
       artPlayerRef.current.on('video:volumechange', () => {
         lastVolumeRef.current = artPlayerRef.current.volume;
       });
@@ -6001,6 +6117,28 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                {/* 修改点：新增左右侧快进快退按钮，跟随控制栏可见状态 */}
+                {showSeekControls && isControlBarVisible && (
+                  <>
+                    <button
+                      type='button'
+                      aria-label={`快退${seekBackwardSeconds}秒`}
+                      onClick={() => seekBy(-seekBackwardSeconds)}
+                      className='absolute left-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                    >
+                      {`↺${seekBackwardSeconds}`}
+                    </button>
+                    <button
+                      type='button'
+                      aria-label={`快进${seekForwardSeconds}秒`}
+                      onClick={() => seekBy(seekForwardSeconds)}
+                      className='absolute right-3 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                    >
+                      {`↻${seekForwardSeconds}`}
+                    </button>
+                  </>
+                )}
 
                 {/* WebSR 分屏对比分割线 */}
                 {websrEnabled && websrCompareEnabled && (
