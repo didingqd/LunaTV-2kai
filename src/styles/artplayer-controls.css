@@ -68,28 +68,28 @@
   right: 12px;
 }
 
-/* 修改点：单手模式下（左手）两个按钮都堆叠到左侧，快进在上、快退在下；整体上移 20px 避免快退与锁定按钮重叠，间距保持 56px */
+/* 修改点：单手模式下（左手）快退复用双手模式 39% 位置（刚好避开锁定按钮），快进在其上方 46px 处，避免过分偏上 */
 .moontv-seek-side-controls-layer[data-hand-mode='left'] .moontv-seek-side-controls--forward {
   left: 12px;
   right: auto;
-  top: calc(39% - 48px);
+  top: calc(39% - 46px);
 }
 .moontv-seek-side-controls-layer[data-hand-mode='left'] .moontv-seek-side-controls--rewind {
   left: 12px;
   right: auto;
-  top: calc(39% + 8px);
+  top: 39%;
 }
 
-/* 修改点：单手模式下（右手）两个按钮都堆叠到右侧，快进在上、快退在下；与左手对称上移 20px */
+/* 修改点：单手模式下（右手）与左手对称，快退 39%、快进上方 46px */
 .moontv-seek-side-controls-layer[data-hand-mode='right'] .moontv-seek-side-controls--forward {
   right: 12px;
   left: auto;
-  top: calc(39% - 48px);
+  top: calc(39% - 46px);
 }
 .moontv-seek-side-controls-layer[data-hand-mode='right'] .moontv-seek-side-controls--rewind {
   right: 12px;
   left: auto;
-  top: calc(39% + 8px);
+  top: 39%;
 }
 
 /* 修改点：锁屏时隐藏侧边按钮，避免移动端锁定误触 */
