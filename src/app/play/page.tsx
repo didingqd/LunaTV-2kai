@@ -55,7 +55,8 @@ import {
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekSeconds } from '@/lib/player-seek';
+// 修改点：引入单手模式类型与校验函数，支撑快进快退按钮布局切换
+import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekHandMode, sanitizeSeekSeconds, type SeekHandMode } from '@/lib/player-seek';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { useWatchRoomSync } from './hooks/useWatchRoomSync';
 import {
@@ -357,18 +358,21 @@ function PlayPageClient() {
   // 修改点：快进快退时长合并为统一秒数，并保留按钮显示开关状态
   const [seekSeconds, setSeekSeconds] = useState<number>(10);
   const [showSeekControls, setShowSeekControls] = useState<boolean>(true);
+  // 修改点：新增快进快退按钮单手模式状态（双手/左手/右手），默认双手保持旧行为
+  const [seekHandMode, setSeekHandMode] = useState<SeekHandMode>('both');
 
   // 修改点：新增统一快进快退秒数引用，避免键盘监听闭包读取旧值
   const seekSecondsRef = useRef(seekSeconds);
   // 修改点：新增控制栏可见性监听清理引用，确保销毁与切源时都能释放
   const controlVisibilityCleanupRef = useRef<(() => void) | null>(null);
 
-  // 修改点：播放页初始化时读取统一快进快退持久化配置
+  // 修改点：播放页初始化时读取统一快进快退持久化配置（含单手布局）
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const { seekSeconds, showControls } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
+    const { seekSeconds, showControls, handMode } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
     setSeekSeconds(seekSeconds);
     setShowSeekControls(showControls);
+    setSeekHandMode(handMode);
   }, []);
 
   const websrRef = useRef<{
@@ -4611,6 +4615,27 @@ function PlayPageClient() {
               return `${value}秒`;
             },
           },
+          // 修改点：新增“快进快退布局”设置项，支持双手/左手/右手三种模式，持久化到 play_seek_hand_mode
+          {
+            name: '快进快退布局',
+            html: '快进快退布局',
+            tooltip: (() => {
+              const map: Record<SeekHandMode, string> = { both: '双手（默认）', left: '左手（仅左侧）', right: '右手（仅右侧）' };
+              return map[seekHandMode];
+            })(),
+            selector: (['both', 'left', 'right'] as SeekHandMode[]).map((mode) => ({
+              html: mode === 'both' ? '双手（默认）' : mode === 'left' ? '左手（仅左侧）' : '右手（仅右侧）',
+              value: mode,
+              default: seekHandMode === mode,
+            })),
+            onSelect: function (item: any) {
+              // 修改点：切换单手模式并持久化，同时回写 tooltip 供下次打开面板显示
+              const value = sanitizeSeekHandMode(item.value, 'both');
+              setSeekHandMode(value);
+              localStorage.setItem('play_seek_hand_mode', value);
+              return value === 'both' ? '双手（默认）' : value === 'left' ? '左手（仅左侧）' : '右手（仅右侧）';
+            },
+          },
           {
             width: 200,
             html: '显示模式',
@@ -6070,16 +6095,19 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：快进快退按钮优先挂载到 ArtPlayer 内，半屏/网页全屏/全屏都可稳定显示 */}
+                {/* 修改点：快进快退按钮优先挂载到 ArtPlayer 内，半屏/网页全屏/全屏都可稳定显示；layer 上的 data-hand-mode 驱动单手布局 */}
                 {showSeekControls && (
                   portalContainer
                     ? createPortal(
-                        <div className='moontv-seek-side-controls-layer'>
+                        <div
+                          className='moontv-seek-side-controls-layer'
+                          data-hand-mode={seekHandMode}
+                        >
                           <button
                             type='button'
                             aria-label={`快退${seekSeconds}秒`}
                             onClick={() => seekBy(-seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--rewind moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↺${seekSeconds}`}
                           </button>
@@ -6087,7 +6115,7 @@ function PlayPageClient() {
                             type='button'
                             aria-label={`快进${seekSeconds}秒`}
                             onClick={() => seekBy(seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--forward moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↻${seekSeconds}`}
                           </button>
@@ -6095,12 +6123,15 @@ function PlayPageClient() {
                         portalContainer
                       )
                     : (
-                        <div className='moontv-seek-side-controls-layer'>
+                        <div
+                          className='moontv-seek-side-controls-layer'
+                          data-hand-mode={seekHandMode}
+                        >
                           <button
                             type='button'
                             aria-label={`快退${seekSeconds}秒`}
                             onClick={() => seekBy(-seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--rewind moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↺${seekSeconds}`}
                           </button>
@@ -6108,7 +6139,7 @@ function PlayPageClient() {
                             type='button'
                             aria-label={`快进${seekSeconds}秒`}
                             onClick={() => seekBy(seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--forward moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↻${seekSeconds}`}
                           </button>
