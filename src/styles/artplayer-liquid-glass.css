@@ -18,7 +18,8 @@
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom .art-liquid-glass {
   border-radius: 8px;
   backdrop-filter: blur(12px);
-  background-color: rgba(0, 0, 0, 0.25);
+  /* 修改点：降低控制栏背景不透明度，减少弹出时对底部字幕的遮挡 */
+  background-color: rgba(0, 0, 0, 0.14);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
