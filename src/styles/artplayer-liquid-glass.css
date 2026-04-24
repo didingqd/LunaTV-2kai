@@ -12,17 +12,17 @@
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom {
   align-items: center;
   background-image: none;
-  /* 修改点：强制控制栏底层背景全透明，避免被上游样式覆盖导致“看起来没变化” */
-  background-color: transparent !important;
+  /* 修改点：移除排查阶段的强制覆盖，恢复常规透明背景 */
+  background-color: transparent;
   padding-bottom: var(--art-padding);
 }
 
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom .art-liquid-glass {
   border-radius: 8px;
-  /* 修改点：关闭毛玻璃模糊效果（模糊来源），避免“透明但仍发雾” */
-  backdrop-filter: none !important;
-  /* 修改点：强制状态栏玻璃层全透明，确保透明度调整在所有模式下可见 */
-  background-color: transparent !important;
+  /* 修改点：恢复轻微毛玻璃，提升按钮区域对比度与清晰感 */
+  backdrop-filter: blur(4px);
+  /* 修改点：使用极低透明黑底，兼顾字幕可见性与控件可读性 */
+  background-color: rgba(0, 0, 0, 0.08);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
