@@ -12,14 +12,16 @@
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom {
   align-items: center;
   background-image: none;
+  /* 修改点：将控制栏底层背景改为透明，避免弹出时形成额外遮挡 */
+  background-color: transparent;
   padding-bottom: var(--art-padding);
 }
 
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom .art-liquid-glass {
   border-radius: 8px;
   backdrop-filter: blur(12px);
-  /* 修改点：降低控制栏背景不透明度，减少弹出时对底部字幕的遮挡 */
-  background-color: rgba(0, 0, 0, 0.14);
+  /* 修改点：将状态栏玻璃层改为全透明，先验证遮挡是否由该层导致 */
+  background-color: transparent;
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
