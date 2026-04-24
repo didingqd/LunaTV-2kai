@@ -19,10 +19,10 @@
 
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom .art-liquid-glass {
   border-radius: 8px;
-  /* 修改点：恢复轻微毛玻璃，提升按钮区域对比度与清晰感 */
-  backdrop-filter: blur(4px);
-  /* 修改点：使用极低透明黑底，兼顾字幕可见性与控件可读性 */
-  background-color: rgba(0, 0, 0, 0.08);
+  /* 修改点：关闭背景模糊，避免控制栏弹出时把字幕一起模糊 */
+  backdrop-filter: none !important;
+  /* 修改点：保留轻微暗色底，提高按钮可读性但不影响字幕清晰度 */
+  background-color: rgba(0, 0, 0, 0.12);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
