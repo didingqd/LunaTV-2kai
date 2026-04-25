@@ -22,7 +22,7 @@
   /* 修改点：关闭背景模糊，避免控制栏弹出时把字幕一起模糊 */
   backdrop-filter: none !important;
   /* 修改点：保留轻微暗色底，提高按钮可读性但不影响字幕清晰度 */
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(0, 0, 0, 0.35);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
