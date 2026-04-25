@@ -22,7 +22,7 @@
   /* 修改点：关闭背景模糊，避免控制栏弹出时把字幕一起模糊 */
   backdrop-filter: none !important;
   /* 修改点：保留轻微暗色底，提高按钮可读性但不影响字幕清晰度 */
-  background-color: rgba(0, 0, 0, 0.70);
+  background-color: rgba(0, 0, 0, 0.7);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
@@ -49,6 +49,17 @@
 /* 🔑 关键：完全按照官方CSS，不设置width让容器自适应 */
 .artplayer-plugin-liquid-glass .art-bottom {
   align-items: center; /* 官方唯一的对齐设置 */
+}
+
+/* 修改点：锁定态下禁用液态玻璃黑色底层，避免仅剩黑框弹出 */
+.artplayer-plugin-liquid-glass.art-lock .art-bottom .art-liquid-glass,
+.artplayer-plugin-liquid-glass.art-lock.art-control-show
+  .art-bottom
+  .art-liquid-glass {
+  background-color: transparent !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* 移动端优化 */
