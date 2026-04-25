@@ -55,7 +55,8 @@ import {
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekSeconds } from '@/lib/player-seek';
+// 修改点：引入单手模式类型与校验函数，支撑快进快退按钮布局切换
+import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekHandMode, sanitizeSeekSeconds, type SeekHandMode } from '@/lib/player-seek';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { useWatchRoomSync } from './hooks/useWatchRoomSync';
 import {
@@ -357,18 +358,21 @@ function PlayPageClient() {
   // 修改点：快进快退时长合并为统一秒数，并保留按钮显示开关状态
   const [seekSeconds, setSeekSeconds] = useState<number>(10);
   const [showSeekControls, setShowSeekControls] = useState<boolean>(true);
+  // 修改点：新增快进快退按钮单手模式状态（双手/左手/右手），默认双手保持旧行为
+  const [seekHandMode, setSeekHandMode] = useState<SeekHandMode>('both');
 
   // 修改点：新增统一快进快退秒数引用，避免键盘监听闭包读取旧值
   const seekSecondsRef = useRef(seekSeconds);
   // 修改点：新增控制栏可见性监听清理引用，确保销毁与切源时都能释放
   const controlVisibilityCleanupRef = useRef<(() => void) | null>(null);
 
-  // 修改点：播放页初始化时读取统一快进快退持久化配置
+  // 修改点：播放页初始化时读取统一快进快退持久化配置（含单手布局）
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const { seekSeconds, showControls } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
+    const { seekSeconds, showControls, handMode } = readSeekConfigFromStorage((key) => localStorage.getItem(key));
     setSeekSeconds(seekSeconds);
     setShowSeekControls(showControls);
+    setSeekHandMode(handMode);
   }, []);
 
   const websrRef = useRef<{
@@ -4521,29 +4525,7 @@ function PlayPageClient() {
             '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
         },
         settings: [
-          {
-            html: '去广告',
-            icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
-            tooltip: blockAdEnabled ? '已开启' : '已关闭',
-            onClick() {
-              const newVal = !blockAdEnabled;
-              try {
-                localStorage.setItem('enable_blockad', String(newVal));
-                if (artPlayerRef.current) {
-                  resumeTimeRef.current = artPlayerRef.current.currentTime;
-                  if (artPlayerRef.current.video.hls) {
-                    artPlayerRef.current.video.hls.destroy();
-                  }
-                  artPlayerRef.current.destroy(false);
-                  artPlayerRef.current = null;
-                }
-                setBlockAdEnabled(newVal);
-              } catch (_) {
-                // ignore
-              }
-              return newVal ? '当前开启' : '当前关闭';
-            },
-          },
+          // 修改点：去广告项已移动到"显示模式"上方，保持弹幕相关项先置顶
           {
             name: '外部弹幕',
             html: '外部弹幕',
@@ -4578,6 +4560,27 @@ function PlayPageClient() {
               return '打开弹幕设置面板';
             },
           },
+          // 修改点：将“快进快退布局”移到“弹幕设置”与“显示快进快退按钮”之间，使弹幕/快进快退/播放增强三组更聚合
+          {
+            name: '快进快退布局',
+            html: '快进快退布局',
+            tooltip: (() => {
+              const map: Record<SeekHandMode, string> = { both: '双手（默认）', left: '左手（仅左侧）', right: '右手（仅右侧）' };
+              return map[seekHandMode];
+            })(),
+            selector: (['both', 'left', 'right'] as SeekHandMode[]).map((mode) => ({
+              html: mode === 'both' ? '双手（默认）' : mode === 'left' ? '左手（仅左侧）' : '右手（仅右侧）',
+              value: mode,
+              default: seekHandMode === mode,
+            })),
+            onSelect: function (item: any) {
+              // 修改点：切换单手模式并持久化，同时回写 tooltip 供下次打开面板显示
+              const value = sanitizeSeekHandMode(item.value, 'both');
+              setSeekHandMode(value);
+              localStorage.setItem('play_seek_hand_mode', value);
+              return value === 'both' ? '双手（默认）' : value === 'left' ? '左手（仅左侧）' : '右手（仅右侧）';
+            },
+          },
           // 修改点：将“显示快进快退按钮”与“显示模式”在设置面板中的位置对调
           {
             name: '显示快进快退按钮',
@@ -4593,7 +4596,7 @@ function PlayPageClient() {
               return next;
             },
           },
-          // 修改点：调整设置项顺序为“快进快退秒数 → 显示模式 → 超分设置”
+          // 修改点：调整设置项顺序为“快进快退秒数 → 去广告 → 显示模式 → 超分设置”
           {
             name: '快进快退秒数',
             html: '快进快退秒数',
@@ -4609,6 +4612,30 @@ function PlayPageClient() {
               setSeekSeconds(value);
               localStorage.setItem('play_seek_seconds', String(value));
               return `${value}秒`;
+            },
+          },
+          // 修改点：将“去广告”从 settings 开头移动到“显示模式”上方，与显示/播放增强项聚合
+          {
+            html: '去广告',
+            icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
+            tooltip: blockAdEnabled ? '已开启' : '已关闭',
+            onClick() {
+              const newVal = !blockAdEnabled;
+              try {
+                localStorage.setItem('enable_blockad', String(newVal));
+                if (artPlayerRef.current) {
+                  resumeTimeRef.current = artPlayerRef.current.currentTime;
+                  if (artPlayerRef.current.video.hls) {
+                    artPlayerRef.current.video.hls.destroy();
+                  }
+                  artPlayerRef.current.destroy(false);
+                  artPlayerRef.current = null;
+                }
+                setBlockAdEnabled(newVal);
+              } catch (_) {
+                // ignore
+              }
+              return newVal ? '当前开启' : '当前关闭';
             },
           },
           {
@@ -6070,16 +6097,19 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {/* 修改点：快进快退按钮优先挂载到 ArtPlayer 内，半屏/网页全屏/全屏都可稳定显示 */}
+                {/* 修改点：快进快退按钮优先挂载到 ArtPlayer 内，半屏/网页全屏/全屏都可稳定显示；layer 上的 data-hand-mode 驱动单手布局 */}
                 {showSeekControls && (
                   portalContainer
                     ? createPortal(
-                        <div className='moontv-seek-side-controls-layer'>
+                        <div
+                          className='moontv-seek-side-controls-layer'
+                          data-hand-mode={seekHandMode}
+                        >
                           <button
                             type='button'
                             aria-label={`快退${seekSeconds}秒`}
                             onClick={() => seekBy(-seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--rewind moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↺${seekSeconds}`}
                           </button>
@@ -6087,7 +6117,7 @@ function PlayPageClient() {
                             type='button'
                             aria-label={`快进${seekSeconds}秒`}
                             onClick={() => seekBy(seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--forward moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↻${seekSeconds}`}
                           </button>
@@ -6095,12 +6125,15 @@ function PlayPageClient() {
                         portalContainer
                       )
                     : (
-                        <div className='moontv-seek-side-controls-layer'>
+                        <div
+                          className='moontv-seek-side-controls-layer'
+                          data-hand-mode={seekHandMode}
+                        >
                           <button
                             type='button'
                             aria-label={`快退${seekSeconds}秒`}
                             onClick={() => seekBy(-seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--rewind moontv-seek-side-controls--left rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↺${seekSeconds}`}
                           </button>
@@ -6108,7 +6141,7 @@ function PlayPageClient() {
                             type='button'
                             aria-label={`快进${seekSeconds}秒`}
                             onClick={() => seekBy(seekSeconds)}
-                            className='moontv-seek-side-controls moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
+                            className='moontv-seek-side-controls moontv-seek-side-controls--forward moontv-seek-side-controls--right rounded-full bg-black/55 text-white px-3 py-2 backdrop-blur-sm hover:bg-black/70 transition-colors'
                           >
                             {`↻${seekSeconds}`}
                           </button>
