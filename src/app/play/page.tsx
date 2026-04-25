@@ -55,8 +55,17 @@ import {
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-// 修改点：引入单手模式类型与校验函数，支撑快进快退按钮布局切换
-import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekHandMode, sanitizeSeekSeconds, type SeekHandMode } from '@/lib/player-seek';
+// 修改点：引入布局四态映射，支撑“显示按钮+布局”合并为单入口
+import {
+  clampSeekTarget,
+  fromSeekLayoutMode,
+  readSeekConfigFromStorage,
+  sanitizeSeekLayoutMode,
+  sanitizeSeekSeconds,
+  toSeekLayoutMode,
+  type SeekHandMode,
+  type SeekLayoutMode,
+} from '@/lib/player-seek';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import { useWatchRoomSync } from './hooks/useWatchRoomSync';
 import {
@@ -4560,40 +4569,34 @@ function PlayPageClient() {
               return '打开弹幕设置面板';
             },
           },
-          // 修改点：将“快进快退布局”移到“弹幕设置”与“显示快进快退按钮”之间，使弹幕/快进快退/播放增强三组更聚合
+          // 修改点：将“显示快进快退按钮”并入“快进快退布局”，改为单入口四选项（关闭/双手/左手/右手）
           {
             name: '快进快退布局',
             html: '快进快退布局',
             tooltip: (() => {
-              const map: Record<SeekHandMode, string> = { both: '双手（默认）', left: '左手（仅左侧）', right: '右手（仅右侧）' };
-              return map[seekHandMode];
+              const current = toSeekLayoutMode(showSeekControls, seekHandMode);
+              const map: Record<SeekLayoutMode, string> = {
+                off: '关闭',
+                both: '双手（默认）',
+                left: '左手（仅左侧）',
+                right: '右手（仅右侧）',
+              };
+              return map[current];
             })(),
-            selector: (['both', 'left', 'right'] as SeekHandMode[]).map((mode) => ({
-              html: mode === 'both' ? '双手（默认）' : mode === 'left' ? '左手（仅左侧）' : '右手（仅右侧）',
+            selector: (['off', 'both', 'left', 'right'] as SeekLayoutMode[]).map((mode) => ({
+              html: mode === 'off' ? '关闭' : mode === 'both' ? '双手（默认）' : mode === 'left' ? '左手（仅左侧）' : '右手（仅右侧）',
               value: mode,
-              default: seekHandMode === mode,
+              default: toSeekLayoutMode(showSeekControls, seekHandMode) === mode,
             })),
             onSelect: function (item: any) {
-              // 修改点：切换单手模式并持久化，同时回写 tooltip 供下次打开面板显示
-              const value = sanitizeSeekHandMode(item.value, 'both');
-              setSeekHandMode(value);
-              localStorage.setItem('play_seek_hand_mode', value);
-              return value === 'both' ? '双手（默认）' : value === 'left' ? '左手（仅左侧）' : '右手（仅右侧）';
-            },
-          },
-          // 修改点：将“显示快进快退按钮”与“显示模式”在设置面板中的位置对调
-          {
-            name: '显示快进快退按钮',
-            html: '显示快进快退按钮',
-            tooltip: showSeekControls ? '已开启' : '已关闭',
-            switch: showSeekControls,
-            onSwitch: function (item: any) {
-              // 修改点：新增快进快退按钮显示开关并持久化（默认开启）
-              const next = !item.switch;
-              setShowSeekControls(next);
-              localStorage.setItem('play_show_seek_controls', String(next));
-              item.tooltip = next ? '已开启' : '已关闭';
-              return next;
+              // 修改点：通过布局四态统一回写显示开关与手型布局，保持原有功能与持久化键不变
+              const selected = sanitizeSeekLayoutMode(item.value, 'off');
+              const next = fromSeekLayoutMode(selected, seekHandMode);
+              setShowSeekControls(next.showControls);
+              localStorage.setItem('play_show_seek_controls', String(next.showControls));
+              setSeekHandMode(next.handMode);
+              localStorage.setItem('play_seek_hand_mode', next.handMode);
+              return selected === 'off' ? '关闭' : selected === 'both' ? '双手（默认）' : selected === 'left' ? '左手（仅左侧）' : '右手（仅右侧）';
             },
           },
           // 修改点：调整设置项顺序为“快进快退秒数 → 去广告 → 显示模式 → 超分设置”

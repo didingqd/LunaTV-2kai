@@ -19,6 +19,33 @@ export function clampSeekTarget(currentTime: number, deltaSeconds: number, durat
 // 修改点：新增快进快退按钮单手布局枚举，支持双手/左手/右手三种模式
 export type SeekHandMode = 'both' | 'left' | 'right';
 
+// 修改点：新增设置面板布局四态，合并“显示按钮”与“布局选择”入口
+export type SeekLayoutMode = 'off' | 'both' | 'left' | 'right';
+
+// 修改点：新增布局四态值清洗，非法值回退为 off
+export function sanitizeSeekLayoutMode(value: unknown, fallback: SeekLayoutMode = 'off'): SeekLayoutMode {
+  if (value === 'off' || value === 'both' || value === 'left' || value === 'right') return value;
+  return fallback;
+}
+
+// 修改点：由现有状态映射为设置面板展示值
+export function toSeekLayoutMode(showControls: boolean, handMode: SeekHandMode): SeekLayoutMode {
+  if (!showControls) return 'off';
+  return sanitizeSeekHandMode(handMode, 'both');
+}
+
+// 修改点：由设置面板选择值反推现有状态，保持原有功能与持久化结构不变
+export function fromSeekLayoutMode(
+  layoutMode: SeekLayoutMode,
+  currentHandMode: SeekHandMode,
+): { showControls: boolean; handMode: SeekHandMode } {
+  const mode = sanitizeSeekLayoutMode(layoutMode, 'off');
+  if (mode === 'off') {
+    return { showControls: false, handMode: sanitizeSeekHandMode(currentHandMode, 'both') };
+  }
+  return { showControls: true, handMode: sanitizeSeekHandMode(mode, 'both') };
+}
+
 // 修改点：新增单手模式值清洗，非法值回退为双手（默认），避免读到脏数据时 UI 错乱
 export function sanitizeSeekHandMode(value: unknown, fallback: SeekHandMode = 'both'): SeekHandMode {
   if (value === 'both' || value === 'left' || value === 'right') return value;

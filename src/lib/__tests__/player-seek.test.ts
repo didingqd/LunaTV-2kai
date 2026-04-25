@@ -1,5 +1,13 @@
-// 修改点：新增快进快退工具函数测试，先以 TDD 方式覆盖秒数清洗与时间钳制
-import { clampSeekTarget, readSeekConfigFromStorage, sanitizeSeekHandMode, sanitizeSeekSeconds } from '@/lib/player-seek';
+// 修改点：新增快进快退布局合并映射测试（TDD 红灯阶段）
+import {
+  clampSeekTarget,
+  readSeekConfigFromStorage,
+  sanitizeSeekHandMode,
+  sanitizeSeekSeconds,
+  toSeekLayoutMode,
+  fromSeekLayoutMode,
+  sanitizeSeekLayoutMode,
+} from '@/lib/player-seek';
 
 describe('player-seek utils', () => {
   test('sanitizeSeekSeconds: 非法值回退默认值', () => {
@@ -45,7 +53,38 @@ describe('player-seek utils', () => {
     expect(sanitizeSeekHandMode('xx', 'right')).toBe('right');
   });
 
-  // 修改点：验证 readSeekConfigFromStorage 读取自定义单手模式与其他持久化值
+  // 修改点：新增布局四态映射测试，覆盖“关闭/双手/左手/右手”与状态映射
+  test('SeekLayout toSeekLayoutMode: show=false 时总是 off', () => {
+    expect(toSeekLayoutMode(false, 'both')).toBe('off');
+    expect(toSeekLayoutMode(false, 'left')).toBe('off');
+    expect(toSeekLayoutMode(false, 'right')).toBe('off');
+  });
+
+  test('SeekLayout toSeekLayoutMode: show=true 时返回 handMode', () => {
+    expect(toSeekLayoutMode(true, 'both')).toBe('both');
+    expect(toSeekLayoutMode(true, 'left')).toBe('left');
+    expect(toSeekLayoutMode(true, 'right')).toBe('right');
+  });
+
+  test('SeekLayout fromSeekLayoutMode: 选择 off 仅关闭显示，不改 handMode', () => {
+    expect(fromSeekLayoutMode('off', 'left')).toEqual({ showControls: false, handMode: 'left' });
+    expect(fromSeekLayoutMode('off', 'right')).toEqual({ showControls: false, handMode: 'right' });
+  });
+
+  test('SeekLayout fromSeekLayoutMode: 选择 both/left/right 时开启显示并更新 handMode', () => {
+    expect(fromSeekLayoutMode('both', 'left')).toEqual({ showControls: true, handMode: 'both' });
+    expect(fromSeekLayoutMode('left', 'both')).toEqual({ showControls: true, handMode: 'left' });
+    expect(fromSeekLayoutMode('right', 'both')).toEqual({ showControls: true, handMode: 'right' });
+  });
+
+  test('SeekLayout sanitizeSeekLayoutMode: 非法值回退 off', () => {
+    expect(sanitizeSeekLayoutMode('off')).toBe('off');
+    expect(sanitizeSeekLayoutMode('left')).toBe('left');
+    expect(sanitizeSeekLayoutMode('xx')).toBe('off');
+    expect(sanitizeSeekLayoutMode(undefined)).toBe('off');
+  });
+
+  // 修改点：保留原有读取持久化配置的回归测试，确保功能不变
   test('readSeekConfigFromStorage: 读取自定义单手模式', () => {
     const storage = new Map<string, string>([
       ['play_seek_hand_mode', 'left'],
