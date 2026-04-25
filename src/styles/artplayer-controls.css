@@ -69,39 +69,46 @@
 }
 
 /* 修改点：单手模式下（左手）快退复用双手模式 39% 位置（刚好避开锁定按钮），快进在其上方 39px，视觉上与“快退↔锁定按钮”的间距相仿更协调 */
-.moontv-seek-side-controls-layer[data-hand-mode='left'] .moontv-seek-side-controls--forward {
+.moontv-seek-side-controls-layer[data-hand-mode='left']
+  .moontv-seek-side-controls--forward {
   left: 12px;
   right: auto;
   top: calc(39% - 39px);
 }
-.moontv-seek-side-controls-layer[data-hand-mode='left'] .moontv-seek-side-controls--rewind {
+.moontv-seek-side-controls-layer[data-hand-mode='left']
+  .moontv-seek-side-controls--rewind {
   left: 12px;
   right: auto;
   top: 39%;
 }
 
 /* 修改点：单手模式下（右手）与左手对称，快退 39%、快进上方 39px */
-.moontv-seek-side-controls-layer[data-hand-mode='right'] .moontv-seek-side-controls--forward {
+.moontv-seek-side-controls-layer[data-hand-mode='right']
+  .moontv-seek-side-controls--forward {
   right: 12px;
   left: auto;
   top: calc(39% - 39px);
 }
-.moontv-seek-side-controls-layer[data-hand-mode='right'] .moontv-seek-side-controls--rewind {
+.moontv-seek-side-controls-layer[data-hand-mode='right']
+  .moontv-seek-side-controls--rewind {
   right: 12px;
   left: auto;
   top: 39%;
 }
 
-/* 修改点：锁屏时隐藏侧边按钮，避免移动端锁定误触 */
-.artplayer.art-lock
-  .moontv-seek-side-controls-layer
-  .moontv-seek-side-controls {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
+/* 修改点：快进快退按钮锁定态也保持常显，避免影响快速操作 */
 
 /* 修改点：锁定按钮再次下移，进一步避免与快进快退按钮液态玻璃背景重叠 */
 .artplayer .art-control-lock {
   transform: translateY(45px);
+}
+
+/* 修改点：锁定态下强制隐藏控制栏，修复点击屏幕后控制栏仍弹出的异常 */
+.artplayer.art-lock .art-bottom,
+.artplayer.art-lock .art-controls,
+.artplayer.art-lock .art-progress,
+.artplayer.art-lock .art-control-thumbnails {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
