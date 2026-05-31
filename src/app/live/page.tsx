@@ -96,7 +96,6 @@ interface GroupSummary {
 // 常量定义
 const RECENT_GROUPS_STORAGE_KEY = 'liveRecentGroups';
 const PINNED_GROUPS_STORAGE_KEY = 'livePinnedGroups';
-const LIVE_DIRECT_CONNECT_STORAGE_KEY = 'live-direct-playback-enabled';
 const MAX_RECENT_GROUPS = 8;
 const HEALTH_CHECK_CACHE_MS = 3 * 60 * 1000; // 3分钟缓存
 const HEALTH_CHECK_BATCH_SIZE = 12; // 每次检测12个频道
@@ -232,7 +231,7 @@ function LivePageClient() {
   // 🚀 直连模式相关状态
   const [directPlaybackEnabled, setDirectPlaybackEnabled] = useState(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(LIVE_DIRECT_CONNECT_STORAGE_KEY);
+      const saved = localStorage.getItem('live-direct-playback-enabled');
       return saved ? JSON.parse(saved) : false; // 默认关闭，使用代理
     }
     return false;
@@ -1171,28 +1170,31 @@ function LivePageClient() {
             )}
           </div>
           <div className='flex-1 min-w-0'>
-            <div
-              className='flex items-center gap-1 cursor-pointer select-none group'
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleChannelNameExpanded(channel.id);
-              }}
-            >
+            <div className='flex items-center gap-1'>
               <div className='flex-1 min-w-0'>
                 <div className={`text-sm font-medium text-gray-900 dark:text-gray-100 ${expandedChannels.has(channel.id) ? '' : 'line-clamp-1 md:line-clamp-2'}`}>
                   {channel.name}
                 </div>
               </div>
-              <div className='shrink-0 flex items-center gap-1'>
+              <button
+                type='button'
+                className='shrink-0 flex items-center gap-1 p-1 -mr-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleChannelNameExpanded(channel.id);
+                }}
+                aria-expanded={expandedChannels.has(channel.id)}
+                aria-label={expandedChannels.has(channel.id) ? '收起' : '展开'}
+              >
                 {expandedChannels.has(channel.id) ? (
                   <ChevronUp className='w-4 h-4 text-blue-500 dark:text-blue-400 transition-transform duration-300' />
                 ) : (
-                  <ChevronDown className='w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-all duration-300' />
+                  <ChevronDown className='w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-all duration-300' />
                 )}
                 <span className='hidden md:inline text-xs text-blue-500 dark:text-blue-400'>
                   {expandedChannels.has(channel.id) ? '收起' : '展开'}
                 </span>
-              </div>
+              </button>
             </div>
             <div className='mt-1 flex items-center gap-1.5 flex-wrap'>
               <span className='text-xs text-gray-500 dark:text-gray-400 truncate' title={channel.group}>
@@ -1271,12 +1273,6 @@ function LivePageClient() {
     }
 
     const cacheKey = `${sourceKey}:${channel.url}`;
-    if (directPlaybackEnabled) {
-      healthByUrlCacheRef.current[cacheKey] = fallbackInfo;
-      setChannelHealth(channel.id, fallbackInfo);
-      return fallbackInfo;
-    }
-
     const cachedInfo = healthByUrlCacheRef.current[cacheKey];
     if (
       !options?.force &&
@@ -1647,34 +1643,18 @@ function LivePageClient() {
     }
   }, [selectedGroup, groupedChannels]);
 
-  function isLunaProxyUrl(rawUrl: string) {
-    try {
-      const base = typeof window !== 'undefined' ? window.location.href : 'http://local';
-      const parsed = new URL(rawUrl, base);
-      return (
-        typeof window !== 'undefined' &&
-        parsed.origin === window.location.origin &&
-        parsed.pathname.startsWith('/api/proxy/')
-      );
-    } catch {
-      return false;
-    }
-  }
-
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
       const load = this.load.bind(this);
       this.load = function (context: any, config: any, callbacks: any) {
-        // 只给自己的代理请求加 source 参数，避免污染外部 CDN URL
-        if (isLunaProxyUrl(context.url)) {
-          try {
-            const url = new URL(context.url, window.location.href);
-            url.searchParams.set('moontv-source', currentSourceRef.current?.key || '');
-            context.url = url.toString();
-          } catch {
-            // ignore
-          }
+        // 所有的请求都带一个 source 参数
+        try {
+          const url = new URL(context.url);
+          url.searchParams.set('moontv-source', currentSourceRef.current?.key || '');
+          context.url = url.toString();
+        } catch (error) {
+          // ignore
         }
         // 拦截manifest和level请求
         if (
@@ -1682,15 +1662,16 @@ function LivePageClient() {
           (context as any).type === 'level'
         ) {
           // 判断是否浏览器直连
-          const isLiveDirectConnectStr = localStorage.getItem(LIVE_DIRECT_CONNECT_STORAGE_KEY);
+          const isLiveDirectConnectStr = localStorage.getItem('liveDirectConnect');
           const isLiveDirectConnect = isLiveDirectConnectStr === 'true';
-          if (isLiveDirectConnect && isLunaProxyUrl(context.url)) {
+          if (isLiveDirectConnect) {
             // 浏览器直连，使用 URL 对象处理参数
             try {
               const url = new URL(context.url);
               url.searchParams.set('allowCORS', 'true');
               context.url = url.toString();
-            } catch {
+            } catch (error) {
+              // 如果 URL 解析失败，回退到字符串拼接
               context.url = context.url + '&allowCORS=true';
             }
           }
@@ -2190,6 +2171,7 @@ function LivePageClient() {
         artPlayerRef.current.on('ready', () => {
           setError(null);
           setIsVideoLoading(false);
+          setUnsupportedType(null);
 
           // 延迟检测是否支持 DVR/时移回放（仅在未启用DVR模式时检测）
           if (!enableDvrMode) {
@@ -2541,7 +2523,7 @@ function LivePageClient() {
                     setDirectPlaybackEnabled(newValue);
                     // 保存到 localStorage
                     if (typeof window !== 'undefined') {
-                      localStorage.setItem(LIVE_DIRECT_CONNECT_STORAGE_KEY, JSON.stringify(newValue));
+                      localStorage.setItem('live-direct-playback-enabled', JSON.stringify(newValue));
                     }
                     // useEffect 会自动检测 directPlaybackEnabled 的变化并重新加载播放器
                   }}
@@ -3153,7 +3135,7 @@ function LivePageClient() {
                               const enabled = e.target.checked;
                               setDirectPlaybackEnabled(enabled);
                               if (typeof window !== 'undefined') {
-                                localStorage.setItem(LIVE_DIRECT_CONNECT_STORAGE_KEY, JSON.stringify(enabled));
+                                localStorage.setItem('live-direct-playback-enabled', JSON.stringify(enabled));
                               }
                             }}
                             className='rounded text-green-500 focus:ring-green-500'
