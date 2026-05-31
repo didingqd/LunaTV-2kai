@@ -251,6 +251,107 @@ div[data-media-provider] video {
   object-fit: contain;
 }
 
+/* 🔧 修改点：复刻 LunaTV 快进快退边缘按钮层，挂载到 ArtPlayer 内以兼容普通/网页全屏/全屏 */
+.moontv-seek-side-controls-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+/* 🔧 修改点：复刻 LunaTV 快进快退按钮尺寸、位置、透明黑底与液态玻璃样式 */
+.moontv-seek-side-controls-layer .moontv-seek-side-controls {
+  position: absolute;
+  top: 39%;
+  transform: translateY(-50%);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  min-width: 52px;
+  height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.34);
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: opacity 0.18s ease, visibility 0.18s ease,
+    background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls:hover {
+  background: rgba(0, 0, 0, 0.42);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls:active {
+  background: rgba(0, 0, 0, 0.46);
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls--left {
+  left: 12px;
+}
+
+.moontv-seek-side-controls-layer .moontv-seek-side-controls--right {
+  right: 12px;
+}
+
+/* 🔧 修改点：复刻 LunaTV 单手模式，同侧上下排列快进/快退 */
+.moontv-seek-side-controls-layer[data-hand-mode='left']
+  .moontv-seek-side-controls--forward {
+  left: 12px;
+  right: auto;
+  top: calc(39% - 39px);
+}
+
+.moontv-seek-side-controls-layer[data-hand-mode='left']
+  .moontv-seek-side-controls--rewind {
+  left: 12px;
+  right: auto;
+  top: 39%;
+}
+
+.moontv-seek-side-controls-layer[data-hand-mode='right']
+  .moontv-seek-side-controls--forward {
+  right: 12px;
+  left: auto;
+  top: calc(39% - 39px);
+}
+
+.moontv-seek-side-controls-layer[data-hand-mode='right']
+  .moontv-seek-side-controls--rewind {
+  right: 12px;
+  left: auto;
+  top: 39%;
+}
+
+/* 🔧 修改点：复刻 LunaTV 锁定态处理，避免锁定按钮与边缘快进快退重叠 */
+.artplayer .art-control-lock {
+  transform: translateY(45px);
+}
+
+.artplayer.art-lock .art-bottom,
+.artplayer.art-lock .art-controls,
+.artplayer.art-lock .art-progress,
+.artplayer.art-lock .art-control-thumbnails {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* VideoCard 光泽扫过动画 - 使用 @property 优化 */
 @keyframes card-shimmer {
   to {
