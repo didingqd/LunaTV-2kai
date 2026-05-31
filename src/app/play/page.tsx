@@ -77,6 +77,35 @@ import {
 const PLAYER_PLAYBACK_RATE_KEY = 'moontv_player_playback_rate';
 const PREFERRED_AUDIO_LANG_KEY = 'preferred_audio_lang';
 
+// 🔧 修改点：复刻 LunaTV 快进快退配置模型，保持布局、秒数档位与 localStorage key 完全一致
+type SeekLayoutMode = 'off' | 'both' | 'left' | 'right';
+const SEEK_SECONDS_OPTIONS = [5, 10, 15, 30] as const;
+
+function sanitizeSeekLayoutMode(value: string | null): SeekLayoutMode {
+  if (value === 'off' || value === 'both' || value === 'left' || value === 'right') {
+    return value;
+  }
+  return 'both';
+}
+
+function sanitizeSeekSeconds(value: string | null): number {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 120) {
+    return Math.floor(parsed);
+  }
+  return 10;
+}
+
+function loadSeekLayoutMode(): SeekLayoutMode {
+  if (typeof window === 'undefined') return 'both';
+  return sanitizeSeekLayoutMode(localStorage.getItem('seek_layout_mode'));
+}
+
+function loadSeekSeconds(): number {
+  if (typeof window === 'undefined') return 10;
+  return sanitizeSeekSeconds(localStorage.getItem('seek_seconds'));
+}
+
 function sanitizePlaybackRate(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
   const allowedRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
@@ -287,6 +316,12 @@ function PlayPageClient() {
   const [manualDanmuOverrides, setManualDanmuOverrides] = useState<Record<string, DanmuManualSelection>>({});
   const [, setDanmuSettingsVersion] = useState(0);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+
+  // 🔧 修改点：复刻 LunaTV 快进快退状态，使用 seek_layout_mode / seek_seconds 持久化配置
+  const [seekLayoutMode, setSeekLayoutMode] = useState<SeekLayoutMode>(() => loadSeekLayoutMode());
+  const [seekSeconds, setSeekSeconds] = useState<number>(() => loadSeekSeconds());
+  const seekLayoutModeRef = useRef<SeekLayoutMode>(seekLayoutMode);
+  const seekSecondsRef = useRef<number>(seekSeconds);
 
   // WebSR 设置面板状态
   const [isWebSRSettingsPanelOpen, setIsWebSRSettingsPanelOpen] = useState(false);
@@ -670,6 +705,8 @@ function PlayPageClient() {
     availableSourcesRef.current = availableSources;
     audioTracksRef.current = audioTracks;
     currentAudioTrackRef.current = currentAudioTrack;
+    seekLayoutModeRef.current = seekLayoutMode;
+    seekSecondsRef.current = seekSeconds;
   }, [
     blockAdEnabled,
     customAdFilterCode,
@@ -685,6 +722,8 @@ function PlayPageClient() {
     availableSources,
     audioTracks,
     currentAudioTrack,
+    seekLayoutMode,
+    seekSeconds,
   ]);
 
   // 🎬 更新全屏标题层内容（集数变化时）
@@ -3707,6 +3746,95 @@ function PlayPageClient() {
     }
   };
 
+  // 🔧 修改点：复刻 LunaTV 快进快退逻辑，按钮和键盘共用同一套秒数与边界钳制
+  const applySeekDelta = (deltaSeconds: number) => {
+    if (!artPlayerRef.current) return;
+
+    const currentTime = Number(artPlayerRef.current.currentTime) || 0;
+    const duration = Number(artPlayerRef.current.duration) || 0;
+    const targetTime =
+      duration > 0
+        ? Math.max(0, Math.min(duration, currentTime + deltaSeconds))
+        : Math.max(0, currentTime + deltaSeconds);
+
+    artPlayerRef.current.currentTime = targetTime;
+
+    const absSeconds = Math.abs(deltaSeconds);
+    artPlayerRef.current.notice.show = `${
+      deltaSeconds >= 0 ? '快进' : '快退'
+    } ${absSeconds} 秒`;
+  };
+
+  const handleSeekForward = () => {
+    applySeekDelta(seekSecondsRef.current);
+  };
+
+  const handleSeekRewind = () => {
+    applySeekDelta(-seekSecondsRef.current);
+  };
+
+  const getSeekLayoutModeLabel = (mode: SeekLayoutMode) => {
+    if (mode === 'off') return '关闭';
+    if (mode === 'left') return '左手';
+    if (mode === 'right') return '右手';
+    return '双手';
+  };
+
+  const getSeekLayoutSelectorOptions = (mode: SeekLayoutMode) => [
+    { html: '关闭', value: 'off', default: mode === 'off' },
+    { html: '双手', value: 'both', default: mode === 'both' },
+    { html: '左手', value: 'left', default: mode === 'left' },
+    { html: '右手', value: 'right', default: mode === 'right' },
+  ];
+
+  const getSeekSecondsSelectorOptions = (seconds: number) =>
+    SEEK_SECONDS_OPTIONS.map((option) => ({
+      html: `${option} 秒`,
+      value: option,
+      default: option === seconds,
+    }));
+
+  const syncSeekSettingsPanel = (mode: SeekLayoutMode, seconds: number) => {
+    if (!artPlayerRef.current?.setting) return;
+
+    artPlayerRef.current.setting.update({
+      name: '快进快退布局',
+      html: '快进快退布局',
+      tooltip: getSeekLayoutModeLabel(mode),
+      selector: getSeekLayoutSelectorOptions(mode),
+      onSelect: function (item: any) {
+        const value = item?.value;
+        const nextMode =
+          value === 'off' || value === 'both' || value === 'left' || value === 'right'
+            ? (value as SeekLayoutMode)
+            : seekLayoutModeRef.current;
+
+        localStorage.setItem('seek_layout_mode', nextMode);
+        setSeekLayoutMode(nextMode);
+        syncSeekSettingsPanel(nextMode, seekSecondsRef.current);
+        return getSeekLayoutModeLabel(nextMode);
+      },
+    });
+
+    artPlayerRef.current.setting.update({
+      name: '快进快退秒数',
+      html: '快进快退秒数',
+      tooltip: `${seconds} 秒`,
+      selector: getSeekSecondsSelectorOptions(seconds),
+      onSelect: function (item: any) {
+        const value = Number(item?.value);
+        const nextSeconds = SEEK_SECONDS_OPTIONS.includes(value as 5 | 10 | 15 | 30)
+          ? value
+          : seekSecondsRef.current;
+
+        localStorage.setItem('seek_seconds', String(nextSeconds));
+        setSeekSeconds(nextSeconds);
+        syncSeekSettingsPanel(seekLayoutModeRef.current, nextSeconds);
+        return `${nextSeconds} 秒`;
+      },
+    });
+  };
+
   // ---------------------------------------------------------------------------
   // 键盘快捷键
   // ---------------------------------------------------------------------------
@@ -3739,19 +3867,16 @@ function PlayPageClient() {
 
     // 左箭头 = 快退
     if (!e.altKey && e.key === 'ArrowLeft') {
-      if (artPlayerRef.current && artPlayerRef.current.currentTime > 5) {
-        artPlayerRef.current.currentTime -= 10;
+      if (seekLayoutModeRef.current !== 'off') {
+        applySeekDelta(-seekSecondsRef.current);
         e.preventDefault();
       }
     }
 
     // 右箭头 = 快进
     if (!e.altKey && e.key === 'ArrowRight') {
-      if (
-        artPlayerRef.current &&
-        artPlayerRef.current.currentTime < artPlayerRef.current.duration - 5
-      ) {
-        artPlayerRef.current.currentTime += 10;
+      if (seekLayoutModeRef.current !== 'off') {
+        applySeekDelta(seekSecondsRef.current);
         e.preventDefault();
       }
     }
@@ -4678,7 +4803,43 @@ function PlayPageClient() {
             },
           },
           {
+            // 🔧 修改点：复刻 LunaTV 的快进快退布局设置项
+            name: '快进快退布局',
+            html: '快进快退布局',
+            tooltip: getSeekLayoutModeLabel(seekLayoutModeRef.current),
+            selector: getSeekLayoutSelectorOptions(seekLayoutModeRef.current),
+            onSelect: function (item: any) {
+              const value = item?.value;
+              const nextMode =
+                value === 'off' || value === 'both' || value === 'left' || value === 'right'
+                  ? (value as SeekLayoutMode)
+                  : seekLayoutModeRef.current;
+              localStorage.setItem('seek_layout_mode', nextMode);
+              setSeekLayoutMode(nextMode);
+              syncSeekSettingsPanel(nextMode, seekSecondsRef.current);
+              return getSeekLayoutModeLabel(nextMode);
+            },
+          },
+          {
+            // 🔧 修改点：复刻 LunaTV 的快进快退秒数设置项，固定 5/10/15/30 档位
+            name: '快进快退秒数',
+            html: '快进快退秒数',
+            tooltip: `${seekSecondsRef.current} 秒`,
+            selector: getSeekSecondsSelectorOptions(seekSecondsRef.current),
+            onSelect: function (item: any) {
+              const value = Number(item?.value);
+              const nextSeconds = SEEK_SECONDS_OPTIONS.includes(value as 5 | 10 | 15 | 30)
+                ? value
+                : seekSecondsRef.current;
+              localStorage.setItem('seek_seconds', String(nextSeconds));
+              setSeekSeconds(nextSeconds);
+              syncSeekSettingsPanel(seekLayoutModeRef.current, nextSeconds);
+              return `${nextSeconds} 秒`;
+            },
+          },
+          {
             name: '外部弹幕',
+
             html: '外部弹幕',
             icon: '<text x="50%" y="50%" font-size="14" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">外</text>',
             tooltip: externalDanmuEnabled ? '外部弹幕已开启' : '外部弹幕已关闭',
@@ -5061,6 +5222,9 @@ function PlayPageClient() {
         if (video) {
           video.style.objectFit = savedObjectFit;
         }
+
+        // 🔧 修改点：播放器 ready 后同步快进快退设置面板，确保刷新后 tooltip/选中态正确
+        syncSeekSettingsPanel(seekLayoutModeRef.current, seekSecondsRef.current);
 
         // 🎨 应用保存的控制栏视觉设置（仅保留背景遮挡度，移除毛玻璃强度控制）
         const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
@@ -6188,6 +6352,129 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                {/* 🔧 修改点：复刻 LunaTV 快进快退边缘按钮，使用源仓库同款布局/样式容器 */}
+                {seekLayoutMode !== 'off' &&
+                  (portalContainer ? createPortal(
+                    <div
+                      className='moontv-seek-side-controls-layer'
+                      data-hand-mode={seekLayoutMode === 'both' ? 'both' : seekLayoutMode}
+                    >
+                      {(seekLayoutMode === 'both' || seekLayoutMode === 'left') && (
+                        <>
+                          <button
+                            type='button'
+                            className={`moontv-seek-side-controls ${
+                              seekLayoutMode === 'both'
+                                ? 'moontv-seek-side-controls--rewind moontv-seek-side-controls--left'
+                                : 'moontv-seek-side-controls--rewind'
+                            }`}
+                            onClick={handleSeekRewind}
+                            aria-label={`快退 ${seekSeconds} 秒`}
+                          >
+                            {`↺${seekSeconds}`}
+                          </button>
+                          {seekLayoutMode === 'left' && (
+                            <button
+                              type='button'
+                              className='moontv-seek-side-controls moontv-seek-side-controls--forward'
+                              onClick={handleSeekForward}
+                              aria-label={`快进 ${seekSeconds} 秒`}
+                            >
+                              {`↻${seekSeconds}`}
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {(seekLayoutMode === 'both' || seekLayoutMode === 'right') && (
+                        <>
+                          <button
+                            type='button'
+                            className={`moontv-seek-side-controls ${
+                              seekLayoutMode === 'both'
+                                ? 'moontv-seek-side-controls--forward moontv-seek-side-controls--right'
+                                : 'moontv-seek-side-controls--forward'
+                            }`}
+                            onClick={handleSeekForward}
+                            aria-label={`快进 ${seekSeconds} 秒`}
+                          >
+                            {`↻${seekSeconds}`}
+                          </button>
+                          {seekLayoutMode === 'right' && (
+                            <button
+                              type='button'
+                              className='moontv-seek-side-controls moontv-seek-side-controls--rewind'
+                              onClick={handleSeekRewind}
+                              aria-label={`快退 ${seekSeconds} 秒`}
+                            >
+                              {`↺${seekSeconds}`}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>,
+                    portalContainer,
+                  ) : (
+                    <div
+                      className='moontv-seek-side-controls-layer'
+                      data-hand-mode={seekLayoutMode === 'both' ? 'both' : seekLayoutMode}
+                    >
+                      {(seekLayoutMode === 'both' || seekLayoutMode === 'left') && (
+                        <>
+                          <button
+                            type='button'
+                            className={`moontv-seek-side-controls ${
+                              seekLayoutMode === 'both'
+                                ? 'moontv-seek-side-controls--rewind moontv-seek-side-controls--left'
+                                : 'moontv-seek-side-controls--rewind'
+                            }`}
+                            onClick={handleSeekRewind}
+                            aria-label={`快退 ${seekSeconds} 秒`}
+                          >
+                            {`↺${seekSeconds}`}
+                          </button>
+                          {seekLayoutMode === 'left' && (
+                            <button
+                              type='button'
+                              className='moontv-seek-side-controls moontv-seek-side-controls--forward'
+                              onClick={handleSeekForward}
+                              aria-label={`快进 ${seekSeconds} 秒`}
+                            >
+                              {`↻${seekSeconds}`}
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {(seekLayoutMode === 'both' || seekLayoutMode === 'right') && (
+                        <>
+                          <button
+                            type='button'
+                            className={`moontv-seek-side-controls ${
+                              seekLayoutMode === 'both'
+                                ? 'moontv-seek-side-controls--forward moontv-seek-side-controls--right'
+                                : 'moontv-seek-side-controls--forward'
+                            }`}
+                            onClick={handleSeekForward}
+                            aria-label={`快进 ${seekSeconds} 秒`}
+                          >
+                            {`↻${seekSeconds}`}
+                          </button>
+                          {seekLayoutMode === 'right' && (
+                            <button
+                              type='button'
+                              className='moontv-seek-side-controls moontv-seek-side-controls--rewind'
+                              onClick={handleSeekRewind}
+                              aria-label={`快退 ${seekSeconds} 秒`}
+                            >
+                              {`↺${seekSeconds}`}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
 
                 {/* WebSR 分屏对比分割线 */}
                 {websrEnabled && websrCompareEnabled && (
