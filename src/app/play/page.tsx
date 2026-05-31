@@ -4380,27 +4380,10 @@ function PlayPageClient() {
       // 重新启用5.3.0内存优化功能，但使用false参数避免清空DOM
       Artplayer.REMOVE_SRC_WHEN_DESTROY = true;
 
-      // 🔧 修改点：将控制栏“背景遮挡度”和“毛玻璃强度”拆成两个独立设置，避免单一数值同时影响背景透明度和模糊强度
+      // 🔧 修改点：控制栏仅保留背景遮挡度设置，移除毛玻璃强度联动，保证背景样式保持纯透明底层
       const getControlBarOpacity = () => {
         const savedOpacity = parseFloat(localStorage.getItem('control_bar_opacity') || '0.5');
         return Number.isNaN(savedOpacity) ? 0.5 : savedOpacity;
-      };
-      const getControlBarBlur = () => {
-        const savedBlur = localStorage.getItem('control_bar_blur');
-        if (savedBlur !== null) {
-          const parsedBlur = parseFloat(savedBlur);
-          if (!Number.isNaN(parsedBlur)) {
-            return Math.max(0, parsedBlur);
-          }
-        }
-
-        return Math.max(0, getControlBarOpacity() * 15);
-      };
-      const ensureControlBarBlurSetting = () => {
-        const savedBlur = localStorage.getItem('control_bar_blur');
-        if (savedBlur === null || Number.isNaN(parseFloat(savedBlur))) {
-          localStorage.setItem('control_bar_blur', String(getControlBarBlur()));
-        }
       };
       const isControlBarFullscreenMode = () => {
         const player = artPlayerRef.current?.template?.$player;
@@ -4413,10 +4396,9 @@ function PlayPageClient() {
         if (!liquidGlass) return;
 
         const opacity = getControlBarOpacity();
-        const blurAmount = getControlBarBlur();
 
         if (isFullscreen) {
-          // 全屏时继续沿用渐变 + 阴影，避免 backdrop-filter 叠加导致布局问题
+          // 全屏时继续沿用渐变 + 阴影，仅保留背景遮挡度，不再叠加毛玻璃模糊
           liquidGlass.style.setProperty('backdrop-filter', 'none', 'important');
           liquidGlass.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
           liquidGlass.style.setProperty('background-color', 'transparent', 'important');
@@ -4433,8 +4415,9 @@ function PlayPageClient() {
           return;
         }
 
-        liquidGlass.style.setProperty('backdrop-filter', `blur(${blurAmount}px)`, 'important');
-        liquidGlass.style.setProperty('-webkit-backdrop-filter', `blur(${blurAmount}px)`, 'important');
+        // 非全屏保持纯透明毛玻璃底：只调背景遮挡度，不再应用 blur
+        liquidGlass.style.setProperty('backdrop-filter', 'none', 'important');
+        liquidGlass.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         liquidGlass.style.setProperty('background-color', `rgba(0, 0, 0, ${opacity})`, 'important');
         liquidGlass.style.setProperty('background-image', 'none', 'important');
         liquidGlass.style.setProperty('box-shadow', 'none', 'important');
@@ -4801,31 +4784,6 @@ function PlayPageClient() {
               return `${Math.round(opacity * 100)}%`;
             },
           },
-          {
-            name: '控制栏毛玻璃强度',
-            html: '控制栏毛玻璃强度',
-            icon: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M2 12h20"></path><path d="m4.93 4.93 14.14 14.14"></path><path d="m19.07 4.93-14.14 14.14"></path></svg>',
-            tooltip: (() => {
-              const blur = getControlBarBlur();
-              return `${Math.round(blur)}px`;
-            })(),
-            range: [
-              getControlBarBlur(),
-              0,
-              15,
-              1
-            ],
-            onChange: function (item: any) {
-              const blur = item.range[0];
-              localStorage.setItem('control_bar_blur', blur.toString());
-
-              // 🔧 修改点：毛玻璃强度独立控制 blur，全屏时仅保存设置，退出全屏后自动生效
-              const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
-              applyControlBarVisualSettings(liquidGlass, isControlBarFullscreenMode());
-
-              return `${Math.round(blur)}px`;
-            },
-          },
           ...(webGPUSupported ? [
             {
               name: '超分设置',
@@ -5104,8 +5062,7 @@ function PlayPageClient() {
           video.style.objectFit = savedObjectFit;
         }
 
-        // 🎨 应用保存的控制栏视觉设置（背景遮挡度 + 毛玻璃强度）
-        ensureControlBarBlurSetting();
+        // 🎨 应用保存的控制栏视觉设置（仅保留背景遮挡度，移除毛玻璃强度控制）
         const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
         applyControlBarVisualSettings(liquidGlass, false);
 
@@ -5787,7 +5744,7 @@ function PlayPageClient() {
             clockLayer.style.display = isFullscreenWeb ? 'flex' : 'none';
           }
 
-        // 🔧 修改点：网页全屏也同步控制栏视觉设置，确保背景遮挡度与毛玻璃强度一致
+        // 🔧 修改点：网页全屏也同步控制栏背景遮挡度，保持全屏与普通模式一致
         const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
         if (liquidGlass) {
           applyControlBarVisualSettings(liquidGlass, isFullscreenWeb);
