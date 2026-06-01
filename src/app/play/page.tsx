@@ -4712,49 +4712,6 @@ function PlayPageClient() {
       // 重新启用5.3.0内存优化功能，但使用false参数避免清空DOM
       Artplayer.REMOVE_SRC_WHEN_DESTROY = true;
 
-      // 🔧 修改点：控制栏仅保留背景遮挡度设置，移除毛玻璃强度联动，保证背景样式保持纯透明底层
-      const getControlBarOpacity = () => {
-        const savedOpacity = parseFloat(localStorage.getItem('control_bar_opacity') || '0.5');
-        return Number.isNaN(savedOpacity) ? 0.5 : savedOpacity;
-      };
-      const isControlBarFullscreenMode = () => {
-        const player = artPlayerRef.current?.template?.$player;
-        return Boolean(
-          player?.classList.contains('art-fullscreen') ||
-            player?.classList.contains('art-fullscreen-web')
-        );
-      };
-      const applyControlBarVisualSettings = (liquidGlass: HTMLElement | null, isFullscreen = false) => {
-        if (!liquidGlass) return;
-
-        const opacity = getControlBarOpacity();
-
-        if (isFullscreen) {
-          // 全屏时继续沿用渐变 + 阴影，仅保留背景遮挡度，不再叠加毛玻璃模糊
-          liquidGlass.style.setProperty('backdrop-filter', 'none', 'important');
-          liquidGlass.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-          liquidGlass.style.setProperty('background-color', 'transparent', 'important');
-          liquidGlass.style.setProperty(
-            'background-image',
-            `linear-gradient(to top, rgba(0, 0, 0, ${opacity}), rgba(0, 0, 0, ${opacity * 0.6}), transparent)`,
-            'important',
-          );
-          liquidGlass.style.setProperty(
-            'box-shadow',
-            `0 -10px 30px rgba(0, 0, 0, ${opacity * 0.8})`,
-            'important',
-          );
-          return;
-        }
-
-        // 非全屏保持纯透明毛玻璃底：只调背景遮挡度，不再应用 blur
-        liquidGlass.style.setProperty('backdrop-filter', 'none', 'important');
-        liquidGlass.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        liquidGlass.style.setProperty('background-color', `rgba(0, 0, 0, ${opacity})`, 'important');
-        liquidGlass.style.setProperty('background-image', 'none', 'important');
-        liquidGlass.style.setProperty('box-shadow', 'none', 'important');
-      };
-
 
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
@@ -5199,31 +5156,6 @@ function PlayPageClient() {
               return modeNames[mode] || item.html;
             },
           },
-          {
-            name: '控制栏背景遮挡度',
-            html: '控制栏背景遮挡度',
-            icon: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 9h18M9 21V9"></path></svg>',
-            tooltip: (() => {
-              const opacity = getControlBarOpacity();
-              return `${Math.round(opacity * 100)}%`;
-            })(),
-            range: [
-              getControlBarOpacity(),
-              0.0,
-              0.8,
-              0.1
-            ],
-            onChange: function (item: any) {
-              const opacity = item.range[0];
-              localStorage.setItem('control_bar_opacity', opacity.toString());
-
-              // 🔧 修改点：背景遮挡度只控制黑色底层，不再联动毛玻璃模糊强度
-              const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
-              applyControlBarVisualSettings(liquidGlass, isControlBarFullscreenMode());
-
-              return `${Math.round(opacity * 100)}%`;
-            },
-          },
           ...(webGPUSupported ? [
             {
               name: '超分设置',
@@ -5507,10 +5439,6 @@ function PlayPageClient() {
 
         // 🔧 修改点：播放器 ready 后同步快进快退设置面板，确保刷新后 tooltip/选中态正确
         syncSeekSettingsPanel(seekLayoutModeRef.current, seekSecondsRef.current);
-
-        // 🎨 应用保存的控制栏视觉设置（仅保留背景遮挡度，移除毛玻璃强度控制）
-        const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
-        applyControlBarVisualSettings(liquidGlass, false);
 
         // 添加分辨率徽章layer
         artPlayerRef.current.layers.add({
@@ -6167,12 +6095,6 @@ function PlayPageClient() {
             clockLayer.style.display = isFullscreen ? 'flex' : 'none';
           }
 
-        // 🔧 修改点：全屏状态与普通状态共用同一套控制栏视觉逻辑，避免背景和毛玻璃不同步
-        const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
-        if (liquidGlass) {
-          applyControlBarVisualSettings(liquidGlass, isFullscreen);
-        }
-
         if (isFullscreen) {
           // 进入全屏后，延迟100ms触发控制栏自动隐藏
           setTimeout(() => {
@@ -6193,12 +6115,6 @@ function PlayPageClient() {
           if (clockLayer) {
             clockLayer.style.display = isFullscreenWeb ? 'flex' : 'none';
           }
-
-        // 🔧 修改点：网页全屏也同步控制栏背景遮挡度，保持全屏与普通模式一致
-        const liquidGlass = artPlayerRef.current?.template?.$player?.querySelector('.art-liquid-glass') as HTMLElement | null;
-        if (liquidGlass) {
-          applyControlBarVisualSettings(liquidGlass, isFullscreenWeb);
-        }
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
@@ -6546,7 +6462,7 @@ function PlayPageClient() {
     }
   }, []);
 
-  // 🔧 修改点：复刻源仓库锁定态长按三倍速结束逻辑，松手后恢复原始倍速
+  // 🔧 修改点：复刻源仓库锁定态长按三倍速结束逻辑，松手后恢复原始倍速并提示视频恢复正常
   const stopLockedLongPressRate = useCallback(() => {
     clearLockedLongPressTimer();
     lockedLongPressTouchIdRef.current = null;
@@ -6562,7 +6478,7 @@ function PlayPageClient() {
       if (Math.abs(player.playbackRate - restoreRate) > 0.01) {
         player.playbackRate = restoreRate;
       }
-      player.notice.show = '';
+      player.notice.show = '视频：正常';
     }
 
     isLockedLongPressActiveRef.current = false;

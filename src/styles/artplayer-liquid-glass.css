@@ -12,31 +12,29 @@
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom {
   align-items: center;
   background-image: none;
+  /* 修改点：移除排查阶段的强制覆盖，恢复常规透明背景 */
+  background-color: transparent;
   padding-bottom: var(--art-padding);
 }
 
 .artplayer-plugin-liquid-glass.art-control-show .art-bottom .art-liquid-glass {
   border-radius: 8px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  background-color: rgba(0, 0, 0, 0.25);
+  /* 修改点：关闭背景模糊，避免控制栏弹出时把字幕一起模糊 */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  /* 修改点：保留轻微暗色底，提高按钮可读性但不影响字幕清晰度 */
+  background-color: rgba(0, 0, 0, 0.35);
   padding: var(--art-padding) calc(var(--art-padding) * 1.5) 5px;
 }
 
-/* 全屏模式：使用渐变 + 阴影模拟毛玻璃效果，避免 backdrop-filter 的 stacking context 问题 */
-/* 注意：不使用 !important，允许 JavaScript 动态调整透明度 */
+/* 全屏模式：使用固定样式，不再依赖运行时动态透明度注入 */
 .artplayer-plugin-liquid-glass:fullscreen .art-liquid-glass,
 .artplayer-plugin-liquid-glass.art-fullscreen .art-liquid-glass {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  background-image: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.85),
-    rgba(0, 0, 0, 0.5),
-    transparent
-  );
-  background-color: transparent;
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+  background-image: none;
+  background-color: rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 
 .artplayer-plugin-liquid-glass.art-control-show .art-settings {
