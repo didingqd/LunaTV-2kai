@@ -153,7 +153,6 @@ pnpm dev
 ### Advanced Configuration
 - 🔧 [Proxy Config](docs/advanced/PROXY_CONFIG.md)
 - 🚫 [Ad Filter](docs/advanced/CUSTOM_AD_FILTER.md)
-- ⏭️ [Skip Controller](docs/advanced/SKIP_CONTROLLER_GUIDE.md)
 
 ## 🔧 Tech Stack
 

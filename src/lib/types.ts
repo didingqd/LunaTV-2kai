@@ -1,5 +1,12 @@
 import { AdminConfig } from './admin.types';
 
+// 源仓库风格的跳过片头片尾配置
+export interface SkipConfig {
+  enable: boolean; // 是否启用跳过片头片尾
+  intro_time: number; // 片头结束时间（秒）
+  outro_time: number; // 片尾开始前的剩余时间（负数秒）
+}
+
 // 崩溃日志数据结构
 export interface CrashLog {
   timestamp: string;
@@ -180,15 +187,15 @@ export interface IStorage {
     userName: string,
     source: string,
     id: string
-  ): Promise<EpisodeSkipConfig | null>;
+  ): Promise<SkipConfig | null>;
   setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig
+    config: SkipConfig
   ): Promise<void>;
   deleteSkipConfig(userName: string, source: string, id: string): Promise<void>;
-  getAllSkipConfigs(userName: string): Promise<{ [key: string]: EpisodeSkipConfig }>;
+  getAllSkipConfigs(userName: string): Promise<{ [key: string]: SkipConfig }>;
 
   // 数据清理相关
   clearAllData(): Promise<void>;
@@ -310,27 +317,28 @@ export interface DoubanCommentsResult {
   };
 }
 
-// ---- 跳过配置（多片段支持）----
+// ---- 跳过配置（播放页菜单模式）----
 
-// 单个跳过片段
-export interface SkipSegment {
-  start: number; // 开始时间（秒）
-  end: number; // 结束时间（秒）
-  type: 'opening' | 'ending'; // 片头或片尾
-  title?: string; // 可选的描述
-  autoSkip?: boolean; // 是否自动跳过（默认true）
-  autoNextEpisode?: boolean; // 片尾是否自动跳转下一集（默认true，仅对ending类型有效）
-  mode?: 'absolute' | 'remaining'; // 时间模式：absolute=绝对时间，remaining=剩余时间
-  remainingTime?: number; // 剩余时间（秒），仅在mode=remaining时有效
+// 跳过配置（与源仓库一致：单视频的片头/片尾时间配置）
+export interface SkipConfig {
+  enable: boolean; // 是否启用跳过片头片尾
+  intro_time: number; // 片头结束时间（秒）
+  outro_time: number; // 片尾开始前的剩余时间（负数秒）
 }
 
-// 剧集跳过配置
-export interface EpisodeSkipConfig {
-  source: string; // 资源站标识
-  id: string; // 剧集ID
-  title: string; // 剧集标题
-  segments: SkipSegment[]; // 跳过片段列表
-  updated_time: number; // 最后更新时间
+// 向后兼容旧命名
+export type EpisodeSkipConfig = SkipConfig;
+
+// 旧片段类型保留为兼容导出，避免历史代码引用时报错
+export interface SkipSegment {
+  start: number;
+  end: number;
+  type: 'opening' | 'ending';
+  title?: string;
+  autoSkip?: boolean;
+  autoNextEpisode?: boolean;
+  mode?: 'absolute' | 'remaining';
+  remainingTime?: number;
 }
 
 // 用户播放统计数据结构

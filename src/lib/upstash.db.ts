@@ -12,6 +12,7 @@ import {
   PlayRecord,
   PlayStatsResult,
   Reminder,
+  SkipConfig,
   UserPlayStat,
 } from './types';
 
@@ -575,18 +576,18 @@ export class UpstashRedisStorage implements IStorage {
     userName: string,
     source: string,
     id: string
-  ): Promise<EpisodeSkipConfig | null> {
+  ): Promise<SkipConfig | null> {
     const val = await withRetry(() =>
       this.client.hget(this.skipHashKey(userName), this.skipField(source, id))
     );
-    return val ? (val as EpisodeSkipConfig) : null;
+    return val ? (val as SkipConfig) : null;
   }
 
   async setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig
+    config: SkipConfig
   ): Promise<void> {
     await withRetry(() =>
       this.client.hset(this.skipHashKey(userName), {
@@ -607,19 +608,19 @@ export class UpstashRedisStorage implements IStorage {
 
   async getAllSkipConfigs(
     userName: string
-  ): Promise<{ [key: string]: EpisodeSkipConfig }> {
+  ): Promise<{ [key: string]: SkipConfig }> {
     const all = await withRetry(() =>
       this.client.hgetall(this.skipHashKey(userName))
     );
     if (!all || Object.keys(all).length === 0) return {};
-    const configs: { [key: string]: EpisodeSkipConfig } = {};
+    const configs: { [key: string]: SkipConfig } = {};
     for (const [field, value] of Object.entries(all)) {
-      if (value) configs[field] = value as EpisodeSkipConfig;
+      if (value) configs[field] = value as SkipConfig;
     }
     return configs;
   }
 
-  // ---------- 剧集跳过配置（新版，多片段支持）----------
+  // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------
   private episodeSkipHashKey(user: string) {
     return `u:${user}:episodeskip`; // 一个用户的所有剧集跳过配置存在一个 Hash 中
   }

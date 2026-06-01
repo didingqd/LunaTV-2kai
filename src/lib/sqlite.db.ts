@@ -15,6 +15,7 @@ import {
   PlayRecord,
   PlayStatsResult,
   Reminder,
+  SkipConfig,
   UserPlayStat,
 } from './types';
 
@@ -632,20 +633,20 @@ export class SqliteStorage implements IStorage {
     userName: string,
     source: string,
     id: string,
-  ): Promise<EpisodeSkipConfig | null> {
+  ): Promise<SkipConfig | null> {
     const row = this.db
       .prepare(
         'SELECT value FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
       .get(userName, source, id) as { value: string } | undefined;
-    return row ? (JSON.parse(row.value) as EpisodeSkipConfig) : null;
+    return row ? (JSON.parse(row.value) as SkipConfig) : null;
   }
 
   async setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig,
+    config: SkipConfig,
   ): Promise<void> {
     this.db
       .prepare(
@@ -668,20 +669,20 @@ export class SqliteStorage implements IStorage {
 
   async getAllSkipConfigs(
     userName: string,
-  ): Promise<Record<string, EpisodeSkipConfig>> {
+  ): Promise<Record<string, SkipConfig>> {
     const rows = this.db
       .prepare('SELECT source, id, value FROM skip_configs WHERE username = ?')
       .all(userName) as Array<{ source: string; id: string; value: string }>;
-    const result: Record<string, EpisodeSkipConfig> = {};
+    const result: Record<string, SkipConfig> = {};
     for (const row of rows) {
       result[this.skipField(row.source, row.id)] = JSON.parse(
         row.value,
-      ) as EpisodeSkipConfig;
+      ) as SkipConfig;
     }
     return result;
   }
 
-  // ==================== 剧集跳过配置（新版，多片段支持）====================
+  // ==================== 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）====================
 
   async getEpisodeSkipConfig(
     userName: string,

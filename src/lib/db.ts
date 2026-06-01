@@ -12,6 +12,7 @@ import {
   PlayRecord,
   PlayStatsResult,
   Reminder,
+  SkipConfig,
   UserPlayStat,
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
@@ -381,7 +382,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string
-  ): Promise<EpisodeSkipConfig | null> {
+  ): Promise<SkipConfig | null> {
     incrementDbQuery();
     if (typeof (this.storage as any).getSkipConfig === 'function') {
       return (this.storage as any).getSkipConfig(userName, source, id);
@@ -393,7 +394,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig
+    config: SkipConfig
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).setSkipConfig === 'function') {
@@ -414,7 +415,7 @@ export class DbManager {
 
   async getAllSkipConfigs(
     userName: string
-  ): Promise<{ [key: string]: EpisodeSkipConfig }> {
+  ): Promise<{ [key: string]: SkipConfig }> {
     incrementDbQuery();
     if (typeof (this.storage as any).getAllSkipConfigs === 'function') {
       return (this.storage as any).getAllSkipConfigs(userName);
@@ -422,7 +423,7 @@ export class DbManager {
     return {};
   }
 
-  // ---------- 剧集跳过配置（新版，多片段支持）----------
+  // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------
   async getEpisodeSkipConfig(
     userName: string,
     source: string,

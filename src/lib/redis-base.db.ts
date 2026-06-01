@@ -8,10 +8,11 @@ import {
   ContentStat,
   EpisodeSkipConfig,
   Favorite,
-  Reminder,
   IStorage,
   PlayRecord,
   PlayStatsResult,
+  Reminder,
+  SkipConfig,
   UserPlayStat,
 } from './types';
 
@@ -657,18 +658,18 @@ export abstract class BaseRedisStorage implements IStorage {
     userName: string,
     source: string,
     id: string
-  ): Promise<EpisodeSkipConfig | null> {
+  ): Promise<SkipConfig | null> {
     const val = await this.withRetry(() =>
       this.client.hGet(this.skipHashKey(userName), this.skipField(source, id))
     );
-    return val ? (JSON.parse(val) as EpisodeSkipConfig) : null;
+    return val ? (JSON.parse(val) as SkipConfig) : null;
   }
 
   async setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig
+    config: SkipConfig
   ): Promise<void> {
     await this.withRetry(() =>
       this.client.hSet(this.skipHashKey(userName), this.skipField(source, id), JSON.stringify(config))
@@ -687,18 +688,18 @@ export abstract class BaseRedisStorage implements IStorage {
 
   async getAllSkipConfigs(
     userName: string
-  ): Promise<{ [key: string]: EpisodeSkipConfig }> {
+  ): Promise<{ [key: string]: SkipConfig }> {
     const all = await this.withRetry(() =>
       this.client.hGetAll(this.skipHashKey(userName))
     );
-    const configs: { [key: string]: EpisodeSkipConfig } = {};
+    const configs: { [key: string]: SkipConfig } = {};
     for (const [field, raw] of Object.entries(all)) {
-      if (raw) configs[field] = JSON.parse(raw) as EpisodeSkipConfig;
+      if (raw) configs[field] = JSON.parse(raw) as SkipConfig;
     }
     return configs;
   }
 
-  // ---------- 剧集跳过配置（新版，多片段支持）----------
+  // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------
   private episodeSkipHashKey(user: string) {
     return `u:${user}:episodeskip`; // 一个用户的所有剧集跳过配置存在一个 Hash 中
   }

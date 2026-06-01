@@ -21,7 +21,6 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import NetDiskSearchResults from '@/components/NetDiskSearchResults';
 import AcgSearch from '@/components/AcgSearch';
 import PageLayout from '@/components/PageLayout';
-import SkipController, { SkipSettingsButton } from '@/components/SkipController';
 import VideoCard from '@/components/VideoCard';
 import CommentSection from '@/components/play/CommentSection';
 import DownloadButtons from '@/components/play/DownloadButtons';
@@ -46,12 +45,15 @@ import { ClientCache } from '@/lib/client-cache';
 import {
   deleteFavorite,
   deletePlayRecord,
+  deleteSkipConfig,
   generateStorageKey,
   getAllFavorites,
   getAllPlayRecords,
+  getSkipConfig,
   isFavorited,
   saveFavorite,
   savePlayRecord,
+  saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
@@ -305,17 +307,29 @@ function PlayPageClient() {
   const [celebrityWorks, setCelebrityWorks] = useState<any[]>([]);
   const [loadingCelebrityWorks, setLoadingCelebrityWorks] = useState(false);
 
-  // SkipController 相关状态
-  const [isSkipSettingOpen, setIsSkipSettingOpen] = useState(false);
-  const [currentPlayTime, setCurrentPlayTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
-
   // 弹幕设置面板状态
   const [isDanmuSettingsPanelOpen, setIsDanmuSettingsPanelOpen] = useState(false);
   const [isDanmuManualModalOpen, setIsDanmuManualModalOpen] = useState(false);
   const [manualDanmuOverrides, setManualDanmuOverrides] = useState<Record<string, DanmuManualSelection>>({});
   const [, setDanmuSettingsVersion] = useState(0);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+
+  // 🔧 修改点：复刻 LunaTV 跳过片头片尾配置状态，改为播放页菜单驱动的单视频配置
+  const [skipConfig, setSkipConfig] = useState<{
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  }>({
+    enable: false,
+    intro_time: 0,
+    outro_time: 0,
+  });
+  const skipConfigRef = useRef(skipConfig);
+  const lastSkipCheckRef = useRef(0);
+  const isSkipNextEpisodeTriggeredRef = useRef<boolean>(false);
+  useEffect(() => {
+    skipConfigRef.current = skipConfig;
+  }, [skipConfig]);
 
   // 🔧 修改点：复刻 LunaTV 快进快退状态，使用 seek_layout_mode / seek_seconds 持久化配置
   const [seekLayoutMode, setSeekLayoutMode] = useState<SeekLayoutMode>(() => loadSeekLayoutMode());
@@ -626,6 +640,19 @@ function PlayPageClient() {
       setNeedPrefer(false);
       setPlayerReady(false);
 
+      // 复刻 LunaTV 跳过片头片尾配置：切换视频时先重置当前菜单态，随后按当前视频重新读取
+      setSkipConfig({
+        enable: false,
+        intro_time: 0,
+        outro_time: 0,
+      });
+      skipConfigRef.current = {
+        enable: false,
+        intro_time: 0,
+        outro_time: 0,
+      };
+      lastSkipCheckRef.current = 0;
+
       // 触发重新加载（通过更新 reloadTrigger 来触发 initAll 重新执行）
       setReloadTrigger(prev => prev + 1);
     }
@@ -724,6 +751,7 @@ function PlayPageClient() {
     currentAudioTrack,
     seekLayoutMode,
     seekSeconds,
+    skipConfig,
   ]);
 
   // 🎬 更新全屏标题层内容（集数变化时）
@@ -1029,7 +1057,6 @@ function PlayPageClient() {
   const episodeSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSourceChangingRef = useRef<boolean>(false); // 标记是否正在换源
   const isEpisodeChangingRef = useRef<boolean>(false); // 标记是否正在切换集数
-  const isSkipControllerTriggeredRef = useRef<boolean>(false); // 标记是否通过 SkipController 触发了下一集
   const videoEndedHandledRef = useRef<boolean>(false); // 🔥 标记当前视频的 video:ended 事件是否已经被处理过（防止多个监听器重复触发）
 
   // 🚀 新增：连续切换源防抖和资源管理
@@ -1077,8 +1104,8 @@ function PlayPageClient() {
   usePrefetchNextEpisode({
     detail,
     currentEpisodeIndex,
-    currentTime: currentPlayTime,
-    duration: videoDuration,
+    currentTime: 0,
+    duration: 0,
     source: currentSource,
     id: currentId,
   });
@@ -2822,6 +2849,146 @@ function PlayPageClient() {
     }
   };
 
+  // 🔧 修改点：复刻 LunaTV 跳过配置菜单同步与保存逻辑，替代旧跳过浮层设置
+  const syncSkipSettingsPanel = (config: {
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  }) => {
+    if (!artPlayerRef.current?.setting) return;
+
+    artPlayerRef.current.setting.update({
+      name: '跳过片头片尾',
+      html: '跳过片头片尾',
+      switch: config.enable,
+      onSwitch: function (item: any) {
+        const nextConfig = {
+          ...skipConfigRef.current,
+          enable: !item.switch,
+        };
+        handleSkipConfigChange(nextConfig);
+        return !item.switch;
+      },
+    });
+
+    artPlayerRef.current.setting.update({
+      name: '设置片头',
+      html: '设置片头',
+      icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
+      tooltip:
+        config.intro_time === 0
+          ? '设置片头时间'
+          : `${formatTime(config.intro_time)}`,
+      onClick: function () {
+        const currentTime = artPlayerRef.current?.currentTime || 0;
+        if (currentTime > 0) {
+          const nextConfig = {
+            ...skipConfigRef.current,
+            intro_time: currentTime,
+          };
+          handleSkipConfigChange(nextConfig);
+          return `${formatTime(currentTime)}`;
+        }
+      },
+    });
+
+    artPlayerRef.current.setting.update({
+      name: '设置片尾',
+      html: '设置片尾',
+      icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
+      tooltip:
+        config.outro_time >= 0
+          ? '设置片尾时间'
+          : `-${formatTime(-config.outro_time)}`,
+      onClick: function () {
+        const outroTime =
+          -(
+            artPlayerRef.current?.duration -
+            artPlayerRef.current?.currentTime
+          ) || 0;
+        if (outroTime < 0) {
+          const nextConfig = {
+            ...skipConfigRef.current,
+            outro_time: outroTime,
+          };
+          handleSkipConfigChange(nextConfig);
+          return `-${formatTime(-outroTime)}`;
+        }
+      },
+    });
+  };
+
+  const handleSkipConfigChange = async (newConfig: {
+    enable: boolean;
+    intro_time: number;
+    outro_time: number;
+  }) => {
+    if (!currentSourceRef.current || !currentIdRef.current) return;
+
+    try {
+      setSkipConfig(newConfig);
+      skipConfigRef.current = newConfig;
+
+      if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
+        await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
+      } else {
+        await saveSkipConfig(
+          currentSourceRef.current,
+          currentIdRef.current,
+          newConfig
+        );
+      }
+
+      syncSkipSettingsPanel(newConfig);
+      console.log('跳过片头片尾配置已保存:', newConfig);
+    } catch (err) {
+      console.error('保存跳过片头片尾配置失败:', err);
+    }
+  };
+
+  const applySkipLogic = () => {
+    if (!skipConfigRef.current.enable || !artPlayerRef.current) return;
+
+    const currentTime = artPlayerRef.current.currentTime || 0;
+    const duration = artPlayerRef.current.duration || 0;
+    const now = Date.now();
+
+    // 限制跳过检查频率为1.5秒一次
+    if (now - lastSkipCheckRef.current < 1500) return;
+    lastSkipCheckRef.current = now;
+
+    // 跳过片头
+    if (
+      skipConfigRef.current.intro_time > 0 &&
+      currentTime < skipConfigRef.current.intro_time
+    ) {
+      artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
+      artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
+        skipConfigRef.current.intro_time
+      )})`;
+    }
+
+    // 跳过片尾
+    if (
+      skipConfigRef.current.outro_time < 0 &&
+      duration > 0 &&
+      currentTime > artPlayerRef.current.duration + skipConfigRef.current.outro_time
+    ) {
+      if (
+        currentEpisodeIndexRef.current <
+        (detailRef.current?.episodes?.length || 1) - 1
+      ) {
+        isSkipNextEpisodeTriggeredRef.current = true;
+        handleNextEpisode();
+      } else {
+        artPlayerRef.current.pause();
+      }
+      artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
+        skipConfigRef.current.outro_time
+      )})`;
+    }
+  };
+
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
@@ -2858,12 +3025,11 @@ function PlayPageClient() {
     // 🔥 标记正在切换集数（只在非换源时）
     if (!isSourceChangingRef.current) {
       isEpisodeChangingRef.current = true;
-      // 🔥 关键修复：延迟重置 SkipController 触发标志，避免新集数立即触发跳过
-      // 给 SkipController 的冷却时间（3秒）足够的时间来防止重复触发
+      // 🔧 修改点：复刻 LunaTV 跳过逻辑后保留冷却重置，避免片尾自动切集与 video:ended 重复触发
       setTimeout(() => {
-        isSkipControllerTriggeredRef.current = false;
+        isSkipNextEpisodeTriggeredRef.current = false;
         console.log('✅ 延迟重置自动跳过标志，允许新集数自动跳过片头片尾');
-      }, 3500); // 比 SkipController 的冷却时间（3000ms）稍长
+      }, 3500);
       videoEndedHandledRef.current = false;
       console.log('🔄 开始切换集数');
     }
@@ -3420,6 +3586,28 @@ function PlayPageClient() {
     initFromHistory();
   }, []);
 
+  // 🔧 修改点：复刻 LunaTV 跳过配置逻辑，读取当前视频配置并同步到 ArtPlayer 菜单
+  useEffect(() => {
+    const initSkipConfig = async () => {
+      if (!currentSource || !currentId) return;
+
+      try {
+        const config = await getSkipConfig(currentSource, currentId);
+        if (config) {
+          setSkipConfig({
+            enable: Boolean(config.enable),
+            intro_time: Number(config.intro_time) || 0,
+            outro_time: Number(config.outro_time) || 0,
+          });
+        }
+      } catch (err) {
+        console.error('读取跳过片头片尾配置失败:', err);
+      }
+    };
+
+    initSkipConfig();
+  }, []);
+
   // 🚀 优化的换源处理（防连续点击）
   const handleSourceChange = async (
     newSource: string,
@@ -3733,15 +3921,15 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
-      // 🔥 关键修复：通过 SkipController 自动跳下一集时，不保存播放进度
+      // 🔥 关键修复：通过跳过片尾自动切下一集时，不保存片尾进度
       // 因为此时的播放位置是片尾，用户并没有真正看到这个位置
       // 如果保存了片尾的进度，下次"继续观看"会从片尾开始，导致进度错误
       // if (artPlayerRef.current && !artPlayerRef.current.paused) {
       //   saveCurrentPlayProgress();
       // }
 
-      // 🔑 标记通过 SkipController 触发了下一集
-      isSkipControllerTriggeredRef.current = true;
+      // 🔑 标记通过跳过片尾触发了下一集
+      isSkipNextEpisodeTriggeredRef.current = true;
       setCurrentEpisodeIndex(idx + 1);
     }
   };
@@ -4838,6 +5026,78 @@ function PlayPageClient() {
             },
           },
           {
+            // 🔧 修改点：复刻 LunaTV 的播放页菜单式跳过片头片尾开关
+            name: '跳过片头片尾',
+            html: '跳过片头片尾',
+            switch: skipConfigRef.current.enable,
+            onSwitch: function (item: any) {
+              const nextConfig = {
+                ...skipConfigRef.current,
+                enable: !item.switch,
+              };
+              handleSkipConfigChange(nextConfig);
+              return !item.switch;
+            },
+          },
+          {
+            // 🔧 修改点：复刻 LunaTV 的删除跳过配置菜单项
+            html: '删除跳过配置',
+            onClick: function () {
+              handleSkipConfigChange({
+                enable: false,
+                intro_time: 0,
+                outro_time: 0,
+              });
+              return '';
+            },
+          },
+          {
+            // 🔧 修改点：复刻 LunaTV 的设置片头菜单项，以当前播放时间作为片头结束时间
+            name: '设置片头',
+            html: '设置片头',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
+            tooltip:
+              skipConfigRef.current.intro_time === 0
+                ? '设置片头时间'
+                : `${formatTime(skipConfigRef.current.intro_time)}`,
+            onClick: function () {
+              const currentTime = artPlayerRef.current?.currentTime || 0;
+              if (currentTime > 0) {
+                const nextConfig = {
+                  ...skipConfigRef.current,
+                  intro_time: currentTime,
+                };
+                handleSkipConfigChange(nextConfig);
+                return `${formatTime(currentTime)}`;
+              }
+            },
+          },
+          {
+            // 🔧 修改点：复刻 LunaTV 的设置片尾菜单项，以距离结尾的负数秒保存
+            name: '设置片尾',
+            html: '设置片尾',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
+            tooltip:
+              skipConfigRef.current.outro_time >= 0
+                ? '设置片尾时间'
+                : `-${formatTime(-skipConfigRef.current.outro_time)}`,
+            onClick: function () {
+              const outroTime =
+                -(
+                  artPlayerRef.current?.duration -
+                  artPlayerRef.current?.currentTime
+                ) || 0;
+              if (outroTime < 0) {
+                const nextConfig = {
+                  ...skipConfigRef.current,
+                  outro_time: outroTime,
+                };
+                handleSkipConfigChange(nextConfig);
+                return `-${formatTime(-outroTime)}`;
+              }
+            },
+          },
+          {
             name: '外部弹幕',
 
             html: '外部弹幕',
@@ -5209,10 +5469,13 @@ function PlayPageClient() {
       // 设置 Portal 容器为 ArtPlayer 的 $player 元素（全屏时只有该元素可见）
       setPortalContainer(artPlayerRef.current.template.$player);
 
-      // 监听播放器事件
+      // 🔧 修改点：复刻 LunaTV 的播放器就绪回调，同步跳过菜单状态并恢复当前视频配置
       artPlayerRef.current.on('ready', async () => {
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
+
+        // 播放器就绪后同步跳过菜单状态，确保当前视频的开关/时间显示正确
+        syncSkipSettingsPanel(skipConfigRef.current);
 
         // 使用ArtPlayer layers API添加分辨率徽章（带渐变和发光效果）
         const video = artPlayerRef.current.video as HTMLVideoElement;
@@ -6066,41 +6329,17 @@ function PlayPageClient() {
 
       // 监听视频播放结束事件，自动播放下一集
       artPlayerRef.current.on('video:ended', () => {
-        const idx = currentEpisodeIndexRef.current;
-
-        // 🔥 关键修复：首先检查这个 video:ended 事件是否已经被处理过
-        if (videoEndedHandledRef.current) {
-          return;
-        }
-
-        // 🔑 检查是否已经通过 SkipController 触发了下一集，避免重复触发
-        if (isSkipControllerTriggeredRef.current) {
-          videoEndedHandledRef.current = true;
-          // 🔥 关键修复：延迟重置标志，等待新集数开始加载
-          setTimeout(() => {
-            isSkipControllerTriggeredRef.current = false;
-          }, 2000);
-          return;
-        }
-
-        const d = detailRef.current;
-        if (d && d.episodes && idx < d.episodes.length - 1) {
-          videoEndedHandledRef.current = true;
-          setTimeout(() => {
-            setCurrentEpisodeIndex(idx + 1);
-          }, 1000);
-        }
+        releaseWakeLock();
       });
 
-      // 合并的timeupdate监听器 - 处理跳过片头片尾和保存进度
+      // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
         const now = performance.now(); // 使用performance.now()更精确
 
-        // 更新 SkipController 所需的时间信息
-        setCurrentPlayTime(currentTime);
-        setVideoDuration(duration);
+        // 更新跳过逻辑所需的时间信息
+        applySkipLogic();
 
         // 保存播放进度逻辑 - 优化保存间隔以减少网络开销
         const saveNow = Date.now();
@@ -6522,31 +6761,6 @@ function PlayPageClient() {
                       ↔
                     </div>
                   </div>
-                )}
-
-                {/* 跳过设置按钮 - 播放器内右上角 */}
-                {currentSource && currentId && (
-                  <div className='absolute top-4 right-4 z-10'>
-                    <SkipSettingsButton onClick={() => setIsSkipSettingOpen(true)} />
-                  </div>
-                )}
-
-                {/* SkipController 组件 */}
-                {currentSource && currentId && detail?.title && (
-                  <SkipController
-                    source={currentSource}
-                    id={currentId}
-                    title={detail.title}
-                    doubanId={videoDoubanId}
-                    year={videoYear}
-                    episodeIndex={currentEpisodeIndex}
-                    artPlayerRef={artPlayerRef}
-                    currentTime={currentPlayTime}
-                    duration={videoDuration}
-                    isSettingMode={isSkipSettingOpen}
-                    onSettingModeChange={setIsSkipSettingOpen}
-                    onNextEpisode={handleNextEpisode}
-                  />
                 )}
 
                 {/* 换源加载蒙层 */}

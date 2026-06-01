@@ -182,8 +182,8 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(errorResponse, { status: 400 });
         }
 
-        // 验证配置数据结构
-        if (!config.source || !config.id || !config.title || !Array.isArray(config.segments)) {
+        // 验证配置数据结构：源仓库风格只保留 enable / intro_time / outro_time
+        if (typeof config.enable !== 'boolean') {
           const errorResponse = { error: '配置数据格式错误' };
           const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -202,34 +202,13 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(errorResponse, { status: 400 });
         }
 
-        // 验证片段数据
-        for (const segment of config.segments) {
-          if (
-            typeof segment.start !== 'number' ||
-            typeof segment.end !== 'number' ||
-            segment.start >= segment.end ||
-            !['opening', 'ending'].includes(segment.type)
-          ) {
-            const errorResponse = { error: '片段数据格式错误' };
-            const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
+        const normalizedConfig: EpisodeSkipConfig = {
+          enable: Boolean(config.enable),
+          intro_time: Number(config.intro_time) || 0,
+          outro_time: Number(config.outro_time) || 0,
+        };
 
-            recordRequest({
-              timestamp: startTime,
-              method: 'POST',
-              path: '/api/skipconfigs',
-              statusCode: 400,
-              duration: Date.now() - startTime,
-              memoryUsed: (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
-              dbQueries: getDbQueryCount(),
-              requestSize,
-              responseSize: errorSize,
-            });
-
-            return NextResponse.json(errorResponse, { status: 400 });
-          }
-        }
-
-        await db.setSkipConfig(finalUsername, resolved.source, resolved.id, config as EpisodeSkipConfig);
+        await db.setSkipConfig(finalUsername, resolved.source, resolved.id, normalizedConfig);
         const successResponse = { success: true };
         const responseSize = Buffer.byteLength(JSON.stringify(successResponse), 'utf8');
 
