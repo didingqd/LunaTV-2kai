@@ -23,7 +23,6 @@ import { GlobalCacheProvider } from '../contexts/GlobalCacheContext';
 import { DownloadPanel } from '../components/download/DownloadPanel';
 import ChatFloatingWindow from '../components/watch-room/ChatFloatingWindow';
 import QueryProvider from '../components/QueryProvider';
-import { CinematicLoadingFallback } from '../components/CinematicLoadingFallback';
 import RouteWarmup from '../components/RouteWarmup';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -174,11 +173,8 @@ export default async function RootLayout({
                     {/* 主内容区域 - 只有这部分会在路由切换时重新渲染 */}
                     <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
                       <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
-                        <Suspense fallback={
-                          <div className="fixed inset-0 z-50">
-                            <CinematicLoadingFallback />
-                          </div>
-                        }>
+                        {/* 修改点：全站不再展示 cinematic loading 页面，保留 Suspense 边界但回退改为空 */}
+                        <Suspense fallback={null}>
                           {children}
                         </Suspense>
                       </div>
