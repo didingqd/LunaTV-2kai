@@ -80,13 +80,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
     }
 
-    // 验证配置格式
+    // 修改点：旧 episode-skip-config 路由也收敛到新的 SkipConfig 结构，避免构建时类型不匹配
     const episodeSkipConfig: EpisodeSkipConfig = {
-      source: String(config.source),
-      id: String(config.id),
-      title: String(config.title),
-      segments: Array.isArray(config.segments) ? config.segments : [],
-      updated_time: Number(config.updated_time) || Date.now(),
+      enable: Boolean(config.enable),
+      intro_time: Number(config.intro_time) || 0,
+      outro_time: Number(config.outro_time) || 0,
     };
 
     await db.saveEpisodeSkipConfig(authInfo.username, source, id, episodeSkipConfig);
