@@ -3,9 +3,10 @@
 'use client';
 
 import { Box, Cat, Clover, Film, Globe, Home, PlaySquare, Radio, Star, Tv } from 'lucide-react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { FastLink } from './FastLink';
 
 // 简单的 className 合并函数
 function cn(...classes: (string | boolean | undefined | null)[]): string {
@@ -232,12 +233,9 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
           const Icon = item.icon;
 
           return (
-            <Link
+            <FastLink
               key={item.href}
               href={item.href}
-              ref={(el) => {
-                itemRefs.current[index] = el;
-              }}
               className={cn(
                 // Netflix 风格：竖向布局
                 'flex flex-col items-center justify-center',
@@ -246,6 +244,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 'transition-all duration-200',
                 'active:scale-95',
               )}
+              aria-label={item.label}
             >
               <Icon
                 className={cn(
@@ -263,7 +262,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
               >
                 {item.label}
               </span>
-            </Link>
+            </FastLink>
           );
         })}
       </div>

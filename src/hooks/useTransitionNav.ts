@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { startTransition, useCallback } from 'react';
 
+import { shouldUseBrowserAssignNavigation } from '@/lib/browser-navigation';
+
 /**
  * useTransitionNav - Hook for non-blocking navigation
  *
@@ -23,6 +25,12 @@ export function useTransitionNav() {
 
   const navigate = useCallback(
     (href: string) => {
+      // 修改点：统一过渡导航也遵循“浏览器直跳”本地设置，尽量扩大常用站内跳转覆盖范围
+      if (shouldUseBrowserAssignNavigation({ href })) {
+        window.location.assign(href);
+        return;
+      }
+
       startTransition(() => {
         router.push(href);
       });

@@ -14,6 +14,7 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { shouldUseBrowserAssignNavigation } from '@/lib/browser-navigation';
 import { SearchResult } from '@/lib/types';
 
 // ─── streamedQuery 类型 ───────────────────────────────────────────────────────
@@ -284,7 +285,14 @@ function SearchPageClient() {
       <button
         key={item.key}
         type='button'
-        onClick={() => router.push(itemUrl)}
+        onClick={() => {
+          // 修改点：搜索结果常用入口接入统一浏览器直跳策略，优先覆盖 /play 与 /douban 相关进入链路
+          if (shouldUseBrowserAssignNavigation({ href: itemUrl })) {
+            window.location.assign(itemUrl);
+            return;
+          }
+          router.push(itemUrl);
+        }}
         className='group w-full rounded-2xl border border-gray-200/80 bg-white/90 p-3 text-left shadow-sm transition-all hover:border-green-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-900/70 dark:hover:border-green-700'
       >
         <div className='flex items-start gap-4'>

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ClientCache } from '@/lib/client-cache';
+import { shouldUseBrowserAssignNavigation } from '@/lib/browser-navigation';
 import PageLayout from '@/components/PageLayout';
 import type { DoubanItem, SearchResult as GlobalSearchResult } from '@/lib/types';
 
@@ -605,7 +606,13 @@ export default function SourceBrowserPage() {
     if (mergedYear) params.set('year', mergedYear);
     if (previewDoubanId) params.set('douban_id', String(previewDoubanId));
     params.set('prefer', 'true');
-    router.push(`/play?${params.toString()}`);
+    const url = `/play?${params.toString()}`;
+    // 修改点：源浏览器常用进入播放页链路接入统一浏览器直跳策略
+    if (shouldUseBrowserAssignNavigation({ href: url })) {
+      window.location.assign(url);
+      return;
+    }
+    router.push(url);
   };
 
   return (

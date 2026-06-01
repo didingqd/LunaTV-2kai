@@ -3,8 +3,7 @@
 'use client';
 
 import { Cat, Clover, Film, Globe, Home, Menu, PlaySquare, Radio, Search, Star, Tv } from 'lucide-react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   createContext,
   useCallback,
@@ -15,6 +14,7 @@ import {
 } from 'react';
 
 import { useSite } from './SiteProvider';
+import { FastLink } from './FastLink';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -30,7 +30,7 @@ export const useSidebar = () => useContext(SidebarContext);
 const Logo = () => {
   const { siteName } = useSite();
   return (
-    <Link
+    <FastLink
       href='/'
       className='flex items-center justify-center h-16 select-none group'
     >
@@ -42,7 +42,7 @@ const Logo = () => {
           {siteName}
         </span>
       </div>
-    </Link>
+    </FastLink>
   );
 };
 
@@ -59,7 +59,6 @@ declare global {
 }
 
 const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   // 若同一次 SPA 会话中已经读取过折叠状态，则直接复用，避免闪烁
@@ -120,10 +119,6 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
     }
     onToggle?.(newState);
   }, [isCollapsed, onToggle]);
-
-  const handleSearchClick = useCallback(() => {
-    router.push('/search');
-  }, [router]);
 
   const contextValue = {
     isCollapsed,
@@ -224,12 +219,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
 
             {/* 首页和搜索导航 */}
             <nav className='px-2 mt-4 space-y-1'>
-              <Link
+              <FastLink
                 href='/'
                 onClick={() => setActive('/')}
-                data-active={active === '/'}
                 className={`group relative flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-linear-to-r hover:from-green-50 hover:to-emerald-50 hover:text-green-600 data-[active=true]:bg-linear-to-r data-[active=true]:from-green-500/20 data-[active=true]:to-emerald-500/20 data-[active=true]:text-green-700 font-medium transition-all duration-200 min-h-[40px] dark:text-gray-300 dark:hover:from-green-500/10 dark:hover:to-emerald-500/10 dark:hover:text-green-400 dark:data-[active=true]:from-green-500/15 dark:data-[active=true]:to-emerald-500/15 dark:data-[active=true]:text-green-400 ${isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                   } gap-3 justify-start hover:shadow-md hover:shadow-green-500/10 data-[active=true]:shadow-lg data-[active=true]:shadow-green-500/20`}
+                aria-label='首页'
               >
                 <div className='w-4 h-4 flex items-center justify-center relative z-10'>
                   <Home className='h-4 w-4 text-gray-500 group-hover:text-green-600 data-[active=true]:text-green-700 dark:text-gray-400 dark:group-hover:text-green-400 dark:data-[active=true]:text-green-400 transition-all duration-200 group-hover:scale-110' />
@@ -241,17 +236,16 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 )}
                 {/* 激活状态的左侧边框指示器 */}
                 <div className='absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-linear-to-b from-green-500 to-emerald-500 rounded-r-full transition-all duration-200 data-[active=true]:h-8 opacity-0 data-[active=true]:opacity-100' data-active={active === '/'}></div>
-              </Link>
-              <Link
+              </FastLink>
+              <FastLink
                 href='/search'
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleSearchClick();
+                onClick={() => {
+                  // 修改点：侧边栏常用搜索入口统一走 FastLink，按设置切换浏览器直跳
                   setActive('/search');
                 }}
-                data-active={active === '/search'}
                 className={`group relative flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-linear-to-r hover:from-blue-50 hover:to-cyan-50 hover:text-blue-600 data-[active=true]:bg-linear-to-r data-[active=true]:from-blue-500/20 data-[active=true]:to-cyan-500/20 data-[active=true]:text-blue-700 font-medium transition-all duration-200 min-h-[40px] dark:text-gray-300 dark:hover:from-blue-500/10 dark:hover:to-cyan-500/10 dark:hover:text-blue-400 dark:data-[active=true]:from-blue-500/15 dark:data-[active=true]:to-cyan-500/15 dark:data-[active=true]:text-blue-400 ${isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                   } gap-3 justify-start hover:shadow-md hover:shadow-blue-500/10 data-[active=true]:shadow-lg data-[active=true]:shadow-blue-500/20`}
+                aria-label='搜索'
               >
                 <div className='w-4 h-4 flex items-center justify-center relative z-10'>
                   <Search className='h-4 w-4 text-gray-500 group-hover:text-blue-600 data-[active=true]:text-blue-700 dark:text-gray-400 dark:group-hover:text-blue-400 dark:data-[active=true]:text-blue-400 transition-all duration-200 group-hover:scale-110' />
@@ -263,7 +257,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 )}
                 {/* 激活状态的左侧边框指示器 */}
                 <div className='absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-linear-to-b from-blue-500 to-cyan-500 rounded-r-full transition-all duration-200 data-[active=true]:h-8 opacity-0 data-[active=true]:opacity-100' data-active={active === '/search'}></div>
-              </Link>
+              </FastLink>
             </nav>
 
             {/* 菜单项 */}
@@ -298,13 +292,13 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                   const theme = colorThemes[index] || colorThemes[0];
 
                   return (
-                    <Link
+                    <FastLink
                       key={item.label}
                       href={item.href}
                       onClick={() => setActive(item.href)}
-                      data-active={isActive}
                       className={`group relative flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-linear-to-r ${theme.hover} ${theme.active} ${theme.text} transition-all duration-200 min-h-[40px] dark:text-gray-300 ${isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                         } gap-3 justify-start hover:shadow-md ${theme.shadow} animate-[slideInFromLeft_0.3s_ease-out] opacity-0`}
+                      aria-label={item.label}
                       style={{
                         animation: `slideInFromLeft 0.3s ease-out ${index * 0.05}s forwards`,
                       }}
@@ -319,7 +313,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                       )}
                       {/* 激活状态的左侧边框指示器 */}
                       <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-linear-to-b ${theme.border} rounded-r-full transition-all duration-200 data-[active=true]:h-8 opacity-0 data-[active=true]:opacity-100`} data-active={isActive}></div>
-                    </Link>
+                    </FastLink>
                   );
                 })}
               </div>

@@ -3,8 +3,8 @@
 
 import { ChevronLeft, ChevronRight, Info, Play, Volume2, VolumeX } from 'lucide-react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useEffect, useState, useRef, useCallback, memo } from 'react';
+import { FastLink } from './FastLink';
 import { useAutoplay } from './hooks/useAutoplay';
 import { useSwipeGesture } from './hooks/useSwipeGesture';
 // 🚀 TanStack Query Queries & Mutations
@@ -523,7 +523,7 @@ function HeroBanner({
 
           {/* 操作按钮 - Netflix风格 */}
           <div className="flex gap-3 sm:gap-4 pt-2">
-            <Link
+            <FastLink
               href={
                 currentItem.type === 'shortdrama'
                   ? `/play?title=${encodeURIComponent(currentItem.title)}&shortdrama_id=${currentItem.id}`
@@ -533,8 +533,8 @@ function HeroBanner({
             >
               <Play className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" fill="currentColor" />
               <span>播放</span>
-            </Link>
-            <Link
+            </FastLink>
+            <FastLink
               href={
                 currentItem.type === 'shortdrama'
                   ? '/shortdrama'
@@ -546,7 +546,7 @@ function HeroBanner({
             >
               <Info className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7" />
               <span>更多信息</span>
-            </Link>
+            </FastLink>
           </div>
         </div>
       </div>

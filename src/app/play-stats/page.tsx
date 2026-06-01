@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronUp } from 'lucide-react';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
 import { PlayRecord, ReleaseCalendarItem } from '@/lib/types';
 import type { WatchingUpdate } from '@/hooks/useWatchingUpdates';
 
@@ -269,8 +270,19 @@ const PlayStatsPage: React.FC = () => {
       stype: record.total_episodes > 1 ? 'tv' : 'movie',
     });
 
-    router.push(`/play?${params.toString()}`);
+    navigateWithBrowserPreference({
+      href: `/play?${params.toString()}`,
+      routerPush: (href) => router.push(href),
+    });
   };
+
+  // 修改点：播放统计页补充常用发布日历入口统一跳转，开启设置后优先走浏览器直跳
+  const handleReleaseCalendar = useCallback(() => {
+    navigateWithBrowserPreference({
+      href: '/release-calendar',
+      routerPush: (href) => router.push(href),
+    });
+  }, [router]);
 
   // 检查是否支持播放统计
   const storageType =
@@ -1226,7 +1238,7 @@ const PlayStatsPage: React.FC = () => {
                         </p>
                       </div>
                       <button
-                        onClick={() => router.push('/release-calendar')}
+                        onClick={handleReleaseCalendar}
                         className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2"
                       >
                         <span>查看全部</span>
@@ -1826,7 +1838,7 @@ const PlayStatsPage: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => router.push('/release-calendar')}
+                    onClick={handleReleaseCalendar}
                     className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2"
                   >
                     <span>查看全部</span>

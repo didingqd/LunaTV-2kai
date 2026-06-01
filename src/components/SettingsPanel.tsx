@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 
 import { UserEmbyConfig } from './UserEmbyConfig';
 import { useEmbyConfigQuery } from '@/hooks/useUserMenuQueries';
+import { BROWSER_NAVIGATION_PREFERENCE_KEY } from '@/lib/browser-navigation';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -97,6 +98,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const [enableContinueWatchingFilter, setEnableContinueWatchingFilter] = useState(false);
   const [requireClearConfirmation, setRequireClearConfirmation] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<'TS' | 'MP4'>('TS');
+  const [preferLocationAssignNavigation, setPreferLocationAssignNavigation] = useState(false);
   const [exactSearch, setExactSearch] = useState(true);
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] = useState(false);
@@ -126,6 +128,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setContinueWatchingMaxProgress(readLS('continueWatchingMaxProgress', 100));
     setEnableContinueWatchingFilter(readLS('enableContinueWatchingFilter', false));
     setRequireClearConfirmation(readLS('requireClearConfirmation', false));
+    // 修改点：新增浏览器直跳本地开关，供常用站内链接按需切换为 window.location.assign
+    setPreferLocationAssignNavigation(readLS(BROWSER_NAVIGATION_PREFERENCE_KEY, false));
     const fmt = localStorage.getItem('downloadFormat');
     if (fmt === 'TS' || fmt === 'MP4') setDownloadFormat(fmt);
     const es = localStorage.getItem('exactSearch');
@@ -145,6 +149,10 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const handleFluidSearchToggle = set(setFluidSearch, 'fluidSearch');
   const handleLiveDirectConnectToggle = set(setLiveDirectConnect, 'liveDirectConnect');
   const handleRequireClearConfirmationToggle = set(setRequireClearConfirmation, 'requireClearConfirmation');
+  const handlePreferLocationAssignNavigationToggle = set(
+    setPreferLocationAssignNavigation,
+    BROWSER_NAVIGATION_PREFERENCE_KEY,
+  );
   const handleDownloadFormatChange = set<'TS' | 'MP4'>(setDownloadFormat, 'downloadFormat', false);
   const handleExactSearchToggle = (v: boolean) => { setExactSearch(v); localStorage.setItem('exactSearch', String(v)); };
   const handleDoubanProxyUrlChange = (v: string) => { setDoubanProxyUrl(v); localStorage.setItem('doubanProxyUrl', v); };
@@ -181,6 +189,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setEnableContinueWatchingFilter(false);
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
+    setPreferLocationAssignNavigation(false);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
     localStorage.setItem('enableOptimization', JSON.stringify(false));
@@ -196,6 +205,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem('continueWatchingMaxProgress', '100');
     localStorage.setItem('enableContinueWatchingFilter', JSON.stringify(false));
     localStorage.setItem('requireClearConfirmation', JSON.stringify(false));
+    // 修改点：恢复默认时同步关闭浏览器直跳，确保默认仍保持当前 SPA 跳转体验
+    localStorage.setItem(BROWSER_NAVIGATION_PREFERENCE_KEY, JSON.stringify(false));
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
   };
@@ -489,6 +500,14 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                 <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>开启 IPTV 视频浏览器直连时，需要自备 Allow CORS 插件</p>
               </div>
               <Toggle checked={liveDirectConnect} onChange={handleLiveDirectConnectToggle} />
+            </div>
+
+            <div className='flex items-center justify-between'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>优先使用浏览器原生跳转</h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>修改点：开启后，常用站内页面入口会优先使用 window.location.assign 进行整页跳转</p>
+              </div>
+              <Toggle checked={preferLocationAssignNavigation} onChange={handlePreferLocationAssignNavigationToggle} />
             </div>
 
             <div className='border-t border-gray-200 dark:border-gray-700'></div>

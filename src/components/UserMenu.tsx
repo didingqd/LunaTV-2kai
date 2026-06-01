@@ -25,6 +25,7 @@ import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
 import { CURRENT_VERSION } from '@/lib/version';
 import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord, Favorite } from '@/lib/types';
@@ -223,17 +224,20 @@ export const UserMenu: React.FC = () => {
 
   const handleAdminPanel = () => {
     setIsOpen(false);
-    router.push('/admin');
+    // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /admin
+    navigateWithBrowserPreference({ href: '/admin', routerPush: (href) => router.push(href) });
   };
 
   const handlePlayStats = () => {
     setIsOpen(false);
-    router.push('/play-stats');
+    // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /play-stats
+    navigateWithBrowserPreference({ href: '/play-stats', routerPush: (href) => router.push(href) });
   };
 
   const handleTVBoxConfig = () => {
     setIsOpen(false);
-    router.push('/tvbox');
+    // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /tvbox
+    navigateWithBrowserPreference({ href: '/tvbox', routerPush: (href) => router.push(href) });
   };
 
   const handleWatchRoom = () => {
@@ -243,7 +247,8 @@ export const UserMenu: React.FC = () => {
 
   const handleReleaseCalendar = () => {
     setIsOpen(false);
-    router.push('/release-calendar');
+    // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /release-calendar
+    navigateWithBrowserPreference({ href: '/release-calendar', routerPush: (href) => router.push(href) });
   };
 
   const handleWatchingUpdates = () => {

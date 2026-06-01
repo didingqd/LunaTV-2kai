@@ -22,6 +22,7 @@ import { useDeletePlayRecordMutation } from '@/hooks/usePlayRecordsMutations';
 import { useIsFavoritedQuery } from '@/hooks/useFavoritesQuery';
 import { useIsRemindedQuery } from '@/hooks/useRemindersQuery';
 import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
+import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -478,23 +479,24 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     if (origin === 'live' && actualSource && actualId) {
       // 直播内容跳转到直播页面
       const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
-      router.push(url);
+      // 修改点：视频卡片主点击接入统一浏览器直跳策略，尽量覆盖全站进入 /play / /live 的常用入口
+      navigateWithBrowserPreference({ href: url, routerPush: (href) => router.push(href) });
     } else if (actualSource === 'shortdrama' && actualId) {
       // 短剧内容 - 使用shortdrama_id参数
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}&shortdrama_id=${actualId}`;
-      router.push(url);
+      navigateWithBrowserPreference({ href: url, routerPush: (href) => router.push(href) });
     } else if (from === 'douban' || (isAggregate && !actualSource && !actualId) || actualSource === 'upcoming_release' || actualSource === 'douban' || actualSource === 'bangumi') {
       // 豆瓣内容 或 聚合搜索 或 即将上映 或 Bangumi番剧 - 只用标题和年份搜索
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''
         }${doubanIdParam}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
-      router.push(url);
+      navigateWithBrowserPreference({ href: url, routerPush: (href) => router.push(href) });
     } else if (actualSource && actualId) {
       const url = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
         actualTitle
       )}${actualYear ? `&year=${actualYear}` : ''}${doubanIdParam}${isAggregate ? '&prefer=true' : ''
         }${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
         }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
-      router.push(url);
+      navigateWithBrowserPreference({ href: url, routerPush: (href) => router.push(href) });
     }
   }, [
     isUpcoming,
