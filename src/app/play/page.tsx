@@ -6394,8 +6394,7 @@ function PlayPageClient() {
             art.isLock &&
             !art.destroyed &&
             !isDanmuSettingsPanelOpen &&
-            !isWebSRSettingsPanelOpen &&
-            !isSeekButtonsSettingsPanelOpen,
+            !isWebSRSettingsPanelOpen,
           );
           overlay?.setAttribute('data-enabled', shouldEnable ? 'true' : 'false');
         };
