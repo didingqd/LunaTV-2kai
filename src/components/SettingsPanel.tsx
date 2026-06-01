@@ -129,7 +129,9 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setEnableContinueWatchingFilter(readLS('enableContinueWatchingFilter', false));
     setRequireClearConfirmation(readLS('requireClearConfirmation', false));
     // 修改点：新增浏览器直跳本地开关，供常用站内链接按需切换为 window.location.assign
-    setPreferLocationAssignNavigation(readLS(BROWSER_NAVIGATION_PREFERENCE_KEY, false));
+    setPreferLocationAssignNavigation(
+      readLS(BROWSER_NAVIGATION_PREFERENCE_KEY, RC.PREFER_BROWSER_NAVIGATION === true)
+    );
     const fmt = localStorage.getItem('downloadFormat');
     if (fmt === 'TS' || fmt === 'MP4') setDownloadFormat(fmt);
     const es = localStorage.getItem('exactSearch');
@@ -173,6 +175,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     const defaultDoubanImageProxyType = RC.DOUBAN_IMAGE_PROXY_TYPE || 'server';
     const defaultDoubanImageProxyUrl = RC.DOUBAN_IMAGE_PROXY || '';
     const defaultFluidSearch = RC.FLUID_SEARCH !== false;
+    const defaultPreferBrowserNavigation = RC.PREFER_BROWSER_NAVIGATION === true;
 
     setDefaultAggregateSearch(true);
     setEnableOptimization(false);
@@ -189,7 +192,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setEnableContinueWatchingFilter(false);
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
-    setPreferLocationAssignNavigation(false);
+    setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
     localStorage.setItem('enableOptimization', JSON.stringify(false));
@@ -205,8 +208,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem('continueWatchingMaxProgress', '100');
     localStorage.setItem('enableContinueWatchingFilter', JSON.stringify(false));
     localStorage.setItem('requireClearConfirmation', JSON.stringify(false));
-    // 修改点：恢复默认时同步关闭浏览器直跳，确保默认仍保持当前 SPA 跳转体验
-    localStorage.setItem(BROWSER_NAVIGATION_PREFERENCE_KEY, JSON.stringify(false));
+    // 修改点：恢复默认时跟随后台站点配置的浏览器直跳默认值，而不是固定关闭
+    localStorage.setItem(BROWSER_NAVIGATION_PREFERENCE_KEY, JSON.stringify(defaultPreferBrowserNavigation));
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
   };

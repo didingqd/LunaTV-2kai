@@ -246,6 +246,8 @@ async function getInitConfig(configFile: string, subConfig: {
       FluidSearch:
         process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
       EnableWebLive: false,
+      // 修改点：新增站点级浏览器原生跳转默认值，未手动设置本地偏好时以此为准
+      PreferBrowserNavigation: false,
       // TMDB配置默认值
       TMDBApiKey: process.env.TMDB_API_KEY || '',
       TMDBLanguage: 'zh-CN',

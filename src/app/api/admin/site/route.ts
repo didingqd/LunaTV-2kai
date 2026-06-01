@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
       ShowAdultContent,
       FluidSearch,
       EnableWebLive,
+      PreferBrowserNavigation,
       EnablePuppeteer,
       DoubanCookies,
       TMDBApiKey,
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
       ShowAdultContent: boolean;
       FluidSearch: boolean;
       EnableWebLive: boolean;
+      PreferBrowserNavigation: boolean;
       EnablePuppeteer: boolean;
       DoubanCookies?: string;
       TMDBApiKey?: string;
@@ -91,6 +93,7 @@ export async function POST(request: NextRequest) {
       typeof DoubanImageProxy !== 'string' ||
       typeof DisableYellowFilter !== 'boolean' ||
       typeof FluidSearch !== 'boolean' ||
+      typeof PreferBrowserNavigation !== 'boolean' ||
       typeof EnablePuppeteer !== 'boolean'
     ) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
@@ -126,6 +129,8 @@ export async function POST(request: NextRequest) {
       ShowAdultContent,
       FluidSearch,
       EnableWebLive: EnableWebLive ?? false,
+      // 修改点：保存后台站点级浏览器原生跳转默认值，供前台本地设置回退使用
+      PreferBrowserNavigation,
       TMDBApiKey: TMDBApiKey || '',
       TMDBLanguage: TMDBLanguage || 'zh-CN',
       EnableTMDBActorSearch: EnableTMDBActorSearch || false,

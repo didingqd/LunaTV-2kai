@@ -390,6 +390,7 @@ interface SiteConfig {
   ShowAdultContent: boolean;
   FluidSearch: boolean;
   EnableWebLive: boolean;
+  PreferBrowserNavigation: boolean;
   EnablePuppeteer: boolean; // 豆瓣 Puppeteer 开关
   DoubanCookies?: string; // 豆瓣认证 Cookies
   // TMDB配置
@@ -5368,6 +5369,8 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     ShowAdultContent: false,
     FluidSearch: true,
     EnableWebLive: false,
+    // 修改点：新增后台站点级浏览器原生跳转默认值，供前台本地设置默认继承
+    PreferBrowserNavigation: false,
     // TMDB配置默认值
     TMDBApiKey: '',
     TMDBLanguage: 'zh-CN',
@@ -5454,6 +5457,9 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         ShowAdultContent: config.SiteConfig.ShowAdultContent || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
         EnableWebLive: config.SiteConfig.EnableWebLive ?? false,
+        // 修改点：布尔回填使用 ??，确保后台显式保存 false 时不会被错误吞掉
+        PreferBrowserNavigation:
+          config.SiteConfig.PreferBrowserNavigation ?? false,
         // TMDB配置
         TMDBApiKey: config.SiteConfig.TMDBApiKey || '',
         TMDBLanguage: config.SiteConfig.TMDBLanguage || 'zh-CN',
@@ -6241,6 +6247,38 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         </div>
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
           网页直播性能较差，会导致服务器内存泄露，建议谨慎开启。
+        </p>
+      </div>
+
+      {/* 修改点：后台站点配置新增浏览器原生跳转默认值，供前台本地设置默认继承 */}
+      <div>
+        <div className='flex items-center justify-between'>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            默认优先使用浏览器原生跳转
+          </label>
+          <button
+            type='button'
+            onClick={() =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                PreferBrowserNavigation: !prev.PreferBrowserNavigation,
+              }))
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${siteSettings.PreferBrowserNavigation
+              ? buttonStyles.toggleOn
+              : buttonStyles.toggleOff
+              }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${siteSettings.PreferBrowserNavigation
+                ? buttonStyles.toggleThumbOn
+                : buttonStyles.toggleThumbOff
+                }`}
+            />
+          </button>
+        </div>
+        <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+          修改点：开启后，未手动修改本地设置的用户，会默认优先使用 window.location.assign 进行常用站内整页跳转。
         </p>
       </div>
 
