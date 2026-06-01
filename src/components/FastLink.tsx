@@ -2,7 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { startTransition, type MouseEvent, type ReactNode } from 'react';
+import {
+  startTransition,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
 import {
   isExternalNavigationHref,
@@ -39,6 +44,10 @@ interface FastLinkProps {
    * Rel attribute for security when using target="_blank"
    */
   rel?: string;
+  /**
+   * Inline style passthrough
+   */
+  style?: CSSProperties;
 }
 
 /**
@@ -59,6 +68,7 @@ export function FastLink({
   'aria-label': ariaLabel,
   target,
   rel,
+  style,
 }: FastLinkProps) {
   const router = useRouter();
 
@@ -118,6 +128,7 @@ export function FastLink({
       aria-label={ariaLabel}
       target={target}
       rel={target === '_blank' ? rel || 'noopener noreferrer' : rel}
+      style={style}
     >
       {children}
     </Link>
