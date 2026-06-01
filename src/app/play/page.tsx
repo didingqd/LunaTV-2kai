@@ -75,9 +75,22 @@ import {
   usePrefetchDoubanData,
 } from './hooks/usePlayPagePrefetch';
 
+// 🔧 修改点：复刻源仓库锁定态长按三倍速所需的触点坐标结构
+ type LongPressTouchPoint = {
+  x: number;
+  y: number;
+};
+
 // 播放速率持久化
 const PLAYER_PLAYBACK_RATE_KEY = 'moontv_player_playback_rate';
 const PREFERRED_AUDIO_LANG_KEY = 'preferred_audio_lang';
+
+// 🔧 修改点：复刻源仓库锁定态长按三倍速配置，避免 ArtPlayer 锁定手势拦截后无法提速
+const LOCKED_LONG_PRESS_RATE = 3;
+const LOCKED_LONG_PRESS_DELAY_MS = 1000;
+const LOCKED_LONG_PRESS_MOVE_THRESHOLD = 18;
+const LOCKED_LONG_PRESS_IGNORE_SELECTORS =
+  'button, a, input, textarea, select, label, [role="button"], [data-button], .art-controls, .art-setting, .art-selector, .art-control-lock, .art-progress, .art-bottom, .art-top, .moontv-seek-side-controls';
 
 // 🔧 修改点：复刻 LunaTV 快进快退配置模型，保持布局、秒数档位与 localStorage key 完全一致
 type SeekLayoutMode = 'off' | 'both' | 'left' | 'right';
@@ -1010,12 +1023,12 @@ function PlayPageClient() {
   const lastVolumeRef = useRef<number>(0.7);
   // 上次使用的播放速率，从 localStorage 恢复
   const lastPlaybackRateRef = useRef<number>(loadPlaybackRate());
-  // 🔧 修改点：记录长按三倍速的原始播放速率，确保锁定态松手后与非锁定态一样恢复
-  const longPressSpeedRestoreRateRef = useRef<number>(loadPlaybackRate());
-  // 🔧 修改点：标记当前是否处于长按三倍速中，避免临时 3x 污染持久化播放速率
-  const isLongPressSpeedActiveRef = useRef(false);
-  // 🔧 修改点：缓存当前长按三倍速的清理函数，便于锁定态、切源和销毁时统一收尾
-  const stopLongPressSpeedRef = useRef<(() => void) | null>(null);
+  // 🔧 修改点：复刻源仓库锁定态长按三倍速状态，确保锁定时仍可临时提速且松手后恢复原倍速
+  const lockedLongPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lockedLongPressTouchIdRef = useRef<number | null>(null);
+  const lockedLongPressStartPointRef = useRef<LongPressTouchPoint | null>(null);
+  const lockedLongPressRestoreRateRef = useRef<number>(loadPlaybackRate());
+  const isLockedLongPressActiveRef = useRef(false);
   // 🔥 修复：标记是否正在切换源/集数，用于阻止 ratechange 保存瞬态的播放速率重置
   const isSourceSwitchingRef = useRef(false);
 
@@ -6126,8 +6139,8 @@ function PlayPageClient() {
             );
             return;
           }
-          // 🔧 修改点：长按三倍速属于瞬态能力，锁定态复用时也不能写回 localStorage 污染默认倍速
-          if (isLongPressSpeedActiveRef.current) {
+          // 🔧 修改点：复刻源仓库保护逻辑，锁定态长按临时 3x 不写回 localStorage 污染默认倍速
+          if (isLockedLongPressActiveRef.current) {
             return;
           }
         lastPlaybackRateRef.current = sanitizePlaybackRate(
@@ -6341,145 +6354,6 @@ function PlayPageClient() {
       artPlayerRef.current.on('video:ended', () => {
         releaseWakeLock();
       });
-
-      // 🔧 修改点：锁定态允许复用非锁定态长按三倍速，单独对白名单手势层放行，不直接解锁 ArtPlayer
-      const bindLockedLongPressSpeed = () => {
-        const playerRoot = artPlayerRef.current?.template?.$player as HTMLElement | undefined;
-        const videoElement = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-        if (!playerRoot || !videoElement) return () => {};
-
-        const longPressClassName = 'moontv-lock-long-press-speed-layer';
-        const styleTagId = 'moontv-lock-long-press-speed-style';
-        const pressDelay = 280;
-
-        if (!document.getElementById(styleTagId)) {
-          const style = document.createElement('style');
-          style.id = styleTagId;
-          style.textContent = `
-            .${longPressClassName} {
-              position: absolute;
-              inset: 0;
-              z-index: 25;
-              background: transparent;
-              user-select: none;
-              -webkit-user-select: none;
-              -webkit-touch-callout: none;
-              touch-action: manipulation;
-              pointer-events: none;
-            }
-            .${longPressClassName}[data-enabled="true"] {
-              pointer-events: auto;
-            }
-          `;
-          document.head.appendChild(style);
-        }
-
-        playerRoot.style.position = playerRoot.style.position || 'relative';
-
-        let overlay = playerRoot.querySelector(`.${longPressClassName}`) as HTMLDivElement | null;
-        if (!overlay) {
-          overlay = document.createElement('div');
-          overlay.className = longPressClassName;
-          overlay.setAttribute('aria-hidden', 'true');
-          playerRoot.appendChild(overlay);
-        }
-
-        let pressTimer: ReturnType<typeof setTimeout> | null = null;
-        let activePointerId: number | null = null;
-
-        const syncOverlayEnabled = () => {
-          const art = artPlayerRef.current;
-          const shouldEnable = Boolean(
-            art &&
-            art.isLock &&
-            !art.destroyed &&
-            !isDanmuSettingsPanelOpen &&
-            !isWebSRSettingsPanelOpen,
-          );
-          overlay?.setAttribute('data-enabled', shouldEnable ? 'true' : 'false');
-        };
-
-        const clearPressTimer = () => {
-          if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-          }
-        };
-
-        const stopPress = () => {
-          clearPressTimer();
-          activePointerId = null;
-          stopLongPressSpeed();
-        };
-
-        const handlePointerDown = (event: PointerEvent) => {
-          if (!artPlayerRef.current?.isLock || event.pointerType === 'mouse') return;
-          if ((event.target as HTMLElement | null)?.closest('button, [role="button"], input, textarea, select, a')) {
-            return;
-          }
-
-          activePointerId = event.pointerId;
-          clearPressTimer();
-          pressTimer = setTimeout(() => {
-            if (activePointerId !== event.pointerId) return;
-            startLongPressSpeed();
-          }, pressDelay);
-        };
-
-        const handlePointerEnd = (event?: PointerEvent) => {
-          if (event && activePointerId !== null && event.pointerId !== activePointerId) {
-            return;
-          }
-          stopPress();
-        };
-
-        const handleLockChange = () => {
-          syncOverlayEnabled();
-          if (!artPlayerRef.current?.isLock) {
-            stopPress();
-          }
-        };
-
-        const handleVisibilityChange = () => {
-          if (document.hidden) {
-            stopPress();
-          }
-        };
-
-        overlay.addEventListener('pointerdown', handlePointerDown);
-        overlay.addEventListener('pointerup', handlePointerEnd);
-        overlay.addEventListener('pointercancel', handlePointerEnd);
-        overlay.addEventListener('pointerleave', handlePointerEnd);
-        window.addEventListener('pointerup', handlePointerEnd);
-        window.addEventListener('pointercancel', handlePointerEnd);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        artPlayerRef.current.on('lock', handleLockChange);
-        artPlayerRef.current.on('pause', stopPress);
-        artPlayerRef.current.on('video:ended', stopPress);
-        artPlayerRef.current.on('error', stopPress);
-        syncOverlayEnabled();
-
-        return () => {
-          stopPress();
-          overlay?.removeEventListener('pointerdown', handlePointerDown);
-          overlay?.removeEventListener('pointerup', handlePointerEnd);
-          overlay?.removeEventListener('pointercancel', handlePointerEnd);
-          overlay?.removeEventListener('pointerleave', handlePointerEnd);
-          window.removeEventListener('pointerup', handlePointerEnd);
-          window.removeEventListener('pointercancel', handlePointerEnd);
-          document.removeEventListener('visibilitychange', handleVisibilityChange);
-          artPlayerRef.current?.off('lock', handleLockChange);
-          artPlayerRef.current?.off('pause', stopPress);
-          artPlayerRef.current?.off('video:ended', stopPress);
-          artPlayerRef.current?.off('error', stopPress);
-          overlay?.remove();
-        };
-      };
-
-      stopLongPressSpeedRef.current = bindLockedLongPressSpeed();
-
-
-      // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
@@ -6589,10 +6463,8 @@ function PlayPageClient() {
       // 清理WebSR
       destroyWebSR();
 
-      // 🔧 修改点：组件卸载时额外停止锁定态长按三倍速，避免遗留临时 3x 或事件监听
-      stopLongPressSpeedRef.current?.();
-      stopLongPressSpeedRef.current = null;
-      stopLongPressSpeed();
+      // 🔧 修改点：组件卸载时停止源仓库同款锁定态长按三倍速，避免残留临时 3x
+      stopLockedLongPressRate();
 
       // 销毁播放器实例
       cleanupPlayer();
@@ -6666,35 +6538,127 @@ function PlayPageClient() {
     }
   };
 
-  // 🔧 修改点：统一封装长按三倍速开启逻辑，锁定态复用非锁定态相同的 3x 与左上角提示
-  const startLongPressSpeed = useCallback(() => {
-    if (!artPlayerRef.current) return;
-
-    const currentRate = sanitizePlaybackRate(artPlayerRef.current.playbackRate);
-    longPressSpeedRestoreRateRef.current = currentRate;
-
-    if (Math.abs(currentRate - 3) > 0.01) {
-      artPlayerRef.current.playbackRate = 3;
+  // 🔧 修改点：复刻源仓库锁定态长按三倍速实现，统一清理长按定时器
+  const clearLockedLongPressTimer = useCallback(() => {
+    if (lockedLongPressTimerRef.current) {
+      clearTimeout(lockedLongPressTimerRef.current);
+      lockedLongPressTimerRef.current = null;
     }
-
-    isLongPressSpeedActiveRef.current = true;
-    artPlayerRef.current.notice.show = '3x';
   }, []);
 
-  // 🔧 修改点：统一封装长按三倍速停止逻辑，保证锁定态松手后恢复原速率且清空提示
-  const stopLongPressSpeed = useCallback(() => {
-    if (!isLongPressSpeedActiveRef.current) return;
+  // 🔧 修改点：复刻源仓库锁定态长按三倍速结束逻辑，松手后恢复原始倍速
+  const stopLockedLongPressRate = useCallback(() => {
+    clearLockedLongPressTimer();
+    lockedLongPressTouchIdRef.current = null;
+    lockedLongPressStartPointRef.current = null;
 
-    const restoreRate = sanitizePlaybackRate(longPressSpeedRestoreRateRef.current);
-    if (artPlayerRef.current) {
-      if (Math.abs(artPlayerRef.current.playbackRate - restoreRate) > 0.01) {
-        artPlayerRef.current.playbackRate = restoreRate;
+    if (!isLockedLongPressActiveRef.current) {
+      return;
+    }
+
+    const player = artPlayerRef.current;
+    const restoreRate = sanitizePlaybackRate(lockedLongPressRestoreRateRef.current);
+    if (player) {
+      if (Math.abs(player.playbackRate - restoreRate) > 0.01) {
+        player.playbackRate = restoreRate;
       }
-      artPlayerRef.current.notice.show = '';
+      player.notice.show = '';
     }
 
-    isLongPressSpeedActiveRef.current = false;
+    isLockedLongPressActiveRef.current = false;
+  }, [clearLockedLongPressTimer]);
+
+  // 🔧 修改点：复刻源仓库忽略目标判定，避免锁定态长按误伤按钮、控制栏、进度条等交互
+  const isLockedLongPressIgnoredTarget = useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest(LOCKED_LONG_PRESS_IGNORE_SELECTORS));
   }, []);
+
+  // 🔧 修改点：复刻源仓库锁定态判定方式，直接读取 ArtPlayer 根节点上的 art-lock class
+  const isArtPlayerLocked = useCallback(() => {
+    const playerRoot = portalContainer || artPlayerRef.current?.template?.$player;
+    return Boolean(playerRoot?.classList?.contains('art-lock'));
+  }, [portalContainer]);
+
+  // 🔧 修改点：复刻源仓库做法，在播放器根节点捕获 touch 事件，仅为锁定态补充长按临时 3 倍速能力
+  useEffect(() => {
+    const playerRoot = portalContainer || artPlayerRef.current?.template?.$player;
+    if (!playerRoot) return;
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) {
+        stopLockedLongPressRate();
+        return;
+      }
+
+      if (!isArtPlayerLocked()) {
+        return;
+      }
+
+      if (isLockedLongPressIgnoredTarget(event.target)) {
+        return;
+      }
+
+      const touch = event.touches[0];
+      lockedLongPressTouchIdRef.current = touch.identifier;
+      lockedLongPressStartPointRef.current = { x: touch.clientX, y: touch.clientY };
+      clearLockedLongPressTimer();
+
+      lockedLongPressTimerRef.current = setTimeout(() => {
+        const player = artPlayerRef.current;
+        if (!player || !isArtPlayerLocked()) return;
+
+        const currentRate = sanitizePlaybackRate(player.playbackRate);
+        lockedLongPressRestoreRateRef.current = currentRate;
+        isLockedLongPressActiveRef.current = true;
+        player.playbackRate = LOCKED_LONG_PRESS_RATE;
+        player.notice.show = `速度：${LOCKED_LONG_PRESS_RATE}x`;
+      }, LOCKED_LONG_PRESS_DELAY_MS);
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const activeTouchId = lockedLongPressTouchIdRef.current;
+      const startPoint = lockedLongPressStartPointRef.current;
+      if (activeTouchId === null || !startPoint) return;
+
+      const activeTouch = Array.from(event.touches).find(
+        touch => touch.identifier === activeTouchId,
+      );
+      if (!activeTouch) return;
+
+      const deltaX = activeTouch.clientX - startPoint.x;
+      const deltaY = activeTouch.clientY - startPoint.y;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (distance > LOCKED_LONG_PRESS_MOVE_THRESHOLD) {
+        stopLockedLongPressRate();
+      }
+    };
+
+    const handleTouchEnd = () => {
+      stopLockedLongPressRate();
+    };
+
+    playerRoot.addEventListener('touchstart', handleTouchStart, true);
+    playerRoot.addEventListener('touchmove', handleTouchMove, true);
+    playerRoot.addEventListener('touchend', handleTouchEnd, true);
+    playerRoot.addEventListener('touchcancel', handleTouchEnd, true);
+    document.addEventListener('visibilitychange', handleTouchEnd);
+
+    return () => {
+      playerRoot.removeEventListener('touchstart', handleTouchStart, true);
+      playerRoot.removeEventListener('touchmove', handleTouchMove, true);
+      playerRoot.removeEventListener('touchend', handleTouchEnd, true);
+      playerRoot.removeEventListener('touchcancel', handleTouchEnd, true);
+      document.removeEventListener('visibilitychange', handleTouchEnd);
+      stopLockedLongPressRate();
+    };
+  }, [
+    clearLockedLongPressTimer,
+    isArtPlayerLocked,
+    isLockedLongPressIgnoredTarget,
+    portalContainer,
+    stopLockedLongPressRate,
+  ]);
 
   if (loading) {
     return (
