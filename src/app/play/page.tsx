@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 
 import { useDownload } from '@/contexts/DownloadContext';
 import { normalizeDownloadSource } from '@/lib/download';
+import { getSeekKeyboardDelta } from '@/lib/user-menu-indicator';
 import { useDanmu } from '@/hooks/useDanmu';
 import type { DanmuManualOverride } from '@/hooks/useDanmu';
 import DownloadEpisodeSelector from '@/components/download/DownloadEpisodeSelector';
@@ -4072,20 +4073,11 @@ function PlayPageClient() {
       }
     }
 
-    // 左箭头 = 快退
-    if (!e.altKey && e.key === 'ArrowLeft') {
-      if (seekLayoutModeRef.current !== 'off') {
-        applySeekDelta(-seekSecondsRef.current);
-        e.preventDefault();
-      }
-    }
-
-    // 右箭头 = 快进
-    if (!e.altKey && e.key === 'ArrowRight') {
-      if (seekLayoutModeRef.current !== 'off') {
-        applySeekDelta(seekSecondsRef.current);
-        e.preventDefault();
-      }
+    // 🔧 修改点：布局关闭仅隐藏边缘按钮，不再禁用桌面端左右键快进快退
+    const seekKeyboardDelta = getSeekKeyboardDelta(e);
+    if (seekKeyboardDelta !== null) {
+      applySeekDelta(seekKeyboardDelta);
+      e.preventDefault();
     }
 
     // 上箭头 = 音量+
