@@ -7,9 +7,18 @@ export const BROWSER_NAVIGATION_PREFERENCE_KEY = 'preferLocationAssignNavigation
 export function isBrowserAssignNavigationEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return JSON.parse(
-      localStorage.getItem(BROWSER_NAVIGATION_PREFERENCE_KEY) ?? 'false'
-    ) === true;
+    const storedPreference = localStorage.getItem(
+      BROWSER_NAVIGATION_PREFERENCE_KEY
+    );
+
+    // 修改点：当用户尚未写入本地偏好时，回退到后台站点配置注入的默认值
+    if (storedPreference === null) {
+      return (window as typeof window & {
+        RUNTIME_CONFIG?: { PREFER_BROWSER_NAVIGATION?: boolean };
+      }).RUNTIME_CONFIG?.PREFER_BROWSER_NAVIGATION === true;
+    }
+
+    return JSON.parse(storedPreference) === true;
   } catch {
     return false;
   }
