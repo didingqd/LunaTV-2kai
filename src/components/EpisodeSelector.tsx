@@ -682,11 +682,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 名称
               </button>
             </div>
-            {sortMode === 'speed' && (
-              <span className='text-xs text-blue-600 dark:text-blue-400 font-medium animate-fade-in'>
-                ⚡ 最快优先
-              </span>
-            )}
+
           </div>
 
           {sourceSearchLoading && (
