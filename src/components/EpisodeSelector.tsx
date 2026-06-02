@@ -603,53 +603,20 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       )}
 
       {activeTab === 'sources' && (
-        <div className='flex flex-col h-full mt-4'>
-          {/* 手动测速面板 */}
-          <div className='mb-4 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-200 dark:border-blue-700'>
-            <div className='flex items-center justify-between'>
-              <div className='flex items-center gap-2'>
-                <Gauge className='w-5 h-5 text-blue-600 dark:text-blue-400' />
-                <span className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                  视频源测速
-                </span>
-              </div>
-              <button
-                onClick={handleManualSpeedTest}
-                disabled={manualTesting || availableSources.length === 0}
-                className='flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed'
-              >
-                <RefreshCw className={`w-4 h-4 ${manualTesting ? 'animate-spin' : ''}`} />
-                {manualTesting ? '测速中...' : '手动测速'}
-              </button>
-            </div>
-            {manualTesting && (
-              <div className='mt-2 flex items-center gap-2'>
-                <div className='flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden'>
-                  <div
-                    className='h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300'
-                    style={{ width: `${(manualProgress.done / manualProgress.total) * 100}%` }}
-                  />
-                </div>
-                <span className='text-xs text-gray-600 dark:text-gray-400 font-mono'>
-                  {manualProgress.done}/{manualProgress.total}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* 排序模式切换 */}
-          <div className='mb-4 flex items-center gap-2'>
-            <span className='text-xs text-gray-600 dark:text-gray-400'>排序:</span>
-            <div className='flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg'>
+        <div className='flex flex-col h-full mt-2'>
+          {/* 测速 + 排序 合并工具栏 */}
+          <div className='mb-2 flex items-center gap-1.5 flex-wrap'>
+            {/* 排序按钮组 */}
+            <div className='flex gap-0.5 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-md shrink-0'>
               <button
                 onClick={() => {
                   setSortMode('original');
                   localStorage.setItem('episodeSelectorSortMode', 'original');
                 }}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 ${
+                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
                   sortMode === 'original'
                     ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 原始
@@ -659,10 +626,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   setSortMode('speed');
                   localStorage.setItem('episodeSelectorSortMode', 'speed');
                 }}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 flex items-center gap-1 ${
+                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 flex items-center gap-0.5 ${
                   sortMode === 'speed'
                     ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 <Gauge className='w-3 h-3' />
@@ -673,16 +640,35 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   setSortMode('name');
                   localStorage.setItem('episodeSelectorSortMode', 'name');
                 }}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 ${
+                className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
                   sortMode === 'name'
                     ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 名称
               </button>
             </div>
 
+            {/* 测速按钮 */}
+            <button
+              onClick={handleManualSpeedTest}
+              disabled={manualTesting || availableSources.length === 0}
+              className='flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded text-xs font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed shrink-0'
+            >
+              <RefreshCw className={`w-3 h-3 ${manualTesting ? 'animate-spin' : ''}`} />
+              {manualTesting ? `测速 ${manualProgress.done}/${manualProgress.total}` : '测速'}
+            </button>
+
+            {/* 测速进度条（测速中时在同行展开） */}
+            {manualTesting && (
+              <div className='flex-1 min-w-[60px] h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden'>
+                <div
+                  className='h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300'
+                  style={{ width: `${(manualProgress.done / manualProgress.total) * 100}%` }}
+                />
+              </div>
+            )}
           </div>
 
           {sourceSearchLoading && (
