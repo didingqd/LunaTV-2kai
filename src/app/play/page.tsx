@@ -6524,7 +6524,7 @@ function PlayPageClient() {
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
         player.playbackRate = LOCKED_LONG_PRESS_RATE;
-        player.notice.show = `速度: ${LOCKED_LONG_PRESS_RATE}x`;
+        player.notice.show = `视频: ${LOCKED_LONG_PRESS_RATE}x`;
       }, LOCKED_LONG_PRESS_DELAY_MS);
     };
 
