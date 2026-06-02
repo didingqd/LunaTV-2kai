@@ -6474,7 +6474,7 @@ function PlayPageClient() {
       if (Math.abs(player.playbackRate - restoreRate) > 0.01) {
         player.playbackRate = restoreRate;
       }
-      player.notice.show = '视频：正常';
+      player.notice.show = '视频: 正常';
     }
 
     isLockedLongPressActiveRef.current = false;
@@ -6524,7 +6524,7 @@ function PlayPageClient() {
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
         player.playbackRate = LOCKED_LONG_PRESS_RATE;
-        player.notice.show = `速度：${LOCKED_LONG_PRESS_RATE}x`;
+        player.notice.show = `视频: ${LOCKED_LONG_PRESS_RATE}x`;
       }, LOCKED_LONG_PRESS_DELAY_MS);
     };
 
