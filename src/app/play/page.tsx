@@ -4074,7 +4074,11 @@ function PlayPageClient() {
     }
 
     // 🔧 修改点：布局关闭仅隐藏边缘按钮，不再禁用桌面端左右键快进快退
-    const seekKeyboardDelta = getSeekKeyboardDelta(e);
+    const seekKeyboardDelta = getSeekKeyboardDelta({
+      altKey: e.altKey,
+      key: e.key,
+      seekSeconds: seekSecondsRef.current,
+    });
     if (seekKeyboardDelta !== null) {
       applySeekDelta(seekKeyboardDelta);
       e.preventDefault();
