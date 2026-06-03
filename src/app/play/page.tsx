@@ -1030,6 +1030,7 @@ function PlayPageClient() {
   const lockedLongPressStartPointRef = useRef<LongPressTouchPoint | null>(null);
   const lockedLongPressRestoreRateRef = useRef<number>(loadPlaybackRate());
   const isLockedLongPressActiveRef = useRef(false);
+  const lockedLongPressKeyboardActiveRef = useRef(false);
   // 🔥 修复：标记是否正在切换源/集数，用于阻止 ratechange 保存瞬态的播放速率重置
   const isSourceSwitchingRef = useRef(false);
 
@@ -3860,8 +3861,10 @@ function PlayPageClient() {
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyboardShortcuts);
+    document.addEventListener('keyup', handleKeyboardKeyUp);
     return () => {
       document.removeEventListener('keydown', handleKeyboardShortcuts);
+      document.removeEventListener('keyup', handleKeyboardKeyUp);
     };
   }, []);
 
@@ -4055,6 +4058,31 @@ function PlayPageClient() {
     )
       return;
 
+    if (e.key === 'ArrowRight' && !e.altKey) {
+      if (e.repeat) {
+        e.preventDefault();
+        return;
+      }
+
+      lockedLongPressKeyboardActiveRef.current = true;
+      clearLockedLongPressTimer();
+      lockedLongPressTimerRef.current = setTimeout(() => {
+        if (!lockedLongPressKeyboardActiveRef.current) return;
+
+        const player = artPlayerRef.current;
+        if (!player) return;
+
+        const currentRate = sanitizePlaybackRate(player.playbackRate);
+        lockedLongPressRestoreRateRef.current = currentRate;
+        isLockedLongPressActiveRef.current = true;
+        player.playbackRate = LOCKED_LONG_PRESS_RATE;
+        player.notice.show = `视频: ${LOCKED_LONG_PRESS_RATE}x`;
+      }, LOCKED_LONG_PRESS_DELAY_MS);
+
+      e.preventDefault();
+      return;
+    }
+
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
       if (detailRef.current && currentEpisodeIndexRef.current > 0) {
@@ -4123,6 +4151,22 @@ function PlayPageClient() {
         e.preventDefault();
       }
     }
+  };
+
+  const handleKeyboardKeyUp = (e: KeyboardEvent) => {
+    if (e.key !== 'ArrowRight' || !lockedLongPressKeyboardActiveRef.current) {
+      return;
+    }
+
+    const wasLongPressActive = isLockedLongPressActiveRef.current;
+    lockedLongPressKeyboardActiveRef.current = false;
+    stopLockedLongPressRate();
+
+    if (!wasLongPressActive) {
+      applySeekDelta(seekSecondsRef.current);
+    }
+
+    e.preventDefault();
   };
 
   // ---------------------------------------------------------------------------
@@ -6463,6 +6507,7 @@ function PlayPageClient() {
     clearLockedLongPressTimer();
     lockedLongPressTouchIdRef.current = null;
     lockedLongPressStartPointRef.current = null;
+    lockedLongPressKeyboardActiveRef.current = false;
 
     if (!isLockedLongPressActiveRef.current) {
       return;
