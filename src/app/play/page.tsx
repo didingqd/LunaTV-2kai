@@ -152,6 +152,11 @@ function loadLockedLongPressRate(): number {
   }
 }
 
+function formatPlaybackRateNotice(rate: number): string {
+  const normalizedRate = sanitizePlaybackRate(rate);
+  return normalizedRate === 1.0 ? '视频: 正常' : `视频: ${normalizedRate}x`;
+}
+
 // 音轨辅助函数
 function normalizeAudioLang(rawLang?: string): string {
   if (!rawLang) return '';
@@ -4090,7 +4095,7 @@ function PlayPageClient() {
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
         player.playbackRate = LOCKED_LONG_PRESS_RATE;
-        player.notice.show = `视频: ${LOCKED_LONG_PRESS_RATE}x`;
+        player.notice.show = formatPlaybackRateNotice(LOCKED_LONG_PRESS_RATE);
       }, LOCKED_LONG_PRESS_DELAY_MS);
 
       e.preventDefault();
@@ -6516,7 +6521,7 @@ function PlayPageClient() {
     }
   }, []);
 
-  // 🔧 修改点：复刻源仓库锁定态长按三倍速结束逻辑，松手后恢复原始倍速并提示视频恢复正常
+  // 🔧 修改点：复刻源仓库锁定态长按三倍速结束逻辑，松手后恢复原始倍速并提示当前倍速
   const stopLockedLongPressRate = useCallback(() => {
     clearLockedLongPressTimer();
     lockedLongPressTouchIdRef.current = null;
@@ -6533,7 +6538,7 @@ function PlayPageClient() {
       if (Math.abs(player.playbackRate - restoreRate) > 0.01) {
         player.playbackRate = restoreRate;
       }
-      player.notice.show = '视频: 正常';
+      player.notice.show = formatPlaybackRateNotice(restoreRate);
     }
 
     isLockedLongPressActiveRef.current = false;
@@ -6584,7 +6589,7 @@ function PlayPageClient() {
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
         player.playbackRate = LOCKED_LONG_PRESS_RATE;
-        player.notice.show = `视频: ${LOCKED_LONG_PRESS_RATE}x`;
+        player.notice.show = formatPlaybackRateNotice(LOCKED_LONG_PRESS_RATE);
       }, LOCKED_LONG_PRESS_DELAY_MS);
     };
 
