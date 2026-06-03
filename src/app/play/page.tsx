@@ -84,10 +84,13 @@ import {
 
 // 播放速率持久化
 const PLAYER_PLAYBACK_RATE_KEY = 'moontv_player_playback_rate';
+const LOCKED_LONG_PRESS_RATE_KEY = 'moontv_locked_long_press_rate';
 const PREFERRED_AUDIO_LANG_KEY = 'preferred_audio_lang';
+const PLAYBACK_RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 
 // 🔧 修改点：复刻源仓库锁定态长按三倍速配置，避免 ArtPlayer 锁定手势拦截后无法提速
-const LOCKED_LONG_PRESS_RATE = 3;
+const DEFAULT_LOCKED_LONG_PRESS_RATE = 3;
+let LOCKED_LONG_PRESS_RATE = DEFAULT_LOCKED_LONG_PRESS_RATE;
 const LOCKED_LONG_PRESS_DELAY_MS = 1000;
 const LOCKED_LONG_PRESS_MOVE_THRESHOLD = 18;
 const LOCKED_LONG_PRESS_IGNORE_SELECTORS =
@@ -122,10 +125,9 @@ function loadSeekSeconds(): number {
   return sanitizeSeekSeconds(localStorage.getItem('seek_seconds'));
 }
 
-function sanitizePlaybackRate(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
-  const allowedRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-  return allowedRates.includes(value) ? value : 1.0;
+function sanitizePlaybackRate(value: unknown, fallback = 1.0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return (PLAYBACK_RATE_OPTIONS as readonly number[]).includes(value) ? value : fallback;
 }
 
 function loadPlaybackRate(): number {
@@ -136,6 +138,17 @@ function loadPlaybackRate(): number {
     return sanitizePlaybackRate(Number(raw));
   } catch {
     return 1.0;
+  }
+}
+
+function loadLockedLongPressRate(): number {
+  if (typeof window === 'undefined') return DEFAULT_LOCKED_LONG_PRESS_RATE;
+  try {
+    const raw = localStorage.getItem(LOCKED_LONG_PRESS_RATE_KEY);
+    if (!raw) return DEFAULT_LOCKED_LONG_PRESS_RATE;
+    return sanitizePlaybackRate(Number(raw), DEFAULT_LOCKED_LONG_PRESS_RATE);
+  } catch {
+    return DEFAULT_LOCKED_LONG_PRESS_RATE;
   }
 }
 
@@ -4072,6 +4085,7 @@ function PlayPageClient() {
         const player = artPlayerRef.current;
         if (!player) return;
 
+        LOCKED_LONG_PRESS_RATE = loadLockedLongPressRate();
         const currentRate = sanitizePlaybackRate(player.playbackRate);
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
@@ -4746,7 +4760,7 @@ function PlayPageClient() {
       }
 
       // 创建新的播放器实例
-      Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+      Artplayer.PLAYBACK_RATE = [...PLAYBACK_RATE_OPTIONS];
       Artplayer.USE_RAF = false;
       Artplayer.FULLSCREEN_WEB_IN_BODY = true;
       // 重新启用5.3.0内存优化功能，但使用false参数避免清空DOM
@@ -6565,6 +6579,7 @@ function PlayPageClient() {
         const player = artPlayerRef.current;
         if (!player || !isArtPlayerLocked()) return;
 
+        LOCKED_LONG_PRESS_RATE = loadLockedLongPressRate();
         const currentRate = sanitizePlaybackRate(player.playbackRate);
         lockedLongPressRestoreRateRef.current = currentRate;
         isLockedLongPressActiveRef.current = true;
