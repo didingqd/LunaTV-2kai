@@ -27,6 +27,19 @@ function readLS<T>(key: string, fallback: T): T {
   try { return JSON.parse(v) as T; } catch { return v as unknown as T; }
 }
 
+const LOCKED_LONG_PRESS_RATE_KEY = 'moontv_locked_long_press_rate';
+const DEFAULT_LOCKED_LONG_PRESS_RATE = 3;
+const PLAYBACK_RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
+
+function sanitizeLongPressRate(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_LOCKED_LONG_PRESS_RATE;
+  }
+  return (PLAYBACK_RATE_OPTIONS as readonly number[]).includes(value)
+    ? value
+    : DEFAULT_LOCKED_LONG_PRESS_RATE;
+}
+
 const doubanDataSourceOptions = [
   { value: 'direct', label: '直连（服务器直接请求豆瓣）' },
   { value: 'cors-proxy-zwei', label: 'Cors Proxy By Zwei' },
@@ -106,6 +119,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const [requireClearConfirmation, setRequireClearConfirmation] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState<'TS' | 'MP4'>('TS');
   const [preferLocationAssignNavigation, setPreferLocationAssignNavigation] = useState(false);
+  const [lockedLongPressRate, setLockedLongPressRate] = useState(DEFAULT_LOCKED_LONG_PRESS_RATE);
   const [exactSearch, setExactSearch] = useState(true);
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] = useState(false);
@@ -146,6 +160,9 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     );
     const fmt = localStorage.getItem('downloadFormat');
     if (fmt === 'TS' || fmt === 'MP4') setDownloadFormat(fmt);
+    setLockedLongPressRate(
+      sanitizeLongPressRate(Number(localStorage.getItem(LOCKED_LONG_PRESS_RATE_KEY)))
+    );
     const es = localStorage.getItem('exactSearch');
     if (es !== null) setExactSearch(es === 'true');
     setPlayerBufferMode(readLS('playerBufferMode', 'standard'));
@@ -178,6 +195,11 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const handleBangumiImageProxyTypeChange = (v: string) => { setBangumiImageProxyType(v); localStorage.setItem('bangumiImageProxyType', v); };
   const handleBangumiImageProxyUrlChange = (v: string) => { setBangumiImageProxyUrl(v); localStorage.setItem('bangumiImageProxyUrl', v); };
   const handleBufferModeChange = (v: 'standard' | 'enhanced' | 'max') => { setPlayerBufferMode(v); localStorage.setItem('playerBufferMode', v); };
+  const handleLockedLongPressRateChange = (v: number) => {
+    const nextRate = sanitizeLongPressRate(v);
+    setLockedLongPressRate(nextRate);
+    localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(nextRate));
+  };
   const handleContinueWatchingMinProgressChange = (v: number) => { setContinueWatchingMinProgress(v); localStorage.setItem('continueWatchingMinProgress', v.toString()); };
   const handleContinueWatchingMaxProgressChange = (v: number) => { setContinueWatchingMaxProgress(v); localStorage.setItem('continueWatchingMaxProgress', v.toString()); };
   const handleEnableContinueWatchingFilterToggle = set(setEnableContinueWatchingFilter, 'enableContinueWatchingFilter');
@@ -208,6 +230,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setEnableContinueWatchingFilter(false);
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
+    setLockedLongPressRate(DEFAULT_LOCKED_LONG_PRESS_RATE);
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -230,6 +253,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem(BROWSER_NAVIGATION_PREFERENCE_KEY, JSON.stringify(defaultPreferBrowserNavigation));
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
+    localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(DEFAULT_LOCKED_LONG_PRESS_RATE));
   };
 
   if (!isOpen) return null;
@@ -594,6 +618,34 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                 <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>修改点：开启后，常用站内页面入口会优先使用 window.location.assign 进行整页跳转</p>
               </div>
               <Toggle checked={preferLocationAssignNavigation} onChange={handlePreferLocationAssignNavigationToggle} />
+            </div>
+
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>长按倍速</h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>用于右方向键长按和手机端长按屏幕，默认 3x</p>
+              </div>
+              <div className='grid grid-cols-4 sm:grid-cols-7 gap-2'>
+                {PLAYBACK_RATE_OPTIONS.map(rate => {
+                  const isSelected = lockedLongPressRate === rate;
+                  return (
+                    <button
+                      key={rate}
+                      type='button'
+                      onClick={() => handleLockedLongPressRateChange(rate)}
+                      className={`px-2 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
+                        isSelected
+                          ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                          : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {rate}x
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className='border-t border-gray-200 dark:border-gray-700'></div>
