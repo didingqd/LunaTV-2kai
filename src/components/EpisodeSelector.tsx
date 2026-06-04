@@ -650,12 +650,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               </button>
             </div>
 
-            {/* 修改点：仅给测速按钮增加右侧留白，进度条保持原来的同行展开位置 */}
+            {/* 修改点：测速按钮右侧留白匹配源列表滚动条占位，右边与源卡片右边对齐 */}
             {/* 测速按钮 */}
             <button
               onClick={handleManualSpeedTest}
               disabled={manualTesting || availableSources.length === 0}
-              className='ml-auto mr-2 flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded text-xs font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed shrink-0'
+              className='ml-auto mr-4 flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded text-xs font-medium transition-all duration-200 active:scale-95 disabled:cursor-not-allowed shrink-0'
             >
               <RefreshCw className={`w-3 h-3 ${manualTesting ? 'animate-spin' : ''}`} />
               {manualTesting ? `测速 ${manualProgress.done}/${manualProgress.total}` : '测速'}
