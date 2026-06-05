@@ -625,7 +625,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
             <div className='space-y-3'>
               <div>
                 <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>长按倍速</h4>
-                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>用于右方向键长按和手机端长按屏幕，默认 3x</p>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>用于右方向键长按和手机端长按屏幕，默认 2x</p>
               </div>
               <div className='grid grid-cols-4 sm:grid-cols-7 gap-2'>
                 {PLAYBACK_RATE_OPTIONS.map(rate => {
