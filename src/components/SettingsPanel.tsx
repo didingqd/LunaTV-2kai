@@ -28,7 +28,7 @@ function readLS<T>(key: string, fallback: T): T {
 }
 
 const LOCKED_LONG_PRESS_RATE_KEY = 'moontv_locked_long_press_rate';
-const DEFAULT_LOCKED_LONG_PRESS_RATE = 3;
+const DEFAULT_LOCKED_LONG_PRESS_RATE = 2;
 const PLAYBACK_RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 
 function sanitizeLongPressRate(value: unknown): number {
