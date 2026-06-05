@@ -605,8 +605,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       {activeTab === 'sources' && (
         <div className='flex flex-col h-full mt-2'>
           {/* 测速 + 排序 合并工具栏 */}
-          {/* 修改点：工具栏右侧补齐到与下方源卡片相同的左右内边距，保证测速按钮右边界视觉对齐 */}
-          <div className='mb-2 flex items-center gap-1.5 flex-wrap px-2 sm:px-3'>
+          <div className='mb-2 flex items-center gap-1.5 flex-wrap'>
             {/* 排序按钮组 */}
             <div className='flex gap-0.5 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-md shrink-0'>
               <button
