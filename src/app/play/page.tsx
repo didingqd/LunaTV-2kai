@@ -145,7 +145,14 @@ function loadLockedLongPressRate(): number {
   if (typeof window === 'undefined') return DEFAULT_LOCKED_LONG_PRESS_RATE;
   try {
     const raw = localStorage.getItem(LOCKED_LONG_PRESS_RATE_KEY);
-    if (!raw) return DEFAULT_LOCKED_LONG_PRESS_RATE;
+    if (!raw) {
+      // 修改点：未设置本地偏好时，锁定态长按倍速回退到后台站点默认值
+      const runtimeConfig = (window as any).RUNTIME_CONFIG || {};
+      return sanitizePlaybackRate(
+        Number(runtimeConfig.DEFAULT_LOCKED_LONG_PRESS_RATE),
+        DEFAULT_LOCKED_LONG_PRESS_RATE
+      );
+    }
     return sanitizePlaybackRate(Number(raw), DEFAULT_LOCKED_LONG_PRESS_RATE);
   } catch {
     return DEFAULT_LOCKED_LONG_PRESS_RATE;

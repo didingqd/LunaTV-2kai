@@ -160,8 +160,13 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     );
     const fmt = localStorage.getItem('downloadFormat');
     if (fmt === 'TS' || fmt === 'MP4') setDownloadFormat(fmt);
+    // 修改点：长按倍速默认值改为优先读取本地设置，无本地设置时继承后台站点配置
+    const runtimeLockedLongPressRate = sanitizeLongPressRate(Number(RC.DEFAULT_LOCKED_LONG_PRESS_RATE));
+    const storedLockedLongPressRate = localStorage.getItem(LOCKED_LONG_PRESS_RATE_KEY);
     setLockedLongPressRate(
-      sanitizeLongPressRate(Number(localStorage.getItem(LOCKED_LONG_PRESS_RATE_KEY)))
+      storedLockedLongPressRate === null
+        ? runtimeLockedLongPressRate
+        : sanitizeLongPressRate(Number(storedLockedLongPressRate))
     );
     const es = localStorage.getItem('exactSearch');
     if (es !== null) setExactSearch(es === 'true');
@@ -212,6 +217,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     const defaultDoubanImageProxyUrl = RC.DOUBAN_IMAGE_PROXY || '';
     const defaultFluidSearch = RC.FLUID_SEARCH !== false;
     const defaultPreferBrowserNavigation = RC.PREFER_BROWSER_NAVIGATION === true;
+    // 修改点：恢复默认时跟随后台站点配置的长按倍速默认值，而不是固定写死
+    const defaultLockedLongPressRate = sanitizeLongPressRate(Number(RC.DEFAULT_LOCKED_LONG_PRESS_RATE));
 
     setDefaultAggregateSearch(true);
     setEnableOptimization(false);
@@ -230,7 +237,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setEnableContinueWatchingFilter(false);
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
-    setLockedLongPressRate(DEFAULT_LOCKED_LONG_PRESS_RATE);
+    setLockedLongPressRate(defaultLockedLongPressRate);
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -253,7 +260,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem(BROWSER_NAVIGATION_PREFERENCE_KEY, JSON.stringify(defaultPreferBrowserNavigation));
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
-    localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(DEFAULT_LOCKED_LONG_PRESS_RATE));
+    localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(defaultLockedLongPressRate));
   };
 
   if (!isOpen) return null;

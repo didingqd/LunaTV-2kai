@@ -19,6 +19,7 @@ export interface AdminConfig {
     FluidSearch: boolean;
     EnableWebLive: boolean;
     PreferBrowserNavigation?: boolean;
+    DefaultLockedLongPressRate?: number;
     // TMDB配置
     TMDBApiKey?: string;
     TMDBLanguage?: string;

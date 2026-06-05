@@ -7,6 +7,8 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 
+const VALID_LOCKED_LONG_PRESS_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
+
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
@@ -47,6 +49,7 @@ export async function POST(request: NextRequest) {
       FluidSearch,
       EnableWebLive,
       PreferBrowserNavigation,
+      DefaultLockedLongPressRate,
       EnablePuppeteer,
       DoubanCookies,
       TMDBApiKey,
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
       FluidSearch: boolean;
       EnableWebLive: boolean;
       PreferBrowserNavigation: boolean;
+      DefaultLockedLongPressRate: number;
       EnablePuppeteer: boolean;
       DoubanCookies?: string;
       TMDBApiKey?: string;
@@ -98,6 +102,8 @@ export async function POST(request: NextRequest) {
       typeof DisableYellowFilter !== 'boolean' ||
       typeof FluidSearch !== 'boolean' ||
       typeof PreferBrowserNavigation !== 'boolean' ||
+      typeof DefaultLockedLongPressRate !== 'number' ||
+      !VALID_LOCKED_LONG_PRESS_RATES.includes(DefaultLockedLongPressRate as (typeof VALID_LOCKED_LONG_PRESS_RATES)[number]) ||
       typeof EnablePuppeteer !== 'boolean'
     ) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
@@ -137,6 +143,8 @@ export async function POST(request: NextRequest) {
       EnableWebLive: EnableWebLive ?? false,
       // 修改点：保存后台站点级浏览器原生跳转默认值，供前台本地设置回退使用
       PreferBrowserNavigation,
+      // 修改点：保存后台站点级长按倍速默认值，供前台未手动设置时默认继承
+      DefaultLockedLongPressRate,
       TMDBApiKey: TMDBApiKey || '',
       TMDBLanguage: TMDBLanguage || 'zh-CN',
       EnableTMDBActorSearch: EnableTMDBActorSearch || false,

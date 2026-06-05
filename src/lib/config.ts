@@ -250,6 +250,8 @@ async function getInitConfig(configFile: string, subConfig: {
       EnableWebLive: false,
       // 修改点：新增站点级浏览器原生跳转默认值，未手动设置本地偏好时以此为准
       PreferBrowserNavigation: false,
+      // 修改点：新增站点级长按倍速默认值，未手动设置前台偏好时以此为准
+      DefaultLockedLongPressRate: 2,
       // TMDB配置默认值
       TMDBApiKey: process.env.TMDB_API_KEY || '',
       TMDBLanguage: 'zh-CN',

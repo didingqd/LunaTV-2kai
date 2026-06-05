@@ -79,6 +79,7 @@ export default async function RootLayout({
   let customAdFilterVersion = 0;
   let aiRecommendEnabled = false;
   let embyEnabled = false;
+  let defaultLockedLongPressRate = 2;
   let customCategories = [] as {
     name: string;
     type: 'movie' | 'tv';
@@ -105,6 +106,8 @@ export default async function RootLayout({
     enableWebLive = config.SiteConfig.EnableWebLive ?? false;
     // 修改点：将后台站点配置中的浏览器原生跳转默认值注入前端运行时配置
     preferBrowserNavigation = config.SiteConfig.PreferBrowserNavigation ?? false;
+    // 修改点：将后台站点配置中的长按倍速默认值提前缓存，避免运行时配置引用局部变量报错
+    defaultLockedLongPressRate = config.SiteConfig.DefaultLockedLongPressRate ?? 2;
     customAdFilterVersion = config.SiteConfig?.CustomAdFilterVersion || 0;
     aiRecommendEnabled = config.AIRecommendConfig?.enabled ?? false;
     // 检查是否启用了 Emby 功能（支持多源）
@@ -129,6 +132,8 @@ export default async function RootLayout({
     FLUID_SEARCH: fluidSearch,
     ENABLE_WEB_LIVE: enableWebLive,
     PREFER_BROWSER_NAVIGATION: preferBrowserNavigation,
+    // 修改点：向前台注入站点级长按倍速默认值，供未手动设置的用户继承
+    DEFAULT_LOCKED_LONG_PRESS_RATE: defaultLockedLongPressRate,
     CUSTOM_AD_FILTER_VERSION: customAdFilterVersion,
     AI_RECOMMEND_ENABLED: aiRecommendEnabled,
     EMBY_ENABLED: embyEnabled,
