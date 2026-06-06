@@ -17,12 +17,14 @@ interface NavigationShellProps {
   showDesktopNav?: boolean;
   showMobileNav?: boolean;
   showSpacer?: boolean;
+  forceMobileLayout?: boolean;
 }
 
 export default function NavigationShell({
   showDesktopNav = true,
   showMobileNav = true,
   showSpacer = true,
+  forceMobileLayout = false,
 }: NavigationShellProps = {}) {
   const pathname = usePathname();
   const { siteName } = useSite();
@@ -51,11 +53,12 @@ export default function NavigationShell({
         showDesktopNav={showDesktopNav}
         showMobileNav={showMobileNav}
         showSpacer={showSpacer}
+        forceMobileLayout={forceMobileLayout}
       />
 
       {/* 移动端头部 - Logo和用户菜单 */}
       {showMobileNav && (
-        <div className='md:hidden fixed top-0 left-0 right-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md shadow-sm'>
+        <div className={`${forceMobileLayout ? '' : 'md:hidden'} fixed top-0 left-0 right-0 z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md shadow-sm`}>
           <div className='flex items-center justify-between h-11 px-4'>
             {/* Logo */}
             <div className='text-base font-bold bg-linear-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent'>

@@ -18,6 +18,16 @@ interface LegacyNavigationShellProps {
   children: React.ReactNode;
 }
 
+function detectMobileDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+
+  // 修改点：竖向布局在真实移动设备上始终复用横向布局，避免全屏横屏触发 md 断点后显示桌面侧边栏
+  return (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    window.matchMedia('(pointer: coarse)').matches
+  );
+}
+
 export default function LegacyNavigationShell({ children }: LegacyNavigationShellProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -25,12 +35,23 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
   const queryString = searchParams.toString();
   const activePath = queryString ? `${pathname}?${queryString}` : pathname;
   const showBackButton = pathname === '/play' || pathname.startsWith('/play/') || pathname === '/live';
+  const [isMobileDevice, setIsMobileDevice] = useState(() => detectMobileDevice());
   const [showAIRecommendModal, setShowAIRecommendModal] = useState(false);
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(true);
 
   useEffect(() => {
     const disabled = isAIRecommendFeatureDisabled();
     setAiEnabled(!disabled);
+  }, []);
+
+  useEffect(() => {
+    const refreshMobileDevice = () => setIsMobileDevice(detectMobileDevice());
+    window.addEventListener('resize', refreshMobileDevice);
+    document.addEventListener('fullscreenchange', refreshMobileDevice);
+    return () => {
+      window.removeEventListener('resize', refreshMobileDevice);
+      document.removeEventListener('fullscreenchange', refreshMobileDevice);
+    };
   }, []);
 
   if (isStandalone) {
@@ -47,8 +68,14 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
   return (
     <div className='w-full min-h-screen' translate='no'>
       {/* 修改点：竖向布局小屏直接复用横向布局导航壳和内容间距，只保留桌面端独立竖向侧边栏 */}
-      <div className='md:hidden'>
-        <NavigationShell showDesktopNav={false} showMobileNav showSpacer={false} />
+      <div className={isMobileDevice ? '' : 'md:hidden'}>
+        <NavigationShell
+          showDesktopNav={false}
+          showMobileNav
+          showSpacer={false}
+          forceMobileLayout={isMobileDevice}
+        />
+        {/* 修改点：真实移动设备横屏/全屏时也保持横向布局的小屏内容间距，避免触发 md 桌面侧边栏 */}
         <main className='w-full min-h-screen pt-[44px] pb-16'>
           <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6'>
             {children}
@@ -56,7 +83,7 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
         </main>
       </div>
 
-      <div className='hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
+      <div className={isMobileDevice ? 'hidden' : 'hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'}>
         <div className='hidden md:block'>
           <Sidebar activePath={activePath} />
         </div>

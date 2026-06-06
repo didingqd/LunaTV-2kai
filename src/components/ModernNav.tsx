@@ -98,6 +98,7 @@ interface ModernNavProps {
   showDesktopNav?: boolean;
   showMobileNav?: boolean;
   showSpacer?: boolean;
+  forceMobileLayout?: boolean;
 }
 
 // Query Options 工厂函数
@@ -130,6 +131,7 @@ export default function ModernNav({
   showDesktopNav = true,
   showMobileNav = true,
   showSpacer = true,
+  forceMobileLayout = false,
 }: ModernNavProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
@@ -137,6 +139,8 @@ export default function ModernNav({
   const [active, setActive] = useState(pathname);
   const { siteName } = useSite();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  // 修改点：真实移动设备全屏横屏时强制沿用移动端导航样式，避免触发 md 桌面布局
+  const mobileVisibilityClass = forceMobileLayout ? '' : 'md:hidden';
 
   // 检查用户是否配置了 Emby
   const { data: userEmbyConfig } = useQuery(userEmbyConfigOptions());
@@ -303,7 +307,7 @@ export default function ModernNav({
       {/* More Menu Modal - Render outside nav to avoid z-index issues */}
       {showMobileNav && showMoreMenu && (
         <div
-          className='md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm'
+          className={`${mobileVisibilityClass} fixed inset-0 bg-black/40 backdrop-blur-sm`}
           style={{ zIndex: 2147483647 }}
           onClick={() => setShowMoreMenu(false)}
         >
@@ -374,7 +378,7 @@ export default function ModernNav({
       {/* Mobile Bottom Navigation - Netflix Full-Width Style with Light Mode Support */}
       {showMobileNav && (
         <nav
-          className='md:hidden fixed left-0 right-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-lg border-t border-black/5 dark:border-white/5 shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40'
+          className={`${mobileVisibilityClass} fixed left-0 right-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-lg border-t border-black/5 dark:border-white/5 shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40`}
           style={{
             bottom: 0,
             paddingBottom: 'env(safe-area-inset-bottom)',
