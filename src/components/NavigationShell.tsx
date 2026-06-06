@@ -8,25 +8,10 @@ import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 
 import AIRecommendModal from './AIRecommendModal';
 import ModernNav from './ModernNav';
+import { isStandaloneRoute } from './navigation-routes';
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
-
-// 不需要导航栏的独立路由
-const STANDALONE_ROUTES = [
-  '/login',
-  '/register',
-  '/oidc-register',
-  '/warning',
-  '/source-test',
-  '/watch-room/screen',
-];
-
-function isStandaloneRoute(pathname: string) {
-  return STANDALONE_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`),
-  );
-}
 
 export default function NavigationShell() {
   const pathname = usePathname();

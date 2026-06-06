@@ -46,6 +46,87 @@ const Logo = () => {
   );
 };
 
+type NavMenuKey = 'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show';
+
+interface SidebarMenuItem {
+  id: string;
+  icon: typeof Home;
+  label: string;
+  href: string;
+}
+
+const FIXED_CATEGORY_MENU_KEYS: NavMenuKey[] = ['source-browser', 'movie', 'tv', 'shortdrama', 'anime', 'show'];
+
+const BASE_MENU_ITEMS: SidebarMenuItem[] = [
+  {
+    id: 'source-browser',
+    icon: Globe,
+    label: '源浏览器',
+    href: '/source-browser',
+  },
+  {
+    id: 'movie',
+    icon: Film,
+    label: '电影',
+    href: '/douban?type=movie',
+  },
+  {
+    id: 'tv',
+    icon: Tv,
+    label: '剧集',
+    href: '/douban?type=tv',
+  },
+  {
+    id: 'shortdrama',
+    icon: PlaySquare,
+    label: '短剧',
+    href: '/shortdrama',
+  },
+  {
+    id: 'anime',
+    icon: Cat,
+    label: '动漫',
+    href: '/douban?type=anime',
+  },
+  {
+    id: 'show',
+    icon: Clover,
+    label: '综艺',
+    href: '/douban?type=show',
+  },
+];
+
+function buildSidebarMenuItems(): SidebarMenuItem[] {
+  const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : null;
+  const hiddenItems = (runtimeConfig?.NAV_MENU_HIDDEN_ITEMS ?? []) as string[];
+
+  // 修改点：竖向侧边栏沿用后台顶部菜单隐藏配置，确保两种布局菜单显隐一致
+  const items = BASE_MENU_ITEMS.filter((item) => {
+    if (!FIXED_CATEGORY_MENU_KEYS.includes(item.id as NavMenuKey)) return true;
+    return !hiddenItems.includes(item.id);
+  });
+
+  if (runtimeConfig?.ENABLE_WEB_LIVE) {
+    items.push({
+      id: 'live',
+      icon: Radio,
+      label: '直播',
+      href: '/live',
+    });
+  }
+
+  if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
+    items.push({
+      id: 'custom',
+      icon: Star,
+      label: '自定义',
+      href: '/douban?type=custom',
+    });
+  }
+
+  return items;
+}
+
 interface SidebarProps {
   onToggle?: (collapsed: boolean) => void;
   activePath?: string;
@@ -124,56 +205,10 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
     isCollapsed,
   };
 
-  const [menuItems, setMenuItems] = useState([
-    {
-      icon: Globe,
-      label: '源浏览器',
-      href: '/source-browser',
-    },
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-    },
-    {
-      icon: PlaySquare,
-      label: '短剧',
-      href: '/shortdrama',
-    },
-    {
-      icon: Cat,
-      label: '动漫',
-      href: '/douban?type=anime',
-    },
-    {
-      icon: Clover,
-      label: '综艺',
-      href: '/douban?type=show',
-    },
-    {
-      icon: Radio,
-      label: '直播',
-      href: '/live',
-    },
-  ]);
+  const [menuItems, setMenuItems] = useState<SidebarMenuItem[]>([]);
 
   useEffect(() => {
-    const runtimeConfig = (window as any).RUNTIME_CONFIG;
-    if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
-      setMenuItems((prevItems) => [
-        ...prevItems,
-        {
-          icon: Star,
-          label: '自定义',
-          href: '/douban?type=custom',
-        },
-      ]);
-    }
+    setMenuItems(buildSidebarMenuItems());
   }, []);
 
   return (

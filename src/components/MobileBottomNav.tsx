@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Box, Cat, Clover, Film, Globe, Home, PlaySquare, Radio, Star, Tv } from 'lucide-react';
+import { Cat, Clover, Film, Globe, Home, PlaySquare, Radio, Star, Tv } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -14,6 +14,7 @@ function cn(...classes: (string | boolean | undefined | null)[]): string {
 }
 
 interface NavItem {
+  id: string;
   icon: typeof Home;
   label: string;
   href: string;
@@ -23,6 +24,113 @@ interface NavItem {
   activeTextColor: string;
   // 悬浮状态的背景色
   hoverBg: string;
+}
+
+type NavMenuKey = 'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show';
+
+const FIXED_CATEGORY_MENU_KEYS: NavMenuKey[] = ['source-browser', 'movie', 'tv', 'shortdrama', 'anime', 'show'];
+
+const BASE_NAV_ITEMS: NavItem[] = [
+  {
+    id: 'home',
+    icon: Home,
+    label: '首页',
+    href: '/',
+    activeGradient: 'bg-gradient-to-r from-violet-500 to-purple-600',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-violet-500/20',
+  },
+  {
+    id: 'source-browser',
+    icon: Globe,
+    label: '源浏览',
+    href: '/source-browser',
+    activeGradient: 'bg-gradient-to-r from-blue-500 to-cyan-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-blue-500/20',
+  },
+  {
+    id: 'movie',
+    icon: Film,
+    label: '电影',
+    href: '/douban?type=movie',
+    activeGradient: 'bg-gradient-to-r from-pink-500 to-rose-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-pink-500/20',
+  },
+  {
+    id: 'tv',
+    icon: Tv,
+    label: '剧集',
+    href: '/douban?type=tv',
+    activeGradient: 'bg-gradient-to-r from-purple-500 to-indigo-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-purple-500/20',
+  },
+  {
+    id: 'shortdrama',
+    icon: PlaySquare,
+    label: '短剧',
+    href: '/shortdrama',
+    activeGradient: 'bg-gradient-to-r from-orange-500 to-red-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-orange-500/20',
+  },
+  {
+    id: 'anime',
+    icon: Cat,
+    label: '动漫',
+    href: '/douban?type=anime',
+    activeGradient: 'bg-gradient-to-r from-emerald-400 to-teal-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-emerald-500/20',
+  },
+  {
+    id: 'show',
+    icon: Clover,
+    label: '综艺',
+    href: '/douban?type=show',
+    activeGradient: 'bg-gradient-to-r from-amber-400 to-orange-500',
+    activeTextColor: 'text-white',
+    hoverBg: 'hover:bg-amber-500/20',
+  },
+];
+
+function buildMobileNavItems(): NavItem[] {
+  const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : null;
+  const hiddenItems = (runtimeConfig?.NAV_MENU_HIDDEN_ITEMS ?? []) as string[];
+
+  // 修改点：竖向布局移动底栏复用后台菜单隐藏配置，保证横向/竖向菜单显隐一致
+  const items = BASE_NAV_ITEMS.filter((item) => {
+    if (!FIXED_CATEGORY_MENU_KEYS.includes(item.id as NavMenuKey)) return true;
+    return !hiddenItems.includes(item.id);
+  });
+
+  if (runtimeConfig?.ENABLE_WEB_LIVE) {
+    items.push({
+      id: 'live',
+      icon: Radio,
+      label: '直播',
+      href: '/live',
+      activeGradient: 'bg-gradient-to-r from-red-500 to-pink-500',
+      activeTextColor: 'text-white',
+      hoverBg: 'hover:bg-red-500/20',
+    });
+  }
+
+  if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
+    items.push({
+      id: 'custom',
+      icon: Star,
+      label: '自定义',
+      href: '/douban?type=custom',
+      activeGradient: 'bg-gradient-to-r from-yellow-400 to-amber-500',
+      activeTextColor: 'text-white',
+      hoverBg: 'hover:bg-yellow-500/20',
+    });
+  }
+
+  return items;
 }
 
 interface MobileBottomNavProps {
@@ -39,99 +147,16 @@ interface MobileBottomNavProps {
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const pathname = usePathname();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLElement | null)[]>([]);
+  const itemRefs = useRef<(SVGSVGElement | null)[]>([]);
 
   // 当前激活路径：优先使用传入的 activePath，否则回退到浏览器地址
   const currentActive = activePath ?? pathname;
 
   // 导航项配置 - 包含渐变色映射
-  const [navItems, setNavItems] = useState<NavItem[]>([
-    {
-      icon: Home,
-      label: '首页',
-      href: '/',
-      activeGradient: 'bg-gradient-to-r from-violet-500 to-purple-600',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-violet-500/20',
-    },
-    {
-      icon: Globe,
-      label: '源浏览',
-      href: '/source-browser',
-      activeGradient: 'bg-gradient-to-r from-blue-500 to-cyan-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-blue-500/20',
-    },
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-      activeGradient: 'bg-gradient-to-r from-pink-500 to-rose-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-pink-500/20',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-      activeGradient: 'bg-gradient-to-r from-purple-500 to-indigo-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-purple-500/20',
-    },
-    {
-      icon: PlaySquare,
-      label: '短剧',
-      href: '/shortdrama',
-      activeGradient: 'bg-gradient-to-r from-orange-500 to-red-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-orange-500/20',
-    },
-    {
-      icon: Cat,
-      label: '动漫',
-      href: '/douban?type=anime',
-      activeGradient: 'bg-gradient-to-r from-emerald-400 to-teal-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-emerald-500/20',
-    },
-    {
-      icon: Clover,
-      label: '综艺',
-      href: '/douban?type=show',
-      activeGradient: 'bg-gradient-to-r from-amber-400 to-orange-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-amber-500/20',
-    },
-    {
-      icon: Radio,
-      label: '直播',
-      href: '/live',
-      activeGradient: 'bg-gradient-to-r from-red-500 to-pink-500',
-      activeTextColor: 'text-white',
-      hoverBg: 'hover:bg-red-500/20',
-    },
-  ]);
+  const [navItems, setNavItems] = useState<NavItem[]>([]);
 
-  // 动态添加自定义分类
   useEffect(() => {
-    const runtimeConfig = (window as any).RUNTIME_CONFIG;
-    if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
-      setNavItems((prevItems) => {
-        // 防止重复添加
-        if (prevItems.some((item) => item.label === '自定义')) return prevItems;
-        return [
-          ...prevItems,
-          {
-            icon: Star,
-            label: '自定义',
-            href: '/douban?type=custom',
-            activeGradient: 'bg-gradient-to-r from-yellow-400 to-amber-500',
-            activeTextColor: 'text-white',
-            hoverBg: 'hover:bg-yellow-500/20',
-          },
-        ];
-      });
-    }
+    setNavItems(buildMobileNavItems());
   }, []);
 
   // 判断是否激活
@@ -247,6 +272,9 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
               aria-label={item.label}
             >
               <Icon
+                ref={(el) => {
+                  itemRefs.current[index] = el;
+                }}
                 className={cn(
                   'w-6 h-6 mb-1',
                   'transition-colors duration-200',

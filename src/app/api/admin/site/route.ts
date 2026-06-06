@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       ShowAdultContent,
       FluidSearch,
       EnableWebLive,
+      NavLayout,
       PreferBrowserNavigation,
       DefaultLockedLongPressRate,
       EnablePuppeteer,
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
       ShowAdultContent: boolean;
       FluidSearch: boolean;
       EnableWebLive: boolean;
+      NavLayout?: 'horizontal' | 'vertical';
       PreferBrowserNavigation: boolean;
       DefaultLockedLongPressRate: number;
       EnablePuppeteer: boolean;
@@ -101,6 +103,7 @@ export async function POST(request: NextRequest) {
       typeof DoubanImageProxy !== 'string' ||
       typeof DisableYellowFilter !== 'boolean' ||
       typeof FluidSearch !== 'boolean' ||
+      (NavLayout !== undefined && !['horizontal', 'vertical'].includes(NavLayout)) ||
       typeof PreferBrowserNavigation !== 'boolean' ||
       typeof DefaultLockedLongPressRate !== 'number' ||
       !VALID_LOCKED_LONG_PRESS_RATES.includes(DefaultLockedLongPressRate as (typeof VALID_LOCKED_LONG_PRESS_RATES)[number]) ||
@@ -141,6 +144,8 @@ export async function POST(request: NextRequest) {
       ShowAdultContent,
       FluidSearch,
       EnableWebLive: EnableWebLive ?? false,
+      // 修改点：保存站点级导航布局，默认保持当前横向顶部导航
+      NavLayout: NavLayout === 'vertical' ? 'vertical' : 'horizontal',
       // 修改点：保存后台站点级浏览器原生跳转默认值，供前台本地设置回退使用
       PreferBrowserNavigation,
       // 修改点：保存后台站点级长按倍速默认值，供前台未手动设置时默认继承

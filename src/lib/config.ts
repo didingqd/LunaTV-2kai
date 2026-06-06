@@ -248,6 +248,8 @@ async function getInitConfig(configFile: string, subConfig: {
       FluidSearch:
         process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false',
       EnableWebLive: false,
+      // 修改点：默认保持当前横向顶部导航，后台可切换为原始竖向侧边导航
+      NavLayout: 'horizontal',
       // 修改点：新增站点级浏览器原生跳转默认值，未手动设置本地偏好时以此为准
       PreferBrowserNavigation: false,
       // 修改点：新增站点级长按倍速默认值，未手动设置前台偏好时以此为准

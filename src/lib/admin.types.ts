@@ -18,6 +18,8 @@ export interface AdminConfig {
     ShowAdultContent: boolean; // 是否显示成人内容，默认 false
     FluidSearch: boolean;
     EnableWebLive: boolean;
+    // 修改点：站点设置中用于切换当前横向顶部导航与原始竖向侧边导航
+    NavLayout?: 'horizontal' | 'vertical';
     PreferBrowserNavigation?: boolean;
     DefaultLockedLongPressRate?: number;
     // 修改点：后台分类配置页使用该字段控制顶部固定菜单是否隐藏

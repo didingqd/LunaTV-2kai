@@ -13,6 +13,7 @@ import { getConfig } from '@/lib/config';
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { GlobalDOMErrorHandler } from '../components/GlobalDOMErrorHandler';
 import { ChunkErrorGuard } from '../components/ChunkErrorGuard';
+import LegacyNavigationShell from '../components/LegacyNavigationShell';
 import NavigationShell from '../components/NavigationShell';
 import { SessionTracker } from '../components/SessionTracker';
 import { SiteProvider } from '../components/SiteProvider';
@@ -75,6 +76,7 @@ export default async function RootLayout({
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
   let fluidSearch = process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false';
   let enableWebLive = false;
+  let navLayout: 'horizontal' | 'vertical' = 'horizontal';
   let preferBrowserNavigation = false;
   let customAdFilterVersion = 0;
   let aiRecommendEnabled = false;
@@ -105,6 +107,8 @@ export default async function RootLayout({
     }));
     fluidSearch = config.SiteConfig.FluidSearch;
     enableWebLive = config.SiteConfig.EnableWebLive ?? false;
+    // 修改点：读取后台站点级导航布局，未配置时保持当前横向顶部导航
+    navLayout = config.SiteConfig.NavLayout ?? 'horizontal';
     // 修改点：将后台站点配置中的浏览器原生跳转默认值注入前端运行时配置
     preferBrowserNavigation = config.SiteConfig.PreferBrowserNavigation ?? false;
     // 修改点：将后台站点配置中的长按倍速默认值提前缓存，避免运行时配置引用局部变量报错
@@ -134,6 +138,8 @@ export default async function RootLayout({
     CUSTOM_CATEGORIES: customCategories,
     FLUID_SEARCH: fluidSearch,
     ENABLE_WEB_LIVE: enableWebLive,
+    // 修改点：向前台注入后台选择的导航布局，便于客户端组件保持一致行为
+    NAV_LAYOUT: navLayout,
     // 修改点：向前台注入后台配置的顶部固定菜单隐藏列表
     NAV_MENU_HIDDEN_ITEMS: navMenuHiddenItems,
     PREFER_BROWSER_NAVIGATION: preferBrowserNavigation,
@@ -184,17 +190,27 @@ export default async function RootLayout({
                     <ChunkErrorGuard />
                     <SessionTracker />
                     <RouteWarmup />
-                    {/* 导航栏在 layout 层，自动持久化 */}
-                    <NavigationShell />
-                    {/* 主内容区域 - 只有这部分会在路由切换时重新渲染 */}
-                    <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
-                      <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
+                    {/* 修改点：根据后台站点设置在当前横向导航与原始竖向导航之间切换，避免双导航 */}
+                    {navLayout === 'vertical' ? (
+                      <LegacyNavigationShell>
                         {/* 修改点：全站不再展示 cinematic loading 页面，保留 Suspense 边界但回退改为空 */}
-                        <Suspense fallback={null}>
-                          {children}
-                        </Suspense>
-                      </div>
-                    </main>
+                        <Suspense fallback={null}>{children}</Suspense>
+                      </LegacyNavigationShell>
+                    ) : (
+                      <>
+                        {/* 导航栏在 layout 层，自动持久化 */}
+                        <NavigationShell />
+                        {/* 主内容区域 - 只有这部分会在路由切换时重新渲染 */}
+                        <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
+                          <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
+                            {/* 修改点：全站不再展示 cinematic loading 页面，保留 Suspense 边界但回退改为空 */}
+                            <Suspense fallback={null}>
+                              {children}
+                            </Suspense>
+                          </div>
+                        </main>
+                      </>
+                    )}
                     <GlobalErrorIndicator />
                   </SiteProvider>
                   <Suspense fallback={null}>

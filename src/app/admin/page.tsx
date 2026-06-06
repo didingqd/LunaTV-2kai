@@ -390,6 +390,8 @@ interface SiteConfig {
   ShowAdultContent: boolean;
   FluidSearch: boolean;
   EnableWebLive: boolean;
+  // 修改点：站点设置中切换当前横向顶部导航与原始竖向侧边导航
+  NavLayout: 'horizontal' | 'vertical';
   PreferBrowserNavigation: boolean;
   DefaultLockedLongPressRate: number;
   EnablePuppeteer: boolean; // 豆瓣 Puppeteer 开关
@@ -5448,6 +5450,8 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     ShowAdultContent: false,
     FluidSearch: true,
     EnableWebLive: false,
+    // 修改点：默认保持当前横向顶部导航布局
+    NavLayout: 'horizontal',
     // 修改点：新增后台站点级浏览器原生跳转默认值，供前台本地设置默认继承
     PreferBrowserNavigation: false,
     // 修改点：新增后台站点级长按倍速默认值，供前台本地设置默认继承
@@ -5549,6 +5553,8 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         ShowAdultContent: config.SiteConfig.ShowAdultContent || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
         EnableWebLive: config.SiteConfig.EnableWebLive ?? false,
+        // 修改点：布局回填使用 ??，未配置时保持当前横向顶部导航
+        NavLayout: config.SiteConfig.NavLayout ?? 'horizontal',
         // 修改点：布尔回填使用 ??，确保后台显式保存 false 时不会被错误吞掉
         PreferBrowserNavigation:
           config.SiteConfig.PreferBrowserNavigation ?? false,
@@ -6448,6 +6454,67 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
           网页直播性能较差，会导致服务器内存泄露，建议谨慎开启。
         </p>
+      </div>
+
+      {/* 修改点：后台站点配置新增导航布局切换，保存后刷新即可在横向/竖向布局间切换 */}
+      <div className='rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-4 space-y-3'>
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+            顶部菜单栏布局
+          </label>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            横向布局为当前顶部菜单；竖向布局恢复原始桌面左侧菜单，移动端保留顶部栏与底部导航。
+          </p>
+        </div>
+        <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+          {[
+            {
+              value: 'horizontal' as const,
+              title: '横向顶部菜单',
+              description: '当前布局，桌面顶部横向导航，移动端底部更多菜单。',
+            },
+            {
+              value: 'vertical' as const,
+              title: '竖向侧边菜单',
+              description: '原始布局，桌面左侧可折叠菜单，移动端顶部栏 + 底部导航。',
+            },
+          ].map((option) => {
+            const selected = siteSettings.NavLayout === option.value;
+            return (
+              <button
+                key={option.value}
+                type='button'
+                onClick={() =>
+                  setSiteSettings((prev) => ({
+                    ...prev,
+                    NavLayout: option.value,
+                  }))
+                }
+                className={`text-left rounded-lg border p-3 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${selected
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20 shadow-sm'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-green-300 dark:hover:border-green-700'
+                  }`}
+                aria-pressed={selected}
+              >
+                <div className='flex items-center justify-between gap-3'>
+                  <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                    {option.title}
+                  </span>
+                  <span
+                    className={`h-3 w-3 rounded-full border ${selected
+                      ? 'border-green-500 bg-green-500'
+                      : 'border-gray-300 dark:border-gray-600'
+                      }`}
+                    aria-hidden='true'
+                  />
+                </div>
+                <p className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                  {option.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 修改点：后台站点配置新增浏览器原生跳转默认值，供前台本地设置默认继承 */}
