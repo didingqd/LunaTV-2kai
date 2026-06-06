@@ -181,9 +181,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const actualEpisodes = dynamicEpisodes;
   const actualYear = year;
   const actualQuery = query || '';
-  // 修改点：搜索聚合卡片优先复用 douban_id 作为收藏标识，保证收藏页仍能按豆瓣/标题路径播放
-  const favoriteSource = actualSource || (from === 'search' && isAggregate && actualDoubanId ? 'douban' : '');
-  const favoriteId = actualId || (from === 'search' && isAggregate && actualDoubanId ? actualDoubanId.toString() : '');
 
   const actualSearchType = useMemo(() =>
     isAggregate
@@ -191,6 +188,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       : type,
     [isAggregate, actualEpisodes, type]
   );
+  // 修改点：搜索聚合卡片没有 douban_id 时，用标题年份生成稳定收藏标识，避免部分搜索结果无法收藏
+  const searchAggregateFavoriteId = useMemo(() => {
+    if (!(from === 'search' && isAggregate)) return '';
+    const titlePart = actualTitle.trim();
+    if (!titlePart) return '';
+    return [titlePart, actualYear || '', actualSearchType || ''].join('|');
+  }, [from, isAggregate, actualTitle, actualYear, actualSearchType]);
+  // 修改点：搜索聚合卡片优先复用 douban_id 收藏；缺失时退回标题年份标识，保证所有搜索聚合结果都有收藏入口
+  const favoriteSource = actualSource || (from === 'search' && isAggregate ? (actualDoubanId ? 'douban' : 'search_aggregate') : '');
+  const favoriteId = actualId || (from === 'search' && isAggregate ? (actualDoubanId ? actualDoubanId.toString() : searchAggregateFavoriteId) : '');
 
   // 判断是否为即将上映（未发布的内容）- 只有真正未上映的才算
   const isUpcoming = useMemo(() =>
@@ -1433,7 +1440,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
                     return (
                       <div
-                        className='absolute bottom-full mb-2 opacity-0 invisible group-hover/sources:opacity-100 group-hover/sources:visible transition-all duration-200 ease-out delay-100 pointer-events-none z-40 right-0 sm:right-0 -translate-x-0 sm:translate-x-0'
+                        // 修改点：搜索页源角标在左下角时，悬浮源列表改为从左侧向右展开，避免内容被卡片左边缘截断且不遮挡右下角收藏按钮
+                        className={`absolute bottom-full mb-2 opacity-0 invisible group-hover/sources:opacity-100 group-hover/sources:visible transition-all duration-200 ease-out delay-100 pointer-events-none z-40 ${from === 'search' ? 'left-0' : 'right-0'} -translate-x-0 sm:translate-x-0`}
                         style={{
                           WebkitUserSelect: 'none',
                           userSelect: 'none',
@@ -1478,7 +1486,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                           )}
 
                           {/* 小箭头 */}
-                          <div className='absolute top-full right-2 sm:right-3 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] sm:border-l-[6px] sm:border-r-[6px] sm:border-t-[6px] border-transparent border-t-gray-800/90'></div>
+                          <div className={`absolute top-full ${from === 'search' ? 'left-2 sm:left-3' : 'right-2 sm:right-3'} w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] sm:border-l-[6px] sm:border-r-[6px] sm:border-t-[6px] border-transparent border-t-gray-800/90`}></div>
                         </div>
                       </div>
                     );
