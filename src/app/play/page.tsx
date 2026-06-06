@@ -88,8 +88,8 @@ const LOCKED_LONG_PRESS_RATE_KEY = 'moontv_locked_long_press_rate';
 const PREFERRED_AUDIO_LANG_KEY = 'preferred_audio_lang';
 const PLAYBACK_RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 
-// 🔧 修改点：复刻源仓库锁定态长按三倍速配置，避免 ArtPlayer 锁定手势拦截后无法提速
-const DEFAULT_LOCKED_LONG_PRESS_RATE = 3;
+// 🔧 修改点：长按倍速兜底与设置面板/后台默认保持一致，避免未设置时回退到 ArtPlayer 内置 3x
+const DEFAULT_LOCKED_LONG_PRESS_RATE = 2;
 let LOCKED_LONG_PRESS_RATE = DEFAULT_LOCKED_LONG_PRESS_RATE;
 const LOCKED_LONG_PRESS_DELAY_MS = 1000;
 const LOCKED_LONG_PRESS_MOVE_THRESHOLD = 18;
@@ -4807,7 +4807,8 @@ function PlayPageClient() {
         theme: '#22c55e',
         lang: 'zh-cn',
         hotkey: false,
-        fastForward: true,
+        // 🔧 修改点：关闭 ArtPlayer 手机端内置长按 3x，改由下方自定义长按逻辑读取用户设置的倍速
+        fastForward: false,
         autoOrientation: true,
         lock: true,
         // AirPlay 仅在支持 WebKit API 的浏览器中启用
@@ -6557,13 +6558,7 @@ function PlayPageClient() {
     return Boolean(target.closest(LOCKED_LONG_PRESS_IGNORE_SELECTORS));
   }, []);
 
-  // 🔧 修改点：复刻源仓库锁定态判定方式，直接读取 ArtPlayer 根节点上的 art-lock class
-  const isArtPlayerLocked = useCallback(() => {
-    const playerRoot = portalContainer || artPlayerRef.current?.template?.$player;
-    return Boolean(playerRoot?.classList?.contains('art-lock'));
-  }, [portalContainer]);
-
-  // 🔧 修改点：复刻源仓库做法，在播放器根节点捕获 touch 事件，仅为锁定态补充长按临时 3 倍速能力
+  // 🔧 修改点：在播放器根节点捕获 touch 事件，统一锁定/未锁定状态的手机端长按倍速，避免 ArtPlayer 内置固定 3x
   useEffect(() => {
     const playerRoot = portalContainer || artPlayerRef.current?.template?.$player;
     if (!playerRoot) return;
@@ -6571,10 +6566,6 @@ function PlayPageClient() {
     const handleTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
         stopLockedLongPressRate();
-        return;
-      }
-
-      if (!isArtPlayerLocked()) {
         return;
       }
 
@@ -6589,7 +6580,7 @@ function PlayPageClient() {
 
       lockedLongPressTimerRef.current = setTimeout(() => {
         const player = artPlayerRef.current;
-        if (!player || !isArtPlayerLocked()) return;
+        if (!player) return;
 
         LOCKED_LONG_PRESS_RATE = loadLockedLongPressRate();
         const currentRate = sanitizePlaybackRate(player.playbackRate);
@@ -6638,7 +6629,6 @@ function PlayPageClient() {
     };
   }, [
     clearLockedLongPressTimer,
-    isArtPlayerLocked,
     isLockedLongPressIgnoredTarget,
     portalContainer,
     stopLockedLongPressRate,
