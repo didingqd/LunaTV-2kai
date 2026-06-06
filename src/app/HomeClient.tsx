@@ -812,7 +812,7 @@ function HomeClient({ initialConfig }: {
       {/* Telegram 新用户欢迎弹窗 */}
       <TelegramWelcomeModal />
 
-      <div className='overflow-visible mt-0 pt-2 md:pt-4 pb-32 md:pb-safe-bottom'>
+      <div className='overflow-visible -mt-6 md:mt-0 pb-32 md:pb-safe-bottom'>
         {/* 修改点：恢复欢迎横幅；当前移动端竖向布局已完全复用横向容器，不会再与导航重叠 */}
         <div className='mb-6 relative overflow-hidden rounded-xl bg-linear-to-r from-blue-500/90 via-purple-500/90 to-pink-500/90 backdrop-blur-sm shadow-xl border border-white/20'>
           <div className='relative p-4 sm:p-5'>
