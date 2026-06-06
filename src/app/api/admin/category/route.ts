@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
+import { revalidatePath } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
@@ -9,7 +10,9 @@ import { db } from '@/lib/db';
 export const runtime = 'nodejs';
 
 // 支持的操作类型
-type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort';
+type NavMenuKey = 'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show';
+type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort' | 'setNavMenuVisibility';
+const NAV_MENU_KEYS: NavMenuKey[] = ['source-browser', 'movie', 'tv', 'shortdrama', 'anime', 'show'];
 
 interface BaseBody {
   action?: Action;
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     const username = authInfo.username;
 
     // 基础校验
-    const ACTIONS: Action[] = ['add', 'disable', 'enable', 'delete', 'sort'];
+    const ACTIONS: Action[] = ['add', 'disable', 'enable', 'delete', 'sort', 'setNavMenuVisibility'];
     if (!username || !action || !ACTIONS.includes(action)) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
@@ -169,6 +172,25 @@ export async function POST(request: NextRequest) {
         adminConfig.CustomCategories = newList;
         break;
       }
+      case 'setNavMenuVisibility': {
+        const { key, visible } = body as {
+          key?: NavMenuKey;
+          visible?: boolean;
+        };
+        if (!key || !NAV_MENU_KEYS.includes(key) || typeof visible !== 'boolean') {
+          return NextResponse.json(
+            { error: '顶部菜单参数格式错误' },
+            { status: 400 }
+          );
+        }
+
+        // 修改点：保存顶部固定菜单显隐状态，关闭后仅隐藏导航入口不禁用页面路由
+        const hiddenItems = adminConfig.SiteConfig.NavMenuHiddenItems ?? [];
+        adminConfig.SiteConfig.NavMenuHiddenItems = visible
+          ? hiddenItems.filter((item) => item !== key)
+          : Array.from(new Set([...hiddenItems, key]));
+        break;
+      }
       default:
         return NextResponse.json({ error: '未知操作' }, { status: 400 });
     }
@@ -178,6 +200,8 @@ export async function POST(request: NextRequest) {
     
     // 清除配置缓存，强制下次重新从数据库读取
     clearConfigCache();
+    // 修改点：分类菜单显隐会影响 layout 注入的运行时配置，保存后主动刷新 layout
+    revalidatePath('/', 'layout');
 
     return NextResponse.json(
       { ok: true },

@@ -450,6 +450,17 @@ interface CustomCategory {
   from: 'config' | 'custom';
 }
 
+type NavMenuKey = 'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show';
+
+const NAV_MENU_OPTIONS: Array<{ key: NavMenuKey; label: string; description: string }> = [
+  { key: 'source-browser', label: '源浏览器', description: '控制顶部菜单中的源浏览器入口' },
+  { key: 'movie', label: '电影', description: '控制豆瓣电影分类入口' },
+  { key: 'tv', label: '剧集', description: '控制豆瓣剧集分类入口' },
+  { key: 'shortdrama', label: '短剧', description: '控制短剧页面入口' },
+  { key: 'anime', label: '动漫', description: '控制豆瓣动漫分类入口' },
+  { key: 'show', label: '综艺', description: '控制豆瓣综艺分类入口' },
+];
+
 // 可折叠标签组件
 interface CollapsibleTabProps {
   title: string;
@@ -4833,6 +4844,22 @@ const CategoryConfig = ({
     });
   };
 
+  const handleToggleNavMenuVisibility = (key: NavMenuKey) => {
+    const hiddenItems = config?.SiteConfig.NavMenuHiddenItems ?? [];
+    const visible = !hiddenItems.includes(key);
+
+    // 修改点：新增顶部固定菜单显隐控制，关闭后不影响自定义分类启用/禁用逻辑
+    withLoading(`toggleNavMenu_${key}`, () =>
+      callCategoryApi({
+        action: 'setNavMenuVisibility',
+        key,
+        visible: !visible,
+      })
+    ).catch(() => {
+      console.error('操作失败', 'setNavMenuVisibility', key);
+    });
+  };
+
   const handleDelete = (query: string, type: 'movie' | 'tv') => {
     withLoading(`deleteCategory_${query}_${type}`, () => callCategoryApi({ action: 'delete', query, type })).catch(() => {
       console.error('操作失败', 'delete', query, type);
@@ -4977,6 +5004,52 @@ const CategoryConfig = ({
 
   return (
     <div className='space-y-6'>
+      {/* 修改点：新增顶部固定菜单显示控制，关闭后仅隐藏导航入口，不影响页面直接访问 */}
+      <div className='p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4'>
+        <div>
+          <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+            顶部菜单显示控制
+          </h4>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            关闭后不会在桌面顶部导航和移动端菜单中显示，不影响对应页面直接访问。
+          </p>
+        </div>
+        <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'>
+          {NAV_MENU_OPTIONS.map((item) => {
+            const hiddenItems = config.SiteConfig.NavMenuHiddenItems ?? [];
+            const visible = !hiddenItems.includes(item.key);
+            const loadingKey = `toggleNavMenu_${item.key}`;
+
+            return (
+              <div
+                key={item.key}
+                className='flex items-center justify-between gap-3 p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
+              >
+                <div className='min-w-0'>
+                  <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                    {item.label}
+                  </div>
+                  <div className='text-xs text-gray-500 dark:text-gray-400 truncate'>
+                    {item.description}
+                  </div>
+                </div>
+                <button
+                  type='button'
+                  onClick={() => handleToggleNavMenuVisibility(item.key)}
+                  disabled={isLoading(loadingKey)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${visible ? buttonStyles.toggleOn : buttonStyles.toggleOff} ${isLoading(loadingKey) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  aria-label={`${visible ? '隐藏' : '显示'}${item.label}菜单`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${visible ? buttonStyles.toggleThumbOn : buttonStyles.toggleThumbOff}`}
+                  />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 添加分类表单 */}
       <div className='flex items-center justify-between'>
         <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
