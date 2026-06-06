@@ -5249,26 +5249,7 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
-          // 🚀 简单弹幕发送按钮（仅Web端显示）
-          ...(isMobile ? [] : [{
-            position: 'right',
-            html: '<span class="hint--top" aria-label="发送弹幕">弹</span>',
-            tooltip: '发送弹幕',
-            click: function () {
-              if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-                // 手动弹出输入框发送弹幕
-                const text = prompt('请输入弹幕内容', '');
-                if (text && text.trim()) {
-                  artPlayerRef.current.plugins.artplayerPluginDanmuku.emit({
-                    text: text.trim(),
-                    time: artPlayerRef.current.currentTime,
-                    color: '#FFFFFF',
-                    mode: 0,
-                  });
-                }
-              }
-            },
-          }]),
+          // 修改点：删除视频播放器控制栏的发送弹幕按钮，仅保留弹幕展示与设置能力
           // 音轨切换按钮
           buildAudioTrackControl(),
         ],
