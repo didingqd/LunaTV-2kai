@@ -222,10 +222,10 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     <nav
       className={cn(
         'md:hidden fixed left-0 right-0 z-600',
-        // Netflix 风格：全宽度贴底导航栏
-        'bg-black/95 dark:bg-black/98',
+        // 修改点：竖向布局移动端底栏区分日间/夜间背景，避免日间模式直接显示黑底
+        'bg-white/90 dark:bg-gray-900/95',
         'backdrop-blur-lg',
-        'border-t border-white/5',
+        'border-t border-gray-200/70 dark:border-white/5',
       )}
       style={{
         // 贴底，使用 safe area insets
@@ -262,12 +262,13 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
               key={item.href}
               href={item.href}
               className={cn(
-                // Netflix 风格：竖向布局
+                // 修改点：日间模式下激活项使用渐变胶囊承载白色图标文字，未激活项使用灰色文本
                 'flex flex-col items-center justify-center',
                 'min-w-[60px] flex-1',
-                'py-2 px-1',
+                'py-2 px-1 rounded-2xl',
                 'transition-all duration-200',
                 'active:scale-95',
+                active ? item.activeGradient : item.hoverBg,
               )}
               aria-label={item.label}
             >
@@ -278,14 +279,14 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 className={cn(
                   'w-6 h-6 mb-1',
                   'transition-colors duration-200',
-                  active ? 'text-white' : 'text-gray-400',
+                  active ? item.activeTextColor : 'text-gray-600 dark:text-gray-400',
                 )}
               />
               <span
                 className={cn(
                   'text-[10px] font-medium',
                   'transition-colors duration-200',
-                  active ? 'text-white' : 'text-gray-400',
+                  active ? item.activeTextColor : 'text-gray-600 dark:text-gray-400',
                 )}
               >
                 {item.label}

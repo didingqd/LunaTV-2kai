@@ -332,11 +332,8 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                       href={item.href}
                       onClick={() => setActive(item.href)}
                       className={`group relative flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-linear-to-r ${theme.hover} ${theme.active} ${theme.text} transition-all duration-200 min-h-[40px] dark:text-gray-300 ${isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
-                        } gap-3 justify-start hover:shadow-md ${theme.shadow} animate-[slideInFromLeft_0.3s_ease-out] opacity-0`}
+                        } gap-3 justify-start hover:shadow-md ${theme.shadow}`}
                       aria-label={item.label}
-                      style={{
-                        animation: `slideInFromLeft 0.3s ease-out ${index * 0.05}s forwards`,
-                      }}
                     >
                       <div className='w-4 h-4 flex items-center justify-center relative z-10'>
                         <Icon className={`h-4 w-4 text-gray-500 ${theme.icon} dark:text-gray-400 transition-all duration-200 group-hover:scale-110 group-hover:rotate-12`} />
