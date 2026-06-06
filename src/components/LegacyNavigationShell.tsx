@@ -8,8 +8,7 @@ import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 
 import AIRecommendModal from './AIRecommendModal';
 import { BackButton } from './BackButton';
-import ModernNav from './ModernNav';
-import MobileHeader from './MobileHeader';
+import NavigationShell from './NavigationShell';
 import { isStandaloneRoute } from './navigation-routes';
 import Sidebar from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
@@ -47,14 +46,17 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
 
   return (
     <div className='w-full min-h-screen' translate='no'>
-      {/* 修改点：竖向布局复用原始移动端顶部栏，并把 AI 按钮放到搜索按钮旁边 */}
-      <MobileHeader
-        showBackButton={showBackButton}
-        showAIButton={aiEnabled ?? false}
-        onAIButtonClick={() => setShowAIRecommendModal(true)}
-      />
+      {/* 修改点：竖向布局小屏直接复用横向布局导航壳和内容间距，只保留桌面端独立竖向侧边栏 */}
+      <div className='md:hidden'>
+        <NavigationShell showDesktopNav={false} showMobileNav showSpacer={false} />
+        <main className='w-full min-h-screen pt-[44px] pb-16'>
+          <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6'>
+            {children}
+          </div>
+        </main>
+      </div>
 
-      <div className='flex md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
+      <div className='hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
         <div className='hidden md:block'>
           <Sidebar activePath={activePath} />
         </div>
@@ -83,7 +85,7 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
           </div>
 
           <main
-            className='flex-1 md:min-h-0 mb-14 md:mb-0 md:mt-0 mt-12'
+            className='flex-1 md:min-h-0 md:pt-[28px] md:mb-0 md:mt-0'
             style={{
               // 修改点：竖向布局由自身预留移动端底部导航与安全区空间，不叠加现代布局 padding
               paddingBottom: 'calc(5.5rem + env(safe-area-inset-bottom))',
@@ -95,9 +97,6 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
           </main>
         </div>
       </div>
-
-      {/* 修改点：竖向布局小屏底部导航直接复用横向布局的移动端 ModernNav，保持交互和样式一致 */}
-      <ModernNav showDesktopNav={false} showMobileNav showSpacer={false} />
 
       <AIRecommendModal
         isOpen={showAIRecommendModal}
