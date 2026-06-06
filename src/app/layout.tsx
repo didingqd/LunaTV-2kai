@@ -80,6 +80,7 @@ export default async function RootLayout({
   let aiRecommendEnabled = false;
   let embyEnabled = false;
   let defaultLockedLongPressRate = 2;
+  let navMenuHiddenItems: string[] = [];
   let customCategories = [] as {
     name: string;
     type: 'movie' | 'tv';
@@ -108,6 +109,8 @@ export default async function RootLayout({
     preferBrowserNavigation = config.SiteConfig.PreferBrowserNavigation ?? false;
     // 修改点：将后台站点配置中的长按倍速默认值提前缓存，避免运行时配置引用局部变量报错
     defaultLockedLongPressRate = config.SiteConfig.DefaultLockedLongPressRate ?? 2;
+    // 修改点：将后台配置的顶部固定菜单隐藏列表注入前台，供导航栏过滤菜单项
+    navMenuHiddenItems = config.SiteConfig.NavMenuHiddenItems ?? [];
     customAdFilterVersion = config.SiteConfig?.CustomAdFilterVersion || 0;
     aiRecommendEnabled = config.AIRecommendConfig?.enabled ?? false;
     // 检查是否启用了 Emby 功能（支持多源）
@@ -131,6 +134,8 @@ export default async function RootLayout({
     CUSTOM_CATEGORIES: customCategories,
     FLUID_SEARCH: fluidSearch,
     ENABLE_WEB_LIVE: enableWebLive,
+    // 修改点：向前台注入后台配置的顶部固定菜单隐藏列表
+    NAV_MENU_HIDDEN_ITEMS: navMenuHiddenItems,
     PREFER_BROWSER_NAVIGATION: preferBrowserNavigation,
     // 修改点：向前台注入站点级长按倍速默认值，供未手动设置的用户继承
     DEFAULT_LOCKED_LONG_PRESS_RATE: defaultLockedLongPressRate,

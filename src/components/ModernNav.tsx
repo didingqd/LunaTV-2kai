@@ -4,7 +4,7 @@
 
 import { Cat, Clover, Film, FolderOpen, Globe, Home, MoreHorizontal, PlaySquare, Radio, Search, Sparkles, Star, Tv, X } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, queryOptions } from '@tanstack/react-query';
 
 import { FastLink } from './FastLink';
@@ -13,12 +13,84 @@ import { UserMenu } from './UserMenu';
 import { useSite } from './SiteProvider';
 
 interface NavItem {
+  id: string;
   icon: any;
   label: string;
   href: string;
   color: string;
   gradient: string;
 }
+
+type NavMenuKey = 'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show';
+
+const FIXED_CATEGORY_MENU_KEYS: NavMenuKey[] = ['source-browser', 'movie', 'tv', 'shortdrama', 'anime', 'show'];
+
+const BASE_MENU_ITEMS: NavItem[] = [
+  {
+    id: 'home',
+    icon: Home,
+    label: '首页',
+    href: '/',
+    color: 'text-green-500',
+    gradient: 'from-green-500 to-emerald-500',
+  },
+  {
+    id: 'search',
+    icon: Search,
+    label: '搜索',
+    href: '/search',
+    color: 'text-blue-500',
+    gradient: 'from-blue-500 to-cyan-500',
+  },
+  {
+    id: 'source-browser',
+    icon: Globe,
+    label: '源浏览器',
+    href: '/source-browser',
+    color: 'text-emerald-500',
+    gradient: 'from-emerald-500 to-green-500',
+  },
+  {
+    id: 'movie',
+    icon: Film,
+    label: '电影',
+    href: '/douban?type=movie',
+    color: 'text-red-500',
+    gradient: 'from-red-500 to-pink-500',
+  },
+  {
+    id: 'tv',
+    icon: Tv,
+    label: '剧集',
+    href: '/douban?type=tv',
+    color: 'text-blue-600',
+    gradient: 'from-blue-600 to-indigo-600',
+  },
+  {
+    id: 'shortdrama',
+    icon: PlaySquare,
+    label: '短剧',
+    href: '/shortdrama',
+    color: 'text-purple-500',
+    gradient: 'from-purple-500 to-violet-500',
+  },
+  {
+    id: 'anime',
+    icon: Cat,
+    label: '动漫',
+    href: '/douban?type=anime',
+    color: 'text-pink-500',
+    gradient: 'from-pink-500 to-rose-500',
+  },
+  {
+    id: 'show',
+    icon: Clover,
+    label: '综艺',
+    href: '/douban?type=show',
+    color: 'text-orange-500',
+    gradient: 'from-orange-500 to-amber-500',
+  },
+];
 
 interface ModernNavProps {
   showAIButton?: boolean;
@@ -57,92 +129,38 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
   const { siteName } = useSite();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  const [menuItems, setMenuItems] = useState<NavItem[]>([
-    {
-      icon: Home,
-      label: '首页',
-      href: '/',
-      color: 'text-green-500',
-      gradient: 'from-green-500 to-emerald-500',
-    },
-    {
-      icon: Search,
-      label: '搜索',
-      href: '/search',
-      color: 'text-blue-500',
-      gradient: 'from-blue-500 to-cyan-500',
-    },
-    {
-      icon: Globe,
-      label: '源浏览器',
-      href: '/source-browser',
-      color: 'text-emerald-500',
-      gradient: 'from-emerald-500 to-green-500',
-    },
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-      color: 'text-red-500',
-      gradient: 'from-red-500 to-pink-500',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-      color: 'text-blue-600',
-      gradient: 'from-blue-600 to-indigo-600',
-    },
-    {
-      icon: PlaySquare,
-      label: '短剧',
-      href: '/shortdrama',
-      color: 'text-purple-500',
-      gradient: 'from-purple-500 to-violet-500',
-    },
-    {
-      icon: Cat,
-      label: '动漫',
-      href: '/douban?type=anime',
-      color: 'text-pink-500',
-      gradient: 'from-pink-500 to-rose-500',
-    },
-    {
-      icon: Clover,
-      label: '综艺',
-      href: '/douban?type=show',
-      color: 'text-orange-500',
-      gradient: 'from-orange-500 to-amber-500',
-    },
-  ]);
-
   // 检查用户是否配置了 Emby
   const { data: userEmbyConfig } = useQuery(userEmbyConfigOptions());
 
   // 检查管理员是否设置了公共源
   const { data: publicSourcesData } = useQuery(publicSourcesOptions());
 
-  useEffect(() => {
-    const runtimeConfig = (window as any).RUNTIME_CONFIG;
-    const newItems = [...menuItems];
+  const menuItems = useMemo(() => {
+    const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : null;
+    const hiddenItems = (runtimeConfig?.NAV_MENU_HIDDEN_ITEMS ?? []) as string[];
+
+    // 修改点：根据后台隐藏列表过滤固定菜单项，源浏览器与影视分类都可在后台分类配置中控制显隐
+    const newItems = BASE_MENU_ITEMS.filter((item) => {
+      if (!FIXED_CATEGORY_MENU_KEYS.includes(item.id as NavMenuKey)) return true;
+      return !hiddenItems.includes(item.id);
+    });
 
     // 直播 - 根据 ENABLE_WEB_LIVE 动态控制
-    const hasLiveInMenu = newItems.some(item => item.href === '/live');
-    if (runtimeConfig?.ENABLE_WEB_LIVE && !hasLiveInMenu) {
+    if (runtimeConfig?.ENABLE_WEB_LIVE) {
       newItems.push({
+        id: 'live',
         icon: Radio,
         label: '直播',
         href: '/live',
         color: 'text-teal-500',
         gradient: 'from-teal-500 to-cyan-500',
       });
-    } else if (!runtimeConfig?.ENABLE_WEB_LIVE && hasLiveInMenu) {
-      const index = newItems.findIndex(item => item.href === '/live');
-      if (index > -1) newItems.splice(index, 1);
     }
 
-    if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0 && !newItems.some(item => item.href === '/douban?type=custom')) {
+    // 修改点：自定义入口仍沿用启用自定义分类数量判断，不受固定菜单隐藏列表影响
+    if (runtimeConfig?.CUSTOM_CATEGORIES?.length > 0) {
       newItems.push({
+        id: 'custom',
         icon: Star,
         label: '自定义',
         href: '/douban?type=custom',
@@ -154,28 +172,18 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
     // Emby - 用户有私人源 OR 管理员有公共源，都显示导航
     const hasUserEmby = userEmbyConfig?.sources?.some((s: any) => s.enabled && s.ServerURL);
     const hasPublicEmby = (publicSourcesData?.sources?.length ?? 0) > 0;
-    const hasEmbyConfig = hasUserEmby || hasPublicEmby;
-    const hasEmbyInMenu = newItems.some(item => item.href === '/emby');
-
-    if (hasEmbyConfig && !hasEmbyInMenu) {
+    if (hasUserEmby || hasPublicEmby) {
       newItems.push({
+        id: 'emby',
         icon: FolderOpen,
         label: 'Emby',
         href: '/emby',
         color: 'text-indigo-500',
         gradient: 'from-indigo-500 to-purple-500',
       });
-    } else if (!hasEmbyConfig && hasEmbyInMenu) {
-      // 如果用户删除了所有 Emby 配置，移除导航项
-      const index = newItems.findIndex(item => item.href === '/emby');
-      if (index > -1) {
-        newItems.splice(index, 1);
-      }
     }
 
-    if (newItems.length !== menuItems.length) {
-      setMenuItems(newItems);
-    }
+    return newItems;
   }, [userEmbyConfig, publicSourcesData]);
 
   useEffect(() => {
@@ -218,7 +226,7 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
 
               return (
                 <FastLink
-                  key={item.label}
+                  key={item.id}
                   href={item.href}
                   useTransitionNav
                   onClick={() => setActive(item.href)}
@@ -312,7 +320,7 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
 
                 return (
                   <FastLink
-                    key={item.label}
+                    key={item.id}
                     href={item.href}
                     useTransitionNav
                     onClick={() => {
@@ -369,7 +377,7 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
 
             return (
               <FastLink
-                key={item.label}
+                key={item.id}
                 href={item.href}
                 useTransitionNav
                 onClick={() => setActive(item.href)}

@@ -20,6 +20,8 @@ export interface AdminConfig {
     EnableWebLive: boolean;
     PreferBrowserNavigation?: boolean;
     DefaultLockedLongPressRate?: number;
+    // 修改点：后台分类配置页使用该字段控制顶部固定菜单是否隐藏
+    NavMenuHiddenItems?: Array<'source-browser' | 'movie' | 'tv' | 'shortdrama' | 'anime' | 'show'>;
     // TMDB配置
     TMDBApiKey?: string;
     TMDBLanguage?: string;
