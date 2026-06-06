@@ -382,6 +382,16 @@ function HomeClient({ initialConfig }: {
     return !(window as any).RUNTIME_CONFIG?.DISABLE_HERO_TRAILER;
   }, []); // Empty deps - only read once on mount
 
+  // 修改点：识别竖向桌面布局，用于欢迎横幅避开右上角主题/用户按钮
+  const isVerticalNavLayout = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (window as any).RUNTIME_CONFIG?.NAV_LAYOUT === 'vertical';
+  }, []);
+
+  const homeContentOffsetClass = isVerticalNavLayout
+    ? 'overflow-visible -mt-8 md:mt-6 pb-32 md:pb-safe-bottom'
+    : 'overflow-visible -mt-8 md:-mt-2 pb-32 md:pb-safe-bottom';
+
   // 🚀 计算 loading 状态：使用 TanStack Query 的 isLoading 状态
   // isLoading = 任何查询正在首次加载（没有缓存数据）
   // 这确保用户看到的是完整加载好的页面，而不是部分内容逐渐出现
@@ -812,7 +822,7 @@ function HomeClient({ initialConfig }: {
       {/* Telegram 新用户欢迎弹窗 */}
       <TelegramWelcomeModal />
 
-      <div className='overflow-visible -mt-8 md:-mt-2 pb-32 md:pb-safe-bottom'>
+      <div className={homeContentOffsetClass}>
         {/* 修改点：恢复欢迎横幅；当前移动端竖向布局已完全复用横向容器，不会再与导航重叠 */}
         <div className='mb-6 relative overflow-hidden rounded-xl bg-linear-to-r from-blue-500/90 via-purple-500/90 to-pink-500/90 backdrop-blur-sm shadow-xl border border-white/20'>
           <div className='relative p-4 sm:p-5'>
