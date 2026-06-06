@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
 
 import { BackButton } from './BackButton';
 import { useSite } from './SiteProvider';
@@ -9,9 +10,15 @@ import { UserMenu } from './UserMenu';
 
 interface MobileHeaderProps {
   showBackButton?: boolean;
+  showAIButton?: boolean;
+  onAIButtonClick?: () => void;
 }
 
-const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
+const MobileHeader = ({
+  showBackButton = false,
+  showAIButton = false,
+  onAIButtonClick,
+}: MobileHeaderProps) => {
   const { siteName } = useSite();
   return (
     <header className='md:hidden fixed top-0 left-0 right-0 z-999 w-full bg-white/90 backdrop-blur-md border-b border-gray-200/50 shadow-sm dark:bg-gray-900/90 dark:border-gray-700/50'>
@@ -37,6 +44,17 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
               />
             </svg>
           </Link>
+          {/* 修改点：竖向布局移动端 AI 推荐按钮放在搜索按钮旁边，避免占用右侧用户操作区 */}
+          {showAIButton && onAIButtonClick && (
+            <button
+              type='button'
+              onClick={onAIButtonClick}
+              className='w-10 h-10 p-2 rounded-full flex items-center justify-center bg-linear-to-br from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 active:scale-95 transition-all duration-200 shadow-md shadow-blue-500/25'
+              aria-label='AI 推荐'
+            >
+              <Sparkles className='w-full h-full' />
+            </button>
+          )}
           {showBackButton && <BackButton />}
         </div>
 

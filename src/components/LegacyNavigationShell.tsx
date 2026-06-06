@@ -1,9 +1,14 @@
 'use client';
 
+import { Sparkles } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
+import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
+
+import AIRecommendModal from './AIRecommendModal';
 import { BackButton } from './BackButton';
-import MobileBottomNav from './MobileBottomNav';
+import ModernNav from './ModernNav';
 import MobileHeader from './MobileHeader';
 import { isStandaloneRoute } from './navigation-routes';
 import Sidebar from './Sidebar';
@@ -21,6 +26,13 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
   const queryString = searchParams.toString();
   const activePath = queryString ? `${pathname}?${queryString}` : pathname;
   const showBackButton = pathname === '/play' || pathname.startsWith('/play/') || pathname === '/live';
+  const [showAIRecommendModal, setShowAIRecommendModal] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(true);
+
+  useEffect(() => {
+    const disabled = isAIRecommendFeatureDisabled();
+    setAiEnabled(!disabled);
+  }, []);
 
   if (isStandalone) {
     // 修改点：独立路由在竖向布局下仍不显示任何导航，保持登录/注册等页面干净
@@ -35,8 +47,12 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
 
   return (
     <div className='w-full min-h-screen' translate='no'>
-      {/* 修改点：竖向布局复用原始移动端顶部栏，避免和现代顶部导航同时显示 */}
-      <MobileHeader showBackButton={showBackButton} />
+      {/* 修改点：竖向布局复用原始移动端顶部栏，并把 AI 按钮放到搜索按钮旁边 */}
+      <MobileHeader
+        showBackButton={showBackButton}
+        showAIButton={aiEnabled ?? false}
+        onAIButtonClick={() => setShowAIRecommendModal(true)}
+      />
 
       <div className='flex md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
         <div className='hidden md:block'>
@@ -51,6 +67,17 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
           )}
 
           <div className='absolute top-2 right-4 z-20 hidden md:flex items-center gap-2'>
+            {/* 修改点：竖向布局电脑端 AI 按钮放在右上角，与横向布局位置保持一致 */}
+            {aiEnabled && (
+              <button
+                type='button'
+                onClick={() => setShowAIRecommendModal(true)}
+                className='relative p-2 rounded-lg bg-linear-to-br from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 active:scale-95 transition-all duration-200 shadow-lg shadow-blue-500/30 group'
+                aria-label='AI 推荐'
+              >
+                <Sparkles className='h-5 w-5 group-hover:scale-110 transition-transform duration-300' />
+              </button>
+            )}
             <ThemeToggle />
             <UserMenu />
           </div>
@@ -69,9 +96,13 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
         </div>
       </div>
 
-      <div className='md:hidden'>
-        <MobileBottomNav activePath={activePath} />
-      </div>
+      {/* 修改点：竖向布局小屏底部导航直接复用横向布局的移动端 ModernNav，保持交互和样式一致 */}
+      <ModernNav showDesktopNav={false} showMobileNav showSpacer={false} />
+
+      <AIRecommendModal
+        isOpen={showAIRecommendModal}
+        onClose={() => setShowAIRecommendModal(false)}
+      />
     </div>
   );
 }

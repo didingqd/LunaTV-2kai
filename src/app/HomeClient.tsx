@@ -803,7 +803,7 @@ function HomeClient({ initialConfig }: {
       {/* Telegram 新用户欢迎弹窗 */}
       <TelegramWelcomeModal />
 
-      <div className='overflow-visible -mt-6 md:mt-0 pb-32 md:pb-safe-bottom'>
+      <div className='overflow-visible mt-0 pt-2 md:pt-4 pb-32 md:pb-safe-bottom'>
         {/* 顶部 Tab 切换 - AI 按钮已移至右上角导航栏 */}
         <div className='mb-8 flex items-center justify-center'>
           <CapsuleSwitch

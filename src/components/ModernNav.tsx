@@ -95,6 +95,9 @@ const BASE_MENU_ITEMS: NavItem[] = [
 interface ModernNavProps {
   showAIButton?: boolean;
   onAIButtonClick?: () => void;
+  showDesktopNav?: boolean;
+  showMobileNav?: boolean;
+  showSpacer?: boolean;
 }
 
 // Query Options 工厂函数
@@ -121,7 +124,13 @@ const publicSourcesOptions = () => queryOptions({
   retry: false,
 });
 
-export default function ModernNav({ showAIButton = false, onAIButtonClick }: ModernNavProps = {}) {
+export default function ModernNav({
+  showAIButton = false,
+  onAIButtonClick,
+  showDesktopNav = true,
+  showMobileNav = true,
+  showSpacer = true,
+}: ModernNavProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -207,8 +216,8 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
 
   return (
     <>
-      {/* Desktop Top Navigation - 2025 Disney+ Style */}
-      <nav className='hidden md:block fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50'>
+      {showDesktopNav && (
+        <nav className='hidden md:block fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50'>
         <div className='max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
           <div className='flex items-center justify-between h-16 gap-4'>
             {/* Logo */}
@@ -288,10 +297,11 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
             </div>
           </div>
         </div>
-      </nav>
+        </nav>
+      )}
 
       {/* More Menu Modal - Render outside nav to avoid z-index issues */}
-      {showMoreMenu && (
+      {showMobileNav && showMoreMenu && (
         <div
           className='md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm'
           style={{ zIndex: 2147483647 }}
@@ -362,13 +372,14 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
       )}
 
       {/* Mobile Bottom Navigation - Netflix Full-Width Style with Light Mode Support */}
-      <nav
-        className='md:hidden fixed left-0 right-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-lg border-t border-black/5 dark:border-white/5 shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40'
-        style={{
-          bottom: 0,
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
-      >
+      {showMobileNav && (
+        <nav
+          className='md:hidden fixed left-0 right-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-lg border-t border-black/5 dark:border-white/5 shadow-xl shadow-black/5 dark:shadow-2xl dark:shadow-black/40'
+          style={{
+            bottom: 0,
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
+        >
         <div className='flex items-center justify-around px-2 py-2'>
           {/* Show first 4 items + More button */}
           {menuItems.slice(0, 4).map((item) => {
@@ -408,11 +419,12 @@ export default function ModernNav({ showAIButton = false, onAIButtonClick }: Mod
             <span className='text-[10px] font-medium text-gray-600 dark:text-gray-400'>更多</span>
           </button>
         </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Spacer for fixed navigation */}
-      <div className='hidden md:block h-16' />
-      <div className='md:hidden h-20' />
+      {showSpacer && <div className='hidden md:block h-16' />}
+      {showSpacer && <div className='md:hidden h-20' />}
     </>
   );
 }
