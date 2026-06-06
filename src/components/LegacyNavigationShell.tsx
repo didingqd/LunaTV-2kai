@@ -54,6 +54,23 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
     };
   }, []);
 
+  const renderHorizontalMobileLayout = (forceMobileLayout = false) => (
+    <>
+      <NavigationShell
+        showDesktopNav={false}
+        showMobileNav
+        showSpacer
+        forceMobileLayout={forceMobileLayout}
+      />
+      {/* 修改点：竖向配置下手机端小屏完全复用横向布局的移动端内容容器，不再单独维护一套间距 */}
+      <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
+        <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
+          {children}
+        </div>
+      </main>
+    </>
+  );
+
   if (isStandalone) {
     // 修改点：独立路由在竖向布局下仍不显示任何导航，保持登录/注册等页面干净
     return (
@@ -67,25 +84,15 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
 
   if (isMobileDevice) {
     // 修改点：真实手机端不再区分横向/竖向配置，直接复用横向布局的小屏 UI 与内容容器
-    return (
-      <>
-        <NavigationShell
-          showDesktopNav={false}
-          showMobileNav
-          showSpacer
-          forceMobileLayout
-        />
-        <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
-          <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
-            {children}
-          </div>
-        </main>
-      </>
-    );
+    return renderHorizontalMobileLayout(true);
   }
 
   return (
     <div className='w-full min-h-screen' translate='no'>
+      <div className='md:hidden'>
+        {renderHorizontalMobileLayout(false)}
+      </div>
+
       <div className='hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
         <div className='hidden md:block'>
           <Sidebar activePath={activePath} />
