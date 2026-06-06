@@ -65,25 +65,28 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
     );
   }
 
-  return (
-    <div className='w-full min-h-screen' translate='no'>
-      {/* 修改点：竖向布局小屏直接复用横向布局导航壳和内容间距，只保留桌面端独立竖向侧边栏 */}
-      <div className={isMobileDevice ? '' : 'md:hidden'}>
+  if (isMobileDevice) {
+    // 修改点：真实手机端不再区分横向/竖向配置，直接复用横向布局的小屏 UI 与内容容器
+    return (
+      <>
         <NavigationShell
           showDesktopNav={false}
           showMobileNav
           showSpacer={false}
-          forceMobileLayout={isMobileDevice}
+          forceMobileLayout
         />
-        {/* 修改点：真实移动设备横屏/全屏时也保持横向布局的小屏内容间距，避免触发 md 桌面侧边栏 */}
-        <main className='w-full min-h-screen pt-[44px] pb-16'>
-          <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6'>
+        <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
+          <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
             {children}
           </div>
         </main>
-      </div>
+      </>
+    );
+  }
 
-      <div className={isMobileDevice ? 'hidden' : 'hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'}>
+  return (
+    <div className='w-full min-h-screen' translate='no'>
+      <div className='hidden md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
         <div className='hidden md:block'>
           <Sidebar activePath={activePath} />
         </div>
