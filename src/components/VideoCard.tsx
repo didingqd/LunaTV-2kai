@@ -181,6 +181,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const actualEpisodes = dynamicEpisodes;
   const actualYear = year;
   const actualQuery = query || '';
+  // 修改点：搜索聚合卡片优先复用 douban_id 作为收藏标识，保证收藏页仍能按豆瓣/标题路径播放
+  const favoriteSource = actualSource || (from === 'search' && isAggregate && actualDoubanId ? 'douban' : '');
+  const favoriteId = actualId || (from === 'search' && isAggregate && actualDoubanId ? actualDoubanId.toString() : '');
 
   const actualSearchType = useMemo(() =>
     isAggregate
@@ -213,14 +216,14 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
   // 🚀 TanStack Query - 获取收藏/提醒状态
   const { data: favoritedStatus } = useIsFavoritedQuery(
-    actualSource || '',
-    actualId || '',
-    { enabled: !!actualSource && !!actualId && !shouldShowBell }
+    favoriteSource || '',
+    favoriteId || '',
+    { enabled: !!favoriteSource && !!favoriteId && !shouldShowBell }
   );
   const { data: remindedStatus } = useIsRemindedQuery(
-    actualSource || '',
-    actualId || '',
-    { enabled: !!actualSource && !!actualId && shouldShowBell }
+    favoriteSource || '',
+    favoriteId || '',
+    { enabled: !!favoriteSource && !!favoriteId && shouldShowBell }
   );
 
   // 同步 Query 结果到本地 state
@@ -242,9 +245,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
   // 监听状态更新事件
   useEffect(() => {
-    if (!actualSource || !actualId) return;
+    if (!favoriteSource || !favoriteId) return;
 
-    const storageKey = generateStorageKey(actualSource, actualId);
+    const storageKey = generateStorageKey(favoriteSource, favoriteId);
 
     const unsubscribeFavorites = subscribeToDataUpdates(
       'favoritesUpdated',
@@ -270,7 +273,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       unsubscribeFavorites();
       unsubscribeReminders();
     };
-  }, [from, actualSource, actualId, isUpcoming, remarks]);
+  }, [from, favoriteSource, favoriteId, isUpcoming, remarks]);
 
   // 检查AI功能是否启用 - 只在没有父组件传递时才执行
   useEffect(() => {
@@ -291,7 +294,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       e.stopPropagation();
 
       // 所有豆瓣内容都允许收藏/提醒
-      if (!actualSource || !actualId) return;
+      if (!favoriteSource || !favoriteId) return;
 
       // 🔥 修复：检查是否是"新上映"的内容
       const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
@@ -308,8 +311,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         // 🔄 使用 reminder mutation
         toggleReminderMutation.mutate(
           {
-            source: actualSource,
-            id: actualId,
+            source: favoriteSource,
+            id: favoriteId,
             isReminded: currentReminded || false,
             reminder: {
               title: actualTitle,
@@ -349,8 +352,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
         // 🔄 使用 favorite mutation
         toggleFavoriteMutation.mutate(
           {
-            source: actualSource,
-            id: actualId,
+            source: favoriteSource,
+            id: favoriteId,
             isFavorited: currentFavorited || false,
             favorite: {
               title: actualTitle,
@@ -388,8 +391,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     [
       from,
       isUpcoming,
-      actualSource,
-      actualId,
+      favoriteSource,
+      favoriteId,
       actualTitle,
       source_name,
       actualYear,
@@ -659,10 +662,12 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     return configs[from] || configs.search;
   }, [from, isAggregate, douban_id, rate, isUpcoming]);
 
+  const canShowFavoriteAction = config.showHeart && !!favoriteSource && !!favoriteId;
+
   // 🎯 智能判断是否有右下角按钮（垃圾桶/收藏，用于AI按钮水平位置调整）
   const hasRightBottomButtons = useMemo(() => {
-    return (config.showHeart || config.showCheckCircle) && from !== 'favorite';
-  }, [config.showHeart, config.showCheckCircle, from]);
+    return (canShowFavoriteAction || config.showCheckCircle) && from !== 'favorite';
+  }, [canShowFavoriteAction, config.showCheckCircle, from]);
 
   // 移动端操作菜单配置
   const mobileActions = useMemo(() => {
@@ -703,7 +708,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     // 聚合源信息 - 直接在菜单中展示，不需要单独的操作项
 
     // 收藏/取消收藏操作（或提醒操作）
-    if (config.showHeart && actualSource && actualId) {
+    // 修改点：菜单收藏入口复用统一收藏判断，让搜索聚合卡片与主页卡片交互保持一致
+    if (canShowFavoriteAction) {
       // 🔥 修复：检查是否是"新上映"的内容
       const isNewRelease = remarks && (remarks.includes('已上映') || remarks.includes('今日上映'));
       const shouldShowBell = isUpcoming || isNewRelease;
@@ -854,8 +860,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   }, [
     config,
     from,
-    actualSource,
-    actualId,
+    canShowFavoriteAction,
     optimisticFavorited,
     optimisticSearchFavorited,
     actualDoubanId,
@@ -1054,7 +1059,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           )}
 
           {/* 操作按钮 - hover显示（非收藏页面） */}
-          {(config.showHeart || config.showCheckCircle) && from !== 'favorite' && (
+          {(canShowFavoriteAction || config.showCheckCircle) && from !== 'favorite' && (
             <div
               data-button="true"
               className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out sm:group-hover:opacity-100 sm:group-hover:translate-y-0'
@@ -1084,7 +1089,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
                   }}
                 />
               )}
-              {config.showHeart && (
+              {canShowFavoriteAction && (
                 <>
                   {(() => {
                     // 🔥 修复：如果是"新上映"的内容（remarks包含"已上映"或"今日上映"），显示Bell图标
@@ -1153,7 +1158,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           )}
 
           {/* 收藏页面专用：固定显示的爱心/铃铛按钮 */}
-          {from === 'favorite' && config.showHeart && (
+          {from === 'favorite' && canShowFavoriteAction && (
             <div
               className='absolute bottom-2 right-2 z-30'
               onClick={handleToggleFavorite}
@@ -1369,7 +1374,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
 
             return (
               <div
-                className='absolute bottom-2 right-2 opacity-0 transition-all duration-300 ease-in-out delay-75 sm:group-hover:opacity-100'
+                // 修改点：搜索聚合卡片的源数量放到左下角，避免与右下角收藏按钮重叠
+                className={`${from === 'search' ? 'left-2' : 'right-2'} absolute bottom-2 opacity-0 transition-all duration-300 ease-in-out delay-75 sm:group-hover:opacity-100`}
                 style={{
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
