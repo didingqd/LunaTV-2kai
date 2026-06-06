@@ -427,8 +427,8 @@ export default function ModernNav({
       )}
 
       {/* Spacer for fixed navigation */}
-      {showSpacer && <div className='hidden md:block h-16' />}
-      {showSpacer && <div className='md:hidden h-20' />}
+      {showSpacer && !forceMobileLayout && <div className='hidden md:block h-16' />}
+      {showSpacer && <div className={forceMobileLayout ? 'h-20' : 'md:hidden h-20'} />}
     </>
   );
 }

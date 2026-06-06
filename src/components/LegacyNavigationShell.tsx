@@ -72,7 +72,7 @@ export default function LegacyNavigationShell({ children }: LegacyNavigationShel
         <NavigationShell
           showDesktopNav={false}
           showMobileNav
-          showSpacer={false}
+          showSpacer
           forceMobileLayout
         />
         <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
