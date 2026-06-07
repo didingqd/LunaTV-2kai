@@ -44,6 +44,13 @@ import artplayerPluginAutoThumbnail from '@/lib/artplayer-plugin-auto-thumbnail'
 import artplayerPluginLiquidGlass from '@/lib/artplayer-plugin-liquid-glass';
 import { ClientCache } from '@/lib/client-cache';
 import {
+  FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+  FULLSCREEN_CLOCK_MODE_KEY,
+  loadFullscreenClockMode,
+  sanitizeFullscreenClockMode,
+  type FullscreenClockMode,
+} from '@/lib/fullscreen-clock-mode';
+import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
@@ -157,6 +164,30 @@ function loadLockedLongPressRate(): number {
   } catch {
     return DEFAULT_LOCKED_LONG_PRESS_RATE;
   }
+}
+
+// 修改点：集中处理播放器右上角实时时间层的三种显示模式。
+function applyFullscreenClockMode(
+  player: any,
+  mode: FullscreenClockMode,
+  fullscreenOverride?: boolean,
+) {
+  const clockLayer = player?.layers?.['fullscreen-clock'] as
+    | HTMLElement
+    | undefined;
+  if (!clockLayer) return;
+
+  const normalizedMode = sanitizeFullscreenClockMode(mode);
+  const isFullscreen =
+    fullscreenOverride ?? Boolean(player?.fullscreen || player?.fullscreenWeb);
+  clockLayer.dataset.clockMode = normalizedMode;
+
+  if (!isFullscreen || normalizedMode === 'off') {
+    clockLayer.style.display = 'none';
+    return;
+  }
+
+  clockLayer.style.display = 'flex';
 }
 
 function formatPlaybackRateNotice(rate: number): string {
@@ -711,7 +742,52 @@ function PlayPageClient() {
 
   // ArtPlayer ref
   const artPlayerRef = useRef<any>(null);
+  // 修改点：缓存播放器右上角实时时间显示模式，避免播放器事件中反复读取 localStorage。
+  const fullscreenClockModeRef = useRef<FullscreenClockMode>(
+    loadFullscreenClockMode(),
+  );
   const artRef = useRef<HTMLDivElement | null>(null);
+
+  const applyCurrentFullscreenClockMode = useCallback((isFullscreen?: boolean) => {
+    applyFullscreenClockMode(
+      artPlayerRef.current,
+      fullscreenClockModeRef.current,
+      isFullscreen,
+    );
+  }, []);
+
+  useEffect(() => {
+    const syncFullscreenClockMode = (value: unknown) => {
+      fullscreenClockModeRef.current = sanitizeFullscreenClockMode(value);
+      applyCurrentFullscreenClockMode();
+    };
+
+    const handleFullscreenClockModeChange = (event: Event) => {
+      syncFullscreenClockMode(
+        (event as CustomEvent<FullscreenClockMode>).detail,
+      );
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== FULLSCREEN_CLOCK_MODE_KEY) return;
+      syncFullscreenClockMode(event.newValue);
+    };
+
+    // 修改点：监听本地设置变化，让播放器右上角时间模式实时生效。
+    window.addEventListener(
+      FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+      handleFullscreenClockModeChange,
+    );
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+        handleFullscreenClockModeChange,
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [applyCurrentFullscreenClockMode]);
 
   // 音轨管理状态
   const [audioTracks, setAudioTracks] = useState<Array<{
@@ -6198,10 +6274,10 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreen ? 'block' : 'none';
         }
-          const clockLayer = artPlayerRef.current?.layers['fullscreen-clock'];
-          if (clockLayer) {
-            clockLayer.style.display = isFullscreen ? 'flex' : 'none';
-          }
+        // 修改点：全屏状态变化时按本地设置决定右上角时间是否显示。
+        applyCurrentFullscreenClockMode(
+          isFullscreen || Boolean(artPlayerRef.current?.fullscreenWeb),
+        );
 
         if (isFullscreen) {
           // 进入全屏后，延迟100ms触发控制栏自动隐藏
@@ -6219,10 +6295,10 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
         }
-          const clockLayer = artPlayerRef.current?.layers['fullscreen-clock'];
-          if (clockLayer) {
-            clockLayer.style.display = isFullscreenWeb ? 'flex' : 'none';
-          }
+        // 修改点：网页全屏状态变化时按本地设置决定右上角时间是否显示。
+        applyCurrentFullscreenClockMode(
+          isFullscreenWeb || Boolean(artPlayerRef.current?.fullscreen),
+        );
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
