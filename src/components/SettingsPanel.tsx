@@ -128,7 +128,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const [lockedLongPressRate, setLockedLongPressRate] = useState(DEFAULT_LOCKED_LONG_PRESS_RATE);
   // 修改点：播放器右上角实时时间显示模式由本地设置持久化控制。
   const [fullscreenClockMode, setFullscreenClockMode] =
-    useState<FullscreenClockMode>('always');
+    useState<FullscreenClockMode>('controls');
   const [exactSearch, setExactSearch] = useState(true);
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] = useState(false);
@@ -253,7 +253,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
     setLockedLongPressRate(defaultLockedLongPressRate);
-    setFullscreenClockMode('always');
+    setFullscreenClockMode('controls');
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -277,8 +277,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
     localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(defaultLockedLongPressRate));
-    // 修改点：恢复默认设置时将播放器右上角时间模式恢复为“常显”。
-    saveFullscreenClockMode('always');
+    // 修改点：恢复默认设置时将播放器右上角时间模式恢复为“随控制栏”。
+    saveFullscreenClockMode('controls');
   };
 
   if (!isOpen) return null;

@@ -33,11 +33,12 @@ export function sanitizeFullscreenClockMode(
   if (value === 'off' || value === 'always' || value === 'controls') {
     return value;
   }
-  return 'always';
+  // 修改点：无有效本地设置时，默认跟随播放器控制栏显示/隐藏。
+  return 'controls';
 }
 
 export function loadFullscreenClockMode(): FullscreenClockMode {
-  if (typeof window === 'undefined') return 'always';
+  if (typeof window === 'undefined') return 'controls';
   return sanitizeFullscreenClockMode(
     localStorage.getItem(FULLSCREEN_CLOCK_MODE_KEY),
   );
