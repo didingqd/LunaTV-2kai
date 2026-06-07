@@ -20,6 +20,8 @@ const STANDALONE_ROUTES = [
   '/warning',
   '/source-test',
   '/watch-room/screen',
+  // 修改点：播放页改为独立沉浸式页面，避免竖向布局固定导航壳干扰播放器生命周期
+  '/play',
 ];
 
 function isStandaloneRoute(pathname: string) {

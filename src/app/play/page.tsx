@@ -2473,8 +2473,45 @@ function PlayPageClient() {
     }
   };
 
+  // 修改点：先同步停止旧 video/HLS 发声链路，避免异步销毁期间后台继续播放残留声音
+  const stopPlaybackImmediately = () => {
+    const player = artPlayerRef.current;
+    const video = player?.video as HTMLVideoElement | undefined;
+    const hls = video?.hls;
+
+    if (video) {
+      try {
+        video.muted = true;
+        video.pause();
+        video.removeAttribute('src');
+        video.src = '';
+        video.load();
+        console.log('[Cleanup] 已同步停止 video 发声链路');
+      } catch (err) {
+        console.warn('[Cleanup] 同步停止 video 失败:', err);
+      }
+    }
+
+    if (hls) {
+      try {
+        hls.stopLoad();
+        hls.detachMedia();
+        hls.destroy();
+        if (video) {
+          delete video.hls;
+        }
+        console.log('[Cleanup] 已同步停止 HLS 发声链路');
+      } catch (err) {
+        console.warn('[Cleanup] 同步停止 HLS 失败:', err);
+      }
+    }
+  };
+
   // 清理播放器资源的统一函数
   const cleanupPlayer = async () => {
+    // 先同步停止旧播放链路，避免异步清理期间残留声音继续播放
+    stopPlaybackImmediately();
+
     // 先清理WebSR，避免GPU纹理错误
     await destroyWebSR();
 
@@ -2511,8 +2548,9 @@ function PlayPageClient() {
         setPlayerReady(false);
         console.log('[Cleanup] ArtPlayer已销毁');
 
-        // 2. 然后清理 video 和 HLS
+        // 2. 补充兜底清理 video 和 HLS（同步止音阶段已经先执行过一次）
         if (video) {
+          video.muted = true;
           video.pause();
           console.log('[Cleanup] 视频已暂停');
         }
@@ -2522,6 +2560,9 @@ function PlayPageClient() {
             hls.stopLoad();
             hls.detachMedia();
             hls.destroy();
+            if (video) {
+              delete video.hls;
+            }
             console.log('[Cleanup] HLS已清理');
           } catch (err) {
             console.warn('[Cleanup] HLS清理出错:', err);
@@ -6450,6 +6491,7 @@ function PlayPageClient() {
       stopLockedLongPressRate();
 
       // 销毁播放器实例
+      stopPlaybackImmediately();
       cleanupPlayer();
     };
   }, []);
@@ -6464,6 +6506,8 @@ function PlayPageClient() {
     return () => {
       if (artPlayerRef.current) {
         console.log('[Play] URL参数变化，清理旧播放器');
+        // 修改点：URL/source 变化时先同步止音，降低旧实例异步销毁期间的残留音频概率
+        stopPlaybackImmediately();
         cleanupPlayer();
       }
     };
