@@ -4116,7 +4116,7 @@ function PlayPageClient() {
         clearTimeout(autoNextEpisodeTimeoutRef.current);
       }
 
-      // 修改点：播放结束后先暂停 2 秒，再确认仍停留在同一集时自动跳转下一集
+      // 修改点：播放结束后先暂停 1 秒，再确认仍停留在同一集时自动跳转下一集
       autoNextEpisodeTimeoutRef.current = setTimeout(() => {
         autoNextEpisodeTimeoutRef.current = null;
 
@@ -4125,14 +4125,13 @@ function PlayPageClient() {
         if (
           latestIndex !== idx ||
           !latestDetail?.episodes ||
-          latestIndex >= latestDetail.episodes.length - 1 ||
-          (artPlayerRef.current && !artPlayerRef.current.paused)
+          latestIndex >= latestDetail.episodes.length - 1
         ) {
           return;
         }
 
         handleNextEpisode();
-      }, 2000);
+      }, 1000);
     }
   };
 
