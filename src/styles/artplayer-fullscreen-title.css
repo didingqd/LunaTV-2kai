@@ -63,6 +63,22 @@
 }
 
 /* 响应式 - 平板 */
+/* 修改点：播放器右上角时间支持“随控制栏”模式，控制栏隐藏时淡出。 */
+[data-clock-mode='controls'] .fullscreen-clock {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.art-control-show [data-clock-mode='controls'] .fullscreen-clock {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 修改点：锁定状态下保持与标题层一致，隐藏右上角时间避免干扰。 */
+.art-lock [data-clock-mode] .fullscreen-clock {
+  opacity: 0 !important;
+}
+
 @media (max-width: 768px) {
   .fullscreen-title-text {
     font-size: 16px;
@@ -110,6 +126,9 @@
     0 0 12px rgba(0, 0, 0, 0.3);
   letter-spacing: 0.5px;
   font-variant-numeric: tabular-nums;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 /* 响应式 - 平板 */

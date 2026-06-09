@@ -44,6 +44,13 @@ import artplayerPluginAutoThumbnail from '@/lib/artplayer-plugin-auto-thumbnail'
 import artplayerPluginLiquidGlass from '@/lib/artplayer-plugin-liquid-glass';
 import { ClientCache } from '@/lib/client-cache';
 import {
+  FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+  FULLSCREEN_CLOCK_MODE_KEY,
+  loadFullscreenClockMode,
+  sanitizeFullscreenClockMode,
+  type FullscreenClockMode,
+} from '@/lib/fullscreen-clock-mode';
+import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
@@ -157,6 +164,30 @@ function loadLockedLongPressRate(): number {
   } catch {
     return DEFAULT_LOCKED_LONG_PRESS_RATE;
   }
+}
+
+// 修改点：集中处理播放器右上角实时时间层的三种显示模式。
+function applyFullscreenClockMode(
+  player: any,
+  mode: FullscreenClockMode,
+  fullscreenOverride?: boolean,
+) {
+  const clockLayer = player?.layers?.['fullscreen-clock'] as
+    | HTMLElement
+    | undefined;
+  if (!clockLayer) return;
+
+  const normalizedMode = sanitizeFullscreenClockMode(mode);
+  const isFullscreen =
+    fullscreenOverride ?? Boolean(player?.fullscreen || player?.fullscreenWeb);
+  clockLayer.dataset.clockMode = normalizedMode;
+
+  if (!isFullscreen || normalizedMode === 'off') {
+    clockLayer.style.display = 'none';
+    return;
+  }
+
+  clockLayer.style.display = 'flex';
 }
 
 function formatPlaybackRateNotice(rate: number): string {
@@ -711,7 +742,52 @@ function PlayPageClient() {
 
   // ArtPlayer ref
   const artPlayerRef = useRef<any>(null);
+  // 修改点：缓存播放器右上角实时时间显示模式，避免播放器事件中反复读取 localStorage。
+  const fullscreenClockModeRef = useRef<FullscreenClockMode>(
+    loadFullscreenClockMode(),
+  );
   const artRef = useRef<HTMLDivElement | null>(null);
+
+  const applyCurrentFullscreenClockMode = useCallback((isFullscreen?: boolean) => {
+    applyFullscreenClockMode(
+      artPlayerRef.current,
+      fullscreenClockModeRef.current,
+      isFullscreen,
+    );
+  }, []);
+
+  useEffect(() => {
+    const syncFullscreenClockMode = (value: unknown) => {
+      fullscreenClockModeRef.current = sanitizeFullscreenClockMode(value);
+      applyCurrentFullscreenClockMode();
+    };
+
+    const handleFullscreenClockModeChange = (event: Event) => {
+      syncFullscreenClockMode(
+        (event as CustomEvent<FullscreenClockMode>).detail,
+      );
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== FULLSCREEN_CLOCK_MODE_KEY) return;
+      syncFullscreenClockMode(event.newValue);
+    };
+
+    // 修改点：监听本地设置变化，让播放器右上角时间模式实时生效。
+    window.addEventListener(
+      FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+      handleFullscreenClockModeChange,
+    );
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        FULLSCREEN_CLOCK_MODE_CHANGE_EVENT,
+        handleFullscreenClockModeChange,
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [applyCurrentFullscreenClockMode]);
 
   // 音轨管理状态
   const [audioTracks, setAudioTracks] = useState<Array<{
@@ -2473,8 +2549,45 @@ function PlayPageClient() {
     }
   };
 
+  // 修改点：先同步停止旧 video/HLS 发声链路，避免异步销毁期间后台继续播放残留声音
+  const stopPlaybackImmediately = () => {
+    const player = artPlayerRef.current;
+    const video = player?.video as HTMLVideoElement | undefined;
+    const hls = video?.hls;
+
+    if (video) {
+      try {
+        video.muted = true;
+        video.pause();
+        video.removeAttribute('src');
+        video.src = '';
+        video.load();
+        console.log('[Cleanup] 已同步停止 video 发声链路');
+      } catch (err) {
+        console.warn('[Cleanup] 同步停止 video 失败:', err);
+      }
+    }
+
+    if (hls) {
+      try {
+        hls.stopLoad();
+        hls.detachMedia();
+        hls.destroy();
+        if (video) {
+          delete video.hls;
+        }
+        console.log('[Cleanup] 已同步停止 HLS 发声链路');
+      } catch (err) {
+        console.warn('[Cleanup] 同步停止 HLS 失败:', err);
+      }
+    }
+  };
+
   // 清理播放器资源的统一函数
   const cleanupPlayer = async () => {
+    // 先同步停止旧播放链路，避免异步清理期间残留声音继续播放
+    stopPlaybackImmediately();
+
     // 先清理WebSR，避免GPU纹理错误
     await destroyWebSR();
 
@@ -2511,8 +2624,9 @@ function PlayPageClient() {
         setPlayerReady(false);
         console.log('[Cleanup] ArtPlayer已销毁');
 
-        // 2. 然后清理 video 和 HLS
+        // 2. 补充兜底清理 video 和 HLS（同步止音阶段已经先执行过一次）
         if (video) {
+          video.muted = true;
           video.pause();
           console.log('[Cleanup] 视频已暂停');
         }
@@ -2522,6 +2636,9 @@ function PlayPageClient() {
             hls.stopLoad();
             hls.detachMedia();
             hls.destroy();
+            if (video) {
+              delete video.hls;
+            }
             console.log('[Cleanup] HLS已清理');
           } catch (err) {
             console.warn('[Cleanup] HLS清理出错:', err);
@@ -6157,10 +6274,10 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreen ? 'block' : 'none';
         }
-          const clockLayer = artPlayerRef.current?.layers['fullscreen-clock'];
-          if (clockLayer) {
-            clockLayer.style.display = isFullscreen ? 'flex' : 'none';
-          }
+        // 修改点：全屏状态变化时按本地设置决定右上角时间是否显示。
+        applyCurrentFullscreenClockMode(
+          isFullscreen || Boolean(artPlayerRef.current?.fullscreenWeb),
+        );
 
         if (isFullscreen) {
           // 进入全屏后，延迟100ms触发控制栏自动隐藏
@@ -6178,10 +6295,10 @@ function PlayPageClient() {
         if (titleLayer) {
           titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
         }
-          const clockLayer = artPlayerRef.current?.layers['fullscreen-clock'];
-          if (clockLayer) {
-            clockLayer.style.display = isFullscreenWeb ? 'flex' : 'none';
-          }
+        // 修改点：网页全屏状态变化时按本地设置决定右上角时间是否显示。
+        applyCurrentFullscreenClockMode(
+          isFullscreenWeb || Boolean(artPlayerRef.current?.fullscreen),
+        );
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
@@ -6450,6 +6567,7 @@ function PlayPageClient() {
       stopLockedLongPressRate();
 
       // 销毁播放器实例
+      stopPlaybackImmediately();
       cleanupPlayer();
     };
   }, []);
@@ -6464,6 +6582,8 @@ function PlayPageClient() {
     return () => {
       if (artPlayerRef.current) {
         console.log('[Play] URL参数变化，清理旧播放器');
+        // 修改点：URL/source 变化时先同步止音，降低旧实例异步销毁期间的残留音频概率
+        stopPlaybackImmediately();
         cleanupPlayer();
       }
     };

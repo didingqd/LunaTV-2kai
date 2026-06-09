@@ -14,6 +14,12 @@ import { createPortal } from 'react-dom';
 import { UserEmbyConfig } from './UserEmbyConfig';
 import { useEmbyConfigQuery } from '@/hooks/useUserMenuQueries';
 import { BROWSER_NAVIGATION_PREFERENCE_KEY } from '@/lib/browser-navigation';
+import {
+  FULLSCREEN_CLOCK_MODE_OPTIONS,
+  loadFullscreenClockMode,
+  saveFullscreenClockMode,
+  type FullscreenClockMode,
+} from '@/lib/fullscreen-clock-mode';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -120,6 +126,9 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   const [downloadFormat, setDownloadFormat] = useState<'TS' | 'MP4'>('TS');
   const [preferLocationAssignNavigation, setPreferLocationAssignNavigation] = useState(false);
   const [lockedLongPressRate, setLockedLongPressRate] = useState(DEFAULT_LOCKED_LONG_PRESS_RATE);
+  // 修改点：播放器右上角实时时间显示模式由本地设置持久化控制。
+  const [fullscreenClockMode, setFullscreenClockMode] =
+    useState<FullscreenClockMode>('controls');
   const [exactSearch, setExactSearch] = useState(true);
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] = useState(false);
@@ -171,6 +180,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     const es = localStorage.getItem('exactSearch');
     if (es !== null) setExactSearch(es === 'true');
     setPlayerBufferMode(readLS('playerBufferMode', 'standard'));
+    setFullscreenClockMode(loadFullscreenClockMode());
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -205,6 +215,11 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setLockedLongPressRate(nextRate);
     localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(nextRate));
   };
+  const handleFullscreenClockModeChange = (v: FullscreenClockMode) => {
+    // 修改点：保存后派发同页事件，使正在播放的播放器无需刷新即可切换时钟显示模式。
+    setFullscreenClockMode(v);
+    saveFullscreenClockMode(v);
+  };
   const handleContinueWatchingMinProgressChange = (v: number) => { setContinueWatchingMinProgress(v); localStorage.setItem('continueWatchingMinProgress', v.toString()); };
   const handleContinueWatchingMaxProgressChange = (v: number) => { setContinueWatchingMaxProgress(v); localStorage.setItem('continueWatchingMaxProgress', v.toString()); };
   const handleEnableContinueWatchingFilterToggle = set(setEnableContinueWatchingFilter, 'enableContinueWatchingFilter');
@@ -238,6 +253,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setPlayerBufferMode('standard');
     setDownloadFormat('TS');
     setLockedLongPressRate(defaultLockedLongPressRate);
+    setFullscreenClockMode('controls');
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -261,6 +277,8 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem('playerBufferMode', 'standard');
     localStorage.setItem('downloadFormat', 'TS');
     localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(defaultLockedLongPressRate));
+    // 修改点：恢复默认设置时将播放器右上角时间模式恢复为“随控制栏”。
+    saveFullscreenClockMode('controls');
   };
 
   if (!isOpen) return null;
@@ -625,6 +643,39 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                 <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>修改点：开启后，常用站内页面入口会优先使用 window.location.assign 进行整页跳转</p>
               </div>
               <Toggle checked={preferLocationAssignNavigation} onChange={handlePreferLocationAssignNavigationToggle} />
+            </div>
+
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            {/* 修改点：新增播放器右上角实时时间显示模式三段选择。 */}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>播放器右上角时间</h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>控制全屏播放时右上角实时时间的显示方式</p>
+              </div>
+              <div className='grid grid-cols-1 sm:grid-cols-3 gap-2'>
+                {FULLSCREEN_CLOCK_MODE_OPTIONS.map(option => {
+                  const isSelected = fullscreenClockMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type='button'
+                      onClick={() => handleFullscreenClockModeChange(option.value)}
+                      className={`p-3 rounded-lg border text-left transition-all duration-200 ${
+                        isSelected
+                          ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300'
+                          : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <div className='flex items-center justify-between gap-2'>
+                        <span className='text-sm font-medium'>{option.label}</span>
+                        {isSelected && <Check className='w-4 h-4 text-green-600 dark:text-green-400 shrink-0' />}
+                      </div>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>{option.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className='border-t border-gray-200 dark:border-gray-700'></div>
