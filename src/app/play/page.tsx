@@ -4099,6 +4099,20 @@ function PlayPageClient() {
     }
   };
 
+  // 修改点：统一处理 video:ended，避免多个监听器只释放 Wake Lock 而遗漏自动切到下一集
+  const handleVideoEnded = () => {
+    releaseWakeLock();
+
+    if (videoEndedHandledRef.current) return;
+    videoEndedHandledRef.current = true;
+
+    const d = detailRef.current;
+    const idx = currentEpisodeIndexRef.current;
+    if (d?.episodes && idx < d.episodes.length - 1) {
+      handleNextEpisode();
+    }
+  };
+
   // 🔧 修改点：复刻 LunaTV 快进快退逻辑，按钮和键盘共用同一套秒数与边界钳制
   const applySeekDelta = (deltaSeconds: number) => {
     if (!artPlayerRef.current) return;
@@ -6231,7 +6245,8 @@ function PlayPageClient() {
       });
 
       artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
+        // 修改点：结束时调用统一切集逻辑，修复上一集结束后停在暂停状态的问题
+        handleVideoEnded();
       });
 
       // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
@@ -6452,7 +6467,8 @@ function PlayPageClient() {
 
       // 监听视频播放结束事件，自动播放下一集
       artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
+        // 修改点：结束时调用统一切集逻辑，修复上一集结束后停在暂停状态的问题
+        handleVideoEnded();
       });
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
