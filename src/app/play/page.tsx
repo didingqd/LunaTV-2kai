@@ -1180,6 +1180,7 @@ function PlayPageClient() {
   const isSourceChangingRef = useRef<boolean>(false); // 标记是否正在换源
   const isEpisodeChangingRef = useRef<boolean>(false); // 标记是否正在切换集数
   const videoEndedHandledRef = useRef<boolean>(false); // 🔥 标记当前视频的 video:ended 事件是否已经被处理过（防止多个监听器重复触发）
+  const autoNextEpisodeTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 修改点：保存结束后延迟跳转下一集的定时器
 
   // 🚀 新增：连续切换源防抖和资源管理
   const sourceSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -4109,7 +4110,29 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d?.episodes && idx < d.episodes.length - 1) {
-      handleNextEpisode();
+      artPlayerRef.current?.pause();
+
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
+      }
+
+      // 修改点：播放结束后先暂停 2 秒，再确认仍停留在同一集时自动跳转下一集
+      autoNextEpisodeTimeoutRef.current = setTimeout(() => {
+        autoNextEpisodeTimeoutRef.current = null;
+
+        const latestDetail = detailRef.current;
+        const latestIndex = currentEpisodeIndexRef.current;
+        if (
+          latestIndex !== idx ||
+          !latestDetail?.episodes ||
+          latestIndex >= latestDetail.episodes.length - 1 ||
+          (artPlayerRef.current && !artPlayerRef.current.paused)
+        ) {
+          return;
+        }
+
+        handleNextEpisode();
+      }, 2000);
     }
   };
 
@@ -6571,6 +6594,11 @@ function PlayPageClient() {
       // 清理resize防抖定时器
       if (resizeResetTimeoutRef.current) {
         clearTimeout(resizeResetTimeoutRef.current);
+      }
+
+      // 修改点：组件卸载时清理结束后延迟跳转下一集的定时器
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
       }
 
       // 释放 Wake Lock
