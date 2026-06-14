@@ -41,6 +41,16 @@
   display: none !important;
 }
 
+/* 修改点：上一集按钮只在原生全屏/网页全屏显示，避免普通尺寸控制栏与时间、音量等按钮挤占。 */
+.art-video-player .art-control-previousEpisode {
+  display: none !important;
+}
+
+.art-video-player.art-fullscreen .art-control-previousEpisode,
+.art-video-player.art-fullscreen-web .art-control-previousEpisode {
+  display: flex !important;
+}
+
 /* ===== Danmaku System Mobile Optimization ===== */
 /* 弹幕面板在不同挂载位置的定位处理 */
 @media (max-width: 768px) {
