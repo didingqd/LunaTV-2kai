@@ -1180,6 +1180,7 @@ function PlayPageClient() {
   const isSourceChangingRef = useRef<boolean>(false); // 标记是否正在换源
   const isEpisodeChangingRef = useRef<boolean>(false); // 标记是否正在切换集数
   const videoEndedHandledRef = useRef<boolean>(false); // 🔥 标记当前视频的 video:ended 事件是否已经被处理过（防止多个监听器重复触发）
+  const autoNextEpisodeTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 修改点：保存结束后延迟跳转下一集的定时器
 
   // 🚀 新增：连续切换源防抖和资源管理
   const sourceSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -4099,6 +4100,41 @@ function PlayPageClient() {
     }
   };
 
+  // 修改点：统一处理 video:ended，避免多个监听器只释放 Wake Lock 而遗漏自动切到下一集
+  const handleVideoEnded = () => {
+    releaseWakeLock();
+
+    if (videoEndedHandledRef.current) return;
+    videoEndedHandledRef.current = true;
+
+    const d = detailRef.current;
+    const idx = currentEpisodeIndexRef.current;
+    if (d?.episodes && idx < d.episodes.length - 1) {
+      artPlayerRef.current?.pause();
+
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
+      }
+
+      // 修改点：播放结束后先暂停 1 秒，再确认仍停留在同一集时自动跳转下一集
+      autoNextEpisodeTimeoutRef.current = setTimeout(() => {
+        autoNextEpisodeTimeoutRef.current = null;
+
+        const latestDetail = detailRef.current;
+        const latestIndex = currentEpisodeIndexRef.current;
+        if (
+          latestIndex !== idx ||
+          !latestDetail?.episodes ||
+          latestIndex >= latestDetail.episodes.length - 1
+        ) {
+          return;
+        }
+
+        handleNextEpisode();
+      }, 1000);
+    }
+  };
+
   // 🔧 修改点：复刻 LunaTV 快进快退逻辑，按钮和键盘共用同一套秒数与边界钳制
   const applySeekDelta = (deltaSeconds: number) => {
     if (!artPlayerRef.current) return;
@@ -6231,7 +6267,8 @@ function PlayPageClient() {
       });
 
       artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
+        // 修改点：结束时调用统一切集逻辑，修复上一集结束后停在暂停状态的问题
+        handleVideoEnded();
       });
 
       // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
@@ -6452,7 +6489,8 @@ function PlayPageClient() {
 
       // 监听视频播放结束事件，自动播放下一集
       artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
+        // 修改点：结束时调用统一切集逻辑，修复上一集结束后停在暂停状态的问题
+        handleVideoEnded();
       });
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
@@ -6555,6 +6593,11 @@ function PlayPageClient() {
       // 清理resize防抖定时器
       if (resizeResetTimeoutRef.current) {
         clearTimeout(resizeResetTimeoutRef.current);
+      }
+
+      // 修改点：组件卸载时清理结束后延迟跳转下一集的定时器
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
       }
 
       // 释放 Wake Lock
