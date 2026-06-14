@@ -5395,7 +5395,20 @@ function PlayPageClient() {
         // 控制栏配置
         controls: [
           {
+            name: 'previousEpisode',
             position: 'left',
+            // 修改点：上一集放在播放/暂停键左侧，与下一集(index 13)围绕内置播放键(index 10)对称。
+            index: 7,
+            html: '<i class="art-icon flex hint--top" aria-label="播放上一集"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 18l-8.5-6L16 6v12zM4 6v12h2V6H4z" fill="currentColor"/></svg></i>',
+            tooltip: '播放上一集',
+            click: function () {
+              handlePreviousEpisode();
+            },
+          },
+          {
+            name: 'nextEpisode',
+            position: 'left',
+            // 修改点：保留下一集在播放/暂停键右侧的位置，与上一集形成对称布局。
             index: 13,
             html: '<i class="art-icon flex hint--top" aria-label="播放下一集"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/></svg></i>',
             tooltip: '播放下一集',
@@ -5403,6 +5416,27 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
+          ...(isMobile
+            ? [
+                {
+                  name: 'mobileScreenshot',
+                  position: 'right',
+                  // 修改点：移动端补充截图按钮，沿用桌面端截图按钮的右侧 index 20，避免改变设置/投屏/全屏顺序。
+                  index: 20,
+                  html: '<i class="art-icon flex hint--top" aria-label="截图"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.2 5.5l1.15-1.6h5.3l1.15 1.6H18a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h3.2zM11 15.4a3.55 3.55 0 1 0 0-7.1 3.55 3.55 0 0 0 0 7.1zm0-1.7a1.85 1.85 0 1 1 0-3.7 1.85 1.85 0 0 1 0 3.7z" fill="currentColor"/></svg></i>',
+                  tooltip: '截图',
+                  click: async function () {
+                    try {
+                      await artPlayerRef.current?.screenshot();
+                      toast.success('截图已保存');
+                    } catch (error) {
+                      console.error('移动端截图失败:', error);
+                      toast.error('截图失败，请检查视频源是否允许截图');
+                    }
+                  },
+                },
+              ]
+            : []),
           // 🚀 简单弹幕发送按钮（仅Web端显示）
           // ...(isMobile ? [] : [{
           //   position: 'right',

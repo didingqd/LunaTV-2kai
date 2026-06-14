@@ -15,6 +15,12 @@
   .art-control-volume {
     display: none !important;
   }
+
+  /* 修改点：移动端截图按钮使用紧凑控制尺寸，避免与设置、投屏、全屏按钮互相挤占。 */
+  .art-control-mobileScreenshot {
+    min-width: 28px !important;
+    padding: 0 4px !important;
+  }
 }
 
 /* ===== Small Screen (Mobile Portrait) ===== */
