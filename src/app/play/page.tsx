@@ -5416,6 +5416,27 @@ function PlayPageClient() {
               handleNextEpisode();
             },
           },
+          ...(isMobile
+            ? [
+                {
+                  name: 'mobileScreenshot',
+                  position: 'right',
+                  // 修改点：移动端补充截图按钮，沿用桌面端截图按钮的右侧 index 20，避免改变设置/投屏/全屏顺序。
+                  index: 20,
+                  html: '<i class="art-icon flex hint--top" aria-label="截图"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.2 5.5l1.15-1.6h5.3l1.15 1.6H18a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h3.2zM11 15.4a3.55 3.55 0 1 0 0-7.1 3.55 3.55 0 0 0 0 7.1zm0-1.7a1.85 1.85 0 1 1 0-3.7 1.85 1.85 0 0 1 0 3.7z" fill="currentColor"/></svg></i>',
+                  tooltip: '截图',
+                  click: async function () {
+                    try {
+                      await artPlayerRef.current?.screenshot();
+                      toast.success('截图已保存');
+                    } catch (error) {
+                      console.error('移动端截图失败:', error);
+                      toast.error('截图失败，请检查视频源是否允许截图');
+                    }
+                  },
+                },
+              ]
+            : []),
           // 🚀 简单弹幕发送按钮（仅Web端显示）
           // ...(isMobile ? [] : [{
           //   position: 'right',
