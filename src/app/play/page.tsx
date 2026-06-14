@@ -4951,7 +4951,8 @@ function PlayPageClient() {
         playbackRate: true,
         aspectRatio: false,
         fullscreen: true,
-        fullscreenWeb: true,
+        // 修改点：手机端小屏关闭网页全屏，仅保留系统全屏，避免无用按钮占位或误触。
+        fullscreenWeb: !isMobile,
         subtitleOffset: false,
         miniProgressBar: false,
         mutex: true,
