@@ -12,6 +12,13 @@
   background-color: #000 !important;
 }
 
+/* ===== Player Layer Boundary ===== */
+/* 修改点：普通页面播放时建立播放器层级边界，防止控制栏、按钮提示和暂停图标在页面滚动时穿过顶部菜单栏；全屏/网页全屏保持原层级。 */
+.art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(:fullscreen) {
+  isolation: isolate;
+  z-index: 0 !important;
+}
+
 /* ===== Volume Control Hover Fix ===== */
 /* 修复音量面板 hover 时消失的问题 - 让面板始终接收鼠标事件 */
 @media (hover: hover) {
