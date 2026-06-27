@@ -32,6 +32,9 @@ interface RemoteChangelogEntry {
   fixed: string[];
 }
 
+// 修改点：版本信息面板的“前往仓库”统一指向当前项目自己的 GitHub 仓库。
+const REPOSITORY_URL = 'https://github.com/didingqd/LunaTV-2kai';
+
 export const VersionPanel: React.FC<VersionPanelProps> = ({
   isOpen,
   onClose,
@@ -365,7 +368,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                     </div>
                   </div>
                   <a
-                    href='https://github.com/SzeMeng76/LunaTV'
+                    href={REPOSITORY_URL}
                     target='_blank'
                     rel='noopener noreferrer'
                     className='inline-flex items-center justify-center gap-2 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-xs sm:text-sm rounded-lg transition-colors shadow-sm w-full'
@@ -395,7 +398,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
                     </div>
                   </div>
                   <a
-                    href='https://github.com/SzeMeng76/LunaTV'
+                    href={REPOSITORY_URL}
                     target='_blank'
                     rel='noopener noreferrer'
                     className='inline-flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm rounded-lg transition-colors shadow-sm w-full'

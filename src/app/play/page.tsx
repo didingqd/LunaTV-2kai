@@ -6789,19 +6789,42 @@ function PlayPageClient() {
       }, LOCKED_LONG_PRESS_DELAY_MS);
     };
 
+    const blockLockedLongPressMove = (event: TouchEvent) => {
+      const activeTouchId = lockedLongPressTouchIdRef.current;
+      const hasActiveTouch =
+        activeTouchId !== null &&
+        Array.from(event.touches).some(
+          (touch) => touch.identifier === activeTouchId,
+        );
+      if (!isLockedLongPressActiveRef.current || !hasActiveTouch) return false;
+
+      // 修改点：长按倍速已生效后，移动手指只拦截事件，不退出倍速，避免误拖动进度条。
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return true;
+    };
+
     const handleTouchMove = (event: TouchEvent) => {
+      if (blockLockedLongPressMove(event)) {
+        return;
+      }
+
       const activeTouchId = lockedLongPressTouchIdRef.current;
       const startPoint = lockedLongPressStartPointRef.current;
       if (activeTouchId === null || !startPoint) return;
 
       const activeTouch = Array.from(event.touches).find(
-        touch => touch.identifier === activeTouchId,
+        (touch) => touch.identifier === activeTouchId,
       );
       if (!activeTouch) return;
 
       const deltaX = activeTouch.clientX - startPoint.x;
       const deltaY = activeTouch.clientY - startPoint.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      // 修改点：仅在长按倍速触发前保留移动阈值取消，避免普通滑动误触发倍速。
       if (distance > LOCKED_LONG_PRESS_MOVE_THRESHOLD) {
         stopLockedLongPressRate();
       }
@@ -6811,17 +6834,35 @@ function PlayPageClient() {
       stopLockedLongPressRate();
     };
 
+    const handleDocumentTouchMove = (event: TouchEvent) => {
+      blockLockedLongPressMove(event);
+    };
+
     playerRoot.addEventListener('touchstart', handleTouchStart, true);
-    playerRoot.addEventListener('touchmove', handleTouchMove, true);
+    // 修改点：touchmove 使用非 passive 监听，长按倍速期间才能阻止默认拖动/进度条手势。
+    playerRoot.addEventListener('touchmove', handleTouchMove, {
+      capture: true,
+      passive: false,
+    });
     playerRoot.addEventListener('touchend', handleTouchEnd, true);
     playerRoot.addEventListener('touchcancel', handleTouchEnd, true);
+    // 修改点：同时在 document 捕获层拦截长按倍速触点，覆盖进度条的全局拖动监听。
+    document.addEventListener('touchmove', handleDocumentTouchMove, {
+      capture: true,
+      passive: false,
+    });
     document.addEventListener('visibilitychange', handleTouchEnd);
 
     return () => {
       playerRoot.removeEventListener('touchstart', handleTouchStart, true);
-      playerRoot.removeEventListener('touchmove', handleTouchMove, true);
+      playerRoot.removeEventListener('touchmove', handleTouchMove, {
+        capture: true,
+      });
       playerRoot.removeEventListener('touchend', handleTouchEnd, true);
       playerRoot.removeEventListener('touchcancel', handleTouchEnd, true);
+      document.removeEventListener('touchmove', handleDocumentTouchMove, {
+        capture: true,
+      });
       document.removeEventListener('visibilitychange', handleTouchEnd);
       stopLockedLongPressRate();
     };
