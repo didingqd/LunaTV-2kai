@@ -46,8 +46,8 @@ This project is for educational purposes only. Do not use for commercial purpose
 - **Emby Private Library**: Complete Emby media server integration with passwordless login, auth mode switcher, and multi-audio track playback → [Documentation](docs/integration/EMBY_GUIDE.md)
 - **YouTube Integration**: Full YouTube search, playback, live streaming, popular videos with region selector
 - **Bilibili Integration**: Bilibili search and playback with UP主 videos, popular videos, QR code login, cookie management
-- **Cloud Drive Search**: Advanced filtering and cache management
-- **ACG Torrent Search**: Mikan Project dual-source system
+- **Cloud Drive Search**: Advanced filtering and cache management, PanSou authentication support
+- **ACG Torrent Search**: Mikan Project dual-source system + Nyaa search with download export
 - **IPTV Live TV**: m3u/m3u8 subscription, FLV streaming, EPG guide, M3U import/export
 - **Bangumi Anime**: Intelligent anime detection and API integration
 - **Traditional Chinese Search**: Smart conversion and multi-strategy search
@@ -62,7 +62,8 @@ This project is for educational purposes only. Do not use for commercial purpose
 - **Ultrawide Monitor Support**: Video display mode control for ultrawide monitors
 - **Skip Presets**: Flexible intro/outro template system with import/export and validation
 - **Persistent Playback Rate**: Remember playback speed settings across sessions
-- **Multi-Audio Track Support**: Auto-select browser-compatible audio tracks for Emby playback with track switching
+- **Multi-Audio Track Support**: Auto-select browser-compatible audio tracks for Emby playback with track switching; custom X-Emby-Authorization header support
+- **Video Resolution Filtering**: Auto-infer video stream resolution with resolution-based source filtering
 
 ### 🔔 Content Tracking System
 - **Upcoming Content Reminders**: Complete watchlist and reminder system for upcoming content
@@ -153,6 +154,7 @@ pnpm dev
 ### Advanced Configuration
 - 🔧 [Proxy Config](docs/advanced/PROXY_CONFIG.md)
 - 🚫 [Ad Filter](docs/advanced/CUSTOM_AD_FILTER.md)
+- ⏭️ [Skip Controller](docs/advanced/SKIP_CONTROLLER_GUIDE.md)
 
 ## 🔧 Tech Stack
 
@@ -162,7 +164,7 @@ pnpm dev
 - **Video Player**: ArtPlayer 5.4.0 + HLS.js 1.6.16
 - **State Management**: TanStack Query 5.100.14 (fully migrated, optimized data fetching and caching)
 - **Database**: Upstash Redis / Kvrocks / SQLite (three storage backends available)
-- **Deployment**: Docker / Vercel / Render
+- **Deployment**: Docker / Vercel / Render / Tencent EdgeOne
 
 ## 📜 Changelog
 
