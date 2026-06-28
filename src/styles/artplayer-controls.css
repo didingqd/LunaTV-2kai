@@ -58,6 +58,25 @@
   display: flex !important;
 }
 
+/* 修改点：左下角清晰度徽章跟随播放器控制栏一起显示/隐藏，避免控制栏收起后徽章单独停留。 */
+.art-video-player .art-layer-resolution-badge {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: translateY(6px) !important;
+}
+
+.art-video-player.art-control-show .art-layer-resolution-badge {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateY(0) !important;
+}
+
+/* 修改点：移动端锁定时同步隐藏清晰度徽章，保持与控制栏锁定行为一致。 */
+.art-video-player.art-lock .art-layer-resolution-badge {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 /* ===== Danmaku System Mobile Optimization ===== */
 /* 弹幕面板在不同挂载位置的定位处理 */
 @media (max-width: 768px) {

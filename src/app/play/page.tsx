@@ -5695,7 +5695,7 @@ function PlayPageClient() {
         // 🔧 修改点：播放器 ready 后同步快进快退设置面板，确保刷新后 tooltip/选中态正确
         syncSeekSettingsPanel(seekLayoutModeRef.current, seekSecondsRef.current);
 
-        // 添加分辨率徽章layer
+        // 修改点：清晰度徽章只负责展示分辨率，显示/隐藏交给控制栏状态联动的全局 CSS。
         artPlayerRef.current.layers.add({
           name: 'resolution-badge',
           html: '<div class="resolution-badge"></div>',
@@ -5711,8 +5711,8 @@ function PlayPageClient() {
             textShadow: '0 1px 3px rgba(0, 0, 0, 0.5)',
             backdropFilter: 'blur(10px)',
             pointerEvents: 'none',
-            opacity: '1',
-            transition: 'opacity 0.3s ease',
+            opacity: '0',
+            transition: 'opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease',
             letterSpacing: '0.5px',
           },
         });
@@ -5762,28 +5762,6 @@ function PlayPageClient() {
             },
           });
 
-        // 自动隐藏徽章的定时器
-        let badgeHideTimer: NodeJS.Timeout | null = null;
-
-        const showBadge = () => {
-          const badge = artPlayerRef.current?.layers['resolution-badge'];
-          if (badge) {
-            badge.style.opacity = '1';
-
-            // 清除之前的定时器
-            if (badgeHideTimer) {
-              clearTimeout(badgeHideTimer);
-            }
-
-            // 3秒后自动隐藏徽章
-            badgeHideTimer = setTimeout(() => {
-              if (badge) {
-                badge.style.opacity = '0';
-              }
-            }, 3000);
-          }
-        };
-
         const updateResolution = () => {
           if (video.videoWidth && video.videoHeight) {
             const width = video.videoWidth;
@@ -5829,9 +5807,6 @@ function PlayPageClient() {
 
             // 同时更新state供React使用
             setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
-
-            // 显示徽章并启动自动隐藏定时器
-            showBadge();
           }
         };
 
@@ -5840,12 +5815,6 @@ function PlayPageClient() {
         if (video.videoWidth && video.videoHeight) {
           updateResolution();
         }
-
-        // 用户交互时重新显示徽章（鼠标移动、点击、键盘操作）
-        const userInteractionEvents = ['mousemove', 'click', 'touchstart', 'keydown'];
-        userInteractionEvents.forEach(eventName => {
-          artPlayerRef.current.on(eventName, showBadge);
-        });
 
         // 观影室时间同步：从URL参数读取初始播放时间
         const timeParam = searchParams.get('t') || searchParams.get('time');
