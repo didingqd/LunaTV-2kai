@@ -12,7 +12,9 @@ import { getConfig } from '@/lib/config';
 
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { GlobalDOMErrorHandler } from '../components/GlobalDOMErrorHandler';
+import { DOMErrorBoundary } from '../components/DOMErrorBoundary';
 import { ChunkErrorGuard } from '../components/ChunkErrorGuard';
+import { TranslationWarningToast } from '../components/TranslationWarningToast';
 import NavigationShell from '../components/NavigationShell';
 import { SessionTracker } from '../components/SessionTracker';
 import { SiteProvider } from '../components/SiteProvider';
@@ -120,6 +122,8 @@ export default async function RootLayout({
     DOUBAN_PROXY: doubanProxy,
     DOUBAN_IMAGE_PROXY_TYPE: doubanImageProxyType,
     DOUBAN_IMAGE_PROXY: doubanImageProxy,
+    BANGUMI_IMAGE_PROXY_TYPE: process.env.NEXT_PUBLIC_BANGUMI_IMAGE_PROXY_TYPE || 'server',
+    BANGUMI_IMAGE_PROXY: process.env.NEXT_PUBLIC_BANGUMI_IMAGE_PROXY || '',
     DISABLE_YELLOW_FILTER: disableYellowFilter,
     CUSTOM_CATEGORIES: customCategories,
     FLUID_SEARCH: fluidSearch,
@@ -167,6 +171,7 @@ export default async function RootLayout({
                   <SiteProvider siteName={siteName} announcement={announcement}>
                     <GlobalDOMErrorHandler />
                     <ChunkErrorGuard />
+                    <TranslationWarningToast />
                     <SessionTracker />
                     <RouteWarmup />
                     {/* 导航栏在 layout 层，自动持久化 */}
@@ -174,13 +179,15 @@ export default async function RootLayout({
                     {/* 主内容区域 - 只有这部分会在路由切换时重新渲染 */}
                     <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
                       <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
-                        <Suspense fallback={
-                          <div className="fixed inset-0 z-50">
-                            <CinematicLoadingFallback />
-                          </div>
-                        }>
-                          {children}
-                        </Suspense>
+                        <DOMErrorBoundary componentName="PageContent">
+                          <Suspense fallback={
+                            <div className="fixed inset-0 z-50">
+                              <CinematicLoadingFallback />
+                            </div>
+                          }>
+                            {children}
+                          </Suspense>
+                        </DOMErrorBoundary>
                       </div>
                     </main>
                     <GlobalErrorIndicator />
