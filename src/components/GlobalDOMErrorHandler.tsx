@@ -10,9 +10,42 @@ import { useEffect } from 'react';
 export function GlobalDOMErrorHandler() {
   useEffect(() => {
     const sendCrashReport = (data: any) => {
-      const payload = JSON.stringify(data);
+      const htmlTranslate = document.documentElement.getAttribute('translate');
+      const payload = JSON.stringify({
+        ...data,
+        // 修改点：崩溃上报补充浏览器、文档和视口信息，便于定位翻译插件干扰。
+        browserInfo: {
+          language: navigator.language,
+          languages: navigator.languages,
+          platform: navigator.platform,
+          vendor: navigator.vendor,
+          cookieEnabled: navigator.cookieEnabled,
+        },
+        documentInfo: {
+          readyState: document.readyState,
+          visibilityState: document.visibilityState,
+          title: document.title,
+        },
+        windowInfo: {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+        },
+        // 修改点：检测常见翻译插件留下的 DOM 特征，并排除本站 translate='no' 设置。
+        translationDetection: {
+          hasGoogleTranslate: !!document.querySelector(
+            'iframe[src*="translate.google"]',
+          ),
+          hasTranslateTag: !!htmlTranslate && htmlTranslate !== 'no',
+          hasFontTags: document.getElementsByTagName('font').length > 0,
+          hasTranslateClass: !!document.querySelector('[class*="translated"]'),
+        },
+      });
       // 使用 sendBeacon 优先（更可靠），降级到 fetch
-      const sent = navigator.sendBeacon?.('/api/crash-report', new Blob([payload], { type: 'application/json' }));
+      const sent = navigator.sendBeacon?.(
+        '/api/crash-report',
+        new Blob([payload], { type: 'application/json' }),
+      );
 
       if (!sent) {
         // sendBeacon 失败或不支持，降级到 fetch
@@ -22,7 +55,10 @@ export function GlobalDOMErrorHandler() {
           body: payload,
           keepalive: true,
         }).catch((err) => {
-          console.error('[GlobalDOMErrorHandler] Failed to send crash report:', err);
+          console.error(
+            '[GlobalDOMErrorHandler] Failed to send crash report:',
+            err,
+          );
         });
       }
     };
@@ -36,10 +72,13 @@ export function GlobalDOMErrorHandler() {
         error?.message?.includes('removeChild') ||
         error?.message?.includes('The object can not be found here') ||
         error?.message?.includes('Node was not found') ||
-        error?.message?.includes('Failed to execute \'removeChild\'');
+        error?.message?.includes("Failed to execute 'removeChild'");
 
       if (isDOMError) {
-        console.warn('[GlobalDOMErrorHandler] Suppressed DOM error from translation plugin:', error);
+        console.warn(
+          '[GlobalDOMErrorHandler] Suppressed DOM error from translation plugin:',
+          error,
+        );
 
         // 使用 queueMicrotask 异步发送，避免阻塞错误处理
         queueMicrotask(() => {
@@ -78,7 +117,10 @@ export function GlobalDOMErrorHandler() {
         error?.message?.includes('Node was not found');
 
       if (isDOMError) {
-        console.warn('[GlobalDOMErrorHandler] Suppressed unhandled rejection from translation plugin:', error);
+        console.warn(
+          '[GlobalDOMErrorHandler] Suppressed unhandled rejection from translation plugin:',
+          error,
+        );
 
         // 使用 queueMicrotask 异步发送
         queueMicrotask(() => {
@@ -108,7 +150,10 @@ export function GlobalDOMErrorHandler() {
 
     return () => {
       window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener(
+        'unhandledrejection',
+        handleUnhandledRejection,
+      );
     };
   }, []);
 

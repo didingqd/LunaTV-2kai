@@ -574,3 +574,21 @@ html:not(.dark) .hover\:bg-slate-50:hover {
     background: rgba(24, 24, 27, 0.98) !important;
   }
 }
+
+/* ============================================
+   修改点：通用纵向入场动画，供翻译插件提示和已有登录/注册提示复用，避免覆盖水平定位。
+   ============================================ */
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out forwards;
+}

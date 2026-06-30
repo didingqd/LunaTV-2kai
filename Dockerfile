@@ -47,8 +47,8 @@ RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs -G nodejs
 
 WORKDIR /app
 
-# 创建视频缓存目录并设置权限
-RUN mkdir -p /app/video-cache && chown -R nextjs:nodejs /app/video-cache
+# 修改点：运行时镜像同时创建视频缓存目录和 SQLite 数据目录，避免容器首次启动时目录不存在
+RUN mkdir -p /app/video-cache /app/data && chown -R nextjs:nodejs /app/video-cache /app/data
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
@@ -73,4 +73,4 @@ USER nextjs
 EXPOSE 3000
 
 # 使用自定义启动脚本，先预加载配置再启动服务器
-CMD ["node", "start.js"] 
+CMD ["node", "start.js"]

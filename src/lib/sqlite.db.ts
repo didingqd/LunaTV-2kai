@@ -23,10 +23,19 @@ const SEARCH_HISTORY_LIMIT = 20;
 const CACHE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 60 分钟
 
 export class SqliteStorage implements IStorage {
-  private db: DatabaseSync;
+  private db!: DatabaseSync;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
+    // 修改点：Next.js 构建阶段使用内存 SQLite，避免构建期写入文件系统。
+    const isBuild = process.env.IS_BUILD_PHASE === 'true';
+
+    if (isBuild) {
+      this.db = new DatabaseSync(':memory:');
+      this.initTables();
+      return;
+    }
+
     const dbPath =
       process.env.SQLITE_DB_PATH ||
       path.join(process.cwd(), 'data', 'lunatv.db');

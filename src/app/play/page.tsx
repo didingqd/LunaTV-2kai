@@ -4951,7 +4951,8 @@ function PlayPageClient() {
         playbackRate: true,
         aspectRatio: false,
         fullscreen: true,
-        fullscreenWeb: true,
+        // 修改点：手机端小屏关闭网页全屏，仅保留系统全屏，避免无用按钮占位或误触。
+        fullscreenWeb: !isMobile,
         subtitleOffset: false,
         miniProgressBar: false,
         mutex: true,
@@ -5694,7 +5695,7 @@ function PlayPageClient() {
         // 🔧 修改点：播放器 ready 后同步快进快退设置面板，确保刷新后 tooltip/选中态正确
         syncSeekSettingsPanel(seekLayoutModeRef.current, seekSecondsRef.current);
 
-        // 添加分辨率徽章layer
+        // 修改点：清晰度徽章只负责展示分辨率，显示/隐藏交给控制栏状态联动的全局 CSS。
         artPlayerRef.current.layers.add({
           name: 'resolution-badge',
           html: '<div class="resolution-badge"></div>',
@@ -5710,8 +5711,8 @@ function PlayPageClient() {
             textShadow: '0 1px 3px rgba(0, 0, 0, 0.5)',
             backdropFilter: 'blur(10px)',
             pointerEvents: 'none',
-            opacity: '1',
-            transition: 'opacity 0.3s ease',
+            opacity: '0',
+            transition: 'opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease',
             letterSpacing: '0.5px',
           },
         });
@@ -5761,28 +5762,6 @@ function PlayPageClient() {
             },
           });
 
-        // 自动隐藏徽章的定时器
-        let badgeHideTimer: NodeJS.Timeout | null = null;
-
-        const showBadge = () => {
-          const badge = artPlayerRef.current?.layers['resolution-badge'];
-          if (badge) {
-            badge.style.opacity = '1';
-
-            // 清除之前的定时器
-            if (badgeHideTimer) {
-              clearTimeout(badgeHideTimer);
-            }
-
-            // 3秒后自动隐藏徽章
-            badgeHideTimer = setTimeout(() => {
-              if (badge) {
-                badge.style.opacity = '0';
-              }
-            }, 3000);
-          }
-        };
-
         const updateResolution = () => {
           if (video.videoWidth && video.videoHeight) {
             const width = video.videoWidth;
@@ -5828,9 +5807,6 @@ function PlayPageClient() {
 
             // 同时更新state供React使用
             setVideoResolution({ width: video.videoWidth, height: video.videoHeight });
-
-            // 显示徽章并启动自动隐藏定时器
-            showBadge();
           }
         };
 
@@ -5839,12 +5815,6 @@ function PlayPageClient() {
         if (video.videoWidth && video.videoHeight) {
           updateResolution();
         }
-
-        // 用户交互时重新显示徽章（鼠标移动、点击、键盘操作）
-        const userInteractionEvents = ['mousemove', 'click', 'touchstart', 'keydown'];
-        userInteractionEvents.forEach(eventName => {
-          artPlayerRef.current.on(eventName, showBadge);
-        });
 
         // 观影室时间同步：从URL参数读取初始播放时间
         const timeParam = searchParams.get('t') || searchParams.get('time');
@@ -6788,19 +6758,42 @@ function PlayPageClient() {
       }, LOCKED_LONG_PRESS_DELAY_MS);
     };
 
+    const blockLockedLongPressMove = (event: TouchEvent) => {
+      const activeTouchId = lockedLongPressTouchIdRef.current;
+      const hasActiveTouch =
+        activeTouchId !== null &&
+        Array.from(event.touches).some(
+          (touch) => touch.identifier === activeTouchId,
+        );
+      if (!isLockedLongPressActiveRef.current || !hasActiveTouch) return false;
+
+      // 修改点：长按倍速已生效后，移动手指只拦截事件，不退出倍速，避免误拖动进度条。
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return true;
+    };
+
     const handleTouchMove = (event: TouchEvent) => {
+      if (blockLockedLongPressMove(event)) {
+        return;
+      }
+
       const activeTouchId = lockedLongPressTouchIdRef.current;
       const startPoint = lockedLongPressStartPointRef.current;
       if (activeTouchId === null || !startPoint) return;
 
       const activeTouch = Array.from(event.touches).find(
-        touch => touch.identifier === activeTouchId,
+        (touch) => touch.identifier === activeTouchId,
       );
       if (!activeTouch) return;
 
       const deltaX = activeTouch.clientX - startPoint.x;
       const deltaY = activeTouch.clientY - startPoint.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      // 修改点：仅在长按倍速触发前保留移动阈值取消，避免普通滑动误触发倍速。
       if (distance > LOCKED_LONG_PRESS_MOVE_THRESHOLD) {
         stopLockedLongPressRate();
       }
@@ -6810,17 +6803,35 @@ function PlayPageClient() {
       stopLockedLongPressRate();
     };
 
+    const handleDocumentTouchMove = (event: TouchEvent) => {
+      blockLockedLongPressMove(event);
+    };
+
     playerRoot.addEventListener('touchstart', handleTouchStart, true);
-    playerRoot.addEventListener('touchmove', handleTouchMove, true);
+    // 修改点：touchmove 使用非 passive 监听，长按倍速期间才能阻止默认拖动/进度条手势。
+    playerRoot.addEventListener('touchmove', handleTouchMove, {
+      capture: true,
+      passive: false,
+    });
     playerRoot.addEventListener('touchend', handleTouchEnd, true);
     playerRoot.addEventListener('touchcancel', handleTouchEnd, true);
+    // 修改点：同时在 document 捕获层拦截长按倍速触点，覆盖进度条的全局拖动监听。
+    document.addEventListener('touchmove', handleDocumentTouchMove, {
+      capture: true,
+      passive: false,
+    });
     document.addEventListener('visibilitychange', handleTouchEnd);
 
     return () => {
       playerRoot.removeEventListener('touchstart', handleTouchStart, true);
-      playerRoot.removeEventListener('touchmove', handleTouchMove, true);
+      playerRoot.removeEventListener('touchmove', handleTouchMove, {
+        capture: true,
+      });
       playerRoot.removeEventListener('touchend', handleTouchEnd, true);
       playerRoot.removeEventListener('touchcancel', handleTouchEnd, true);
+      document.removeEventListener('touchmove', handleDocumentTouchMove, {
+        capture: true,
+      });
       document.removeEventListener('visibilitychange', handleTouchEnd);
       stopLockedLongPressRate();
     };
