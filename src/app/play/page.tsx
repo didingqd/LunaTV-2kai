@@ -747,6 +747,8 @@ function PlayPageClient() {
     loadFullscreenClockMode(),
   );
   const artRef = useRef<HTMLDivElement | null>(null);
+  const mobileControlsResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const lastMobileControlsOverflowCheckRef = useRef(0);
 
   const applyCurrentFullscreenClockMode = useCallback((isFullscreen?: boolean) => {
     applyFullscreenClockMode(
@@ -2585,7 +2587,63 @@ function PlayPageClient() {
   };
 
   // 清理播放器资源的统一函数
+  const teardownMobileControlsOverflowWatcher = () => {
+    mobileControlsResizeObserverRef.current?.disconnect();
+    mobileControlsResizeObserverRef.current = null;
+    const playerRoot = artPlayerRef.current?.template?.$player as
+      | HTMLElement
+      | undefined;
+    playerRoot?.classList.remove('art-mobile-controls-overflow');
+  };
+
+  const updateMobileControlsOverflow = useCallback(() => {
+    const player = artPlayerRef.current;
+    const playerRoot = player?.template?.$player as HTMLElement | undefined;
+    const controls = playerRoot?.querySelector('.art-controls') as
+      | HTMLElement
+      | null;
+    if (!playerRoot || !controls) return;
+
+    const isInlineMobile =
+      isMobileGlobal && !player.fullscreen && !player.fullscreenWeb;
+    if (!isInlineMobile) {
+      playerRoot.classList.remove('art-mobile-controls-overflow');
+      return;
+    }
+
+    playerRoot.classList.remove('art-mobile-controls-overflow');
+    const hasOverflow = controls.scrollWidth > controls.clientWidth + 1;
+    playerRoot.classList.toggle('art-mobile-controls-overflow', hasOverflow);
+  }, [isMobileGlobal]);
+
+  const setupMobileControlsOverflowWatcher = useCallback(() => {
+    teardownMobileControlsOverflowWatcher();
+
+    if (!isMobileGlobal) return;
+
+    const playerRoot = artPlayerRef.current?.template?.$player as
+      | HTMLElement
+      | undefined;
+    const controls = playerRoot?.querySelector('.art-controls') as
+      | HTMLElement
+      | null;
+    if (!playerRoot || !controls) return;
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
+        requestAnimationFrame(updateMobileControlsOverflow);
+      });
+      observer.observe(playerRoot);
+      observer.observe(controls);
+      mobileControlsResizeObserverRef.current = observer;
+    }
+
+    requestAnimationFrame(updateMobileControlsOverflow);
+  }, [isMobileGlobal, updateMobileControlsOverflow]);
+
   const cleanupPlayer = async () => {
+    teardownMobileControlsOverflowWatcher();
+
     // 先同步停止旧播放链路，避免异步清理期间残留声音继续播放
     stopPlaybackImmediately();
 
@@ -5678,6 +5736,7 @@ function PlayPageClient() {
       // 🔧 修改点：复刻 LunaTV 的播放器就绪回调，同步跳过菜单状态并恢复当前视频配置
       artPlayerRef.current.on('ready', async () => {
         setError(null);
+        setupMobileControlsOverflowWatcher();
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
 
         // 播放器就绪后同步跳过菜单状态，确保当前视频的开关/时间显示正确
@@ -6311,6 +6370,7 @@ function PlayPageClient() {
 
       // 监听全屏事件，进入全屏后自动隐藏控制栏 + 显示标题层 + 应用透明度
       artPlayerRef.current.on('fullscreen', (isFullscreen: boolean) => {
+        requestAnimationFrame(updateMobileControlsOverflow);
         const titleLayer = artPlayerRef.current?.layers['fullscreen-title'];
         if (titleLayer) {
           titleLayer.style.display = isFullscreen ? 'block' : 'none';
@@ -6332,6 +6392,7 @@ function PlayPageClient() {
 
       // 监听网页全屏事件，显示/隐藏标题层
       artPlayerRef.current.on('fullscreenWeb', (isFullscreenWeb: boolean) => {
+        requestAnimationFrame(updateMobileControlsOverflow);
         const titleLayer = artPlayerRef.current?.layers['fullscreen-title'];
         if (titleLayer) {
           titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
@@ -6344,6 +6405,7 @@ function PlayPageClient() {
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
       artPlayerRef.current.on('video:canplay', () => {
+        requestAnimationFrame(updateMobileControlsOverflow);
         // 🔥 重置 video:ended 处理标志，因为这是新视频
         videoEndedHandledRef.current = false;
 
@@ -6500,6 +6562,11 @@ function PlayPageClient() {
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
         const now = performance.now(); // 使用performance.now()更精确
+
+        if (now - lastMobileControlsOverflowCheckRef.current > 1000) {
+          lastMobileControlsOverflowCheckRef.current = now;
+          updateMobileControlsOverflow();
+        }
 
         // 更新跳过逻辑所需的时间信息
         applySkipLogic();

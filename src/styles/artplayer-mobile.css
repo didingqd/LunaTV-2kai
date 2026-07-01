@@ -16,8 +16,8 @@
     display: none !important;
   }
 
-  /* 修改点：移动端隐藏截图按钮，避免非全屏控制栏挤占溢出。 */
-  .art-control-mobileScreenshot {
+  /* 修改点：仅在运行时检测到非全屏控制栏溢出时隐藏截图按钮。 */
+  .art-video-player.art-mobile-controls-overflow .art-control-mobileScreenshot {
     display: none !important;
   }
 }
