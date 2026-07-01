@@ -44,7 +44,7 @@
       :fullscreen
     )
     .art-control-time {
-    font-size: 10px !important;
+    font-size: 11px !important;
     padding: 0 1px !important;
     white-space: nowrap !important;
   }
@@ -72,7 +72,7 @@
 
   /* 调整播放器时间显示更紧凑 */
   .art-control-time {
-    font-size: 10px !important;
+    font-size: 11px !important;
     padding: 0 1px !important;
   }
 
