@@ -30,7 +30,6 @@
     .art-control {
     min-width: 25px !important;
     padding: 0 1px !important;
-    font-size: 11px !important;
   }
 
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
@@ -44,18 +43,8 @@
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
       :fullscreen
     )
-    .art-control
-    svg {
-    width: 15px !important;
-    height: 15px !important;
-  }
-
-  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
-      :fullscreen
-    )
     .art-control-time {
     font-size: 10px !important;
-    font-weight: 600 !important;
     padding: 0 1px !important;
     white-space: nowrap !important;
   }
@@ -68,7 +57,6 @@
   .art-control {
     min-width: 25px !important;
     padding: 0 1px !important;
-    font-size: 11px !important;
   }
 
   /* 减小控制栏的内边距 */
@@ -85,7 +73,6 @@
   /* 调整播放器时间显示更紧凑 */
   .art-control-time {
     font-size: 10px !important;
-    font-weight: 600 !important;
     padding: 0 1px !important;
   }
 
