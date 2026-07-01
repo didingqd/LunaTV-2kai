@@ -16,9 +16,37 @@
     display: none !important;
   }
 
-  /* 修改点：仅在运行时检测到非全屏控制栏溢出时隐藏截图按钮。 */
-  .art-video-player.art-mobile-controls-overflow .art-control-mobileScreenshot {
-    display: none !important;
+  /* 修改点：移动端非全屏控制栏稍微压缩，避免长时长挤出图标。 */
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-controls {
+    padding: 0 4px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-control {
+    min-width: 30px !important;
+    padding: 0 3px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-control-mobileScreenshot {
+    min-width: 28px !important;
+    padding: 0 2px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-control-time {
+    font-size: 11px !important;
+    padding: 0 2px !important;
+    white-space: nowrap !important;
   }
 }
 
