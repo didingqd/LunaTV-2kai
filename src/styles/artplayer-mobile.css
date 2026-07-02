@@ -21,7 +21,8 @@
       :fullscreen
     )
     .art-controls {
-    padding: 0 !important;
+    column-gap: 2px !important;
+    padding: 0 1px !important;
   }
 
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
@@ -36,8 +37,7 @@
       :fullscreen
     )
     .art-control-mobileScreenshot {
-    min-width: 22px !important;
-    padding: 0 !important;
+    display: none !important;
   }
 
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
@@ -61,7 +61,8 @@
 
   /* 减小控制栏的内边距 */
   .art-controls {
-    padding: 0 !important;
+    column-gap: 2px !important;
+    padding: 0 1px !important;
   }
 
   /* 确保全屏按钮始终可见 */
