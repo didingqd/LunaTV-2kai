@@ -36,6 +36,22 @@
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
       :fullscreen
     )
+    .art-controls-right {
+    gap: 3px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-controls-right
+    .art-control {
+    min-width: 26px !important;
+    padding: 0 1px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
     .art-control-mobileScreenshot {
     display: none !important;
   }
@@ -62,6 +78,15 @@
   /* 减小控制栏的内边距 */
   .art-controls {
     column-gap: 3px !important;
+    padding: 0 1px !important;
+  }
+
+  .art-controls-right {
+    gap: 2px !important;
+  }
+
+  .art-controls-right .art-control {
+    min-width: 25px !important;
     padding: 0 1px !important;
   }
 
