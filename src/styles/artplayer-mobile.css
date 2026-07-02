@@ -21,7 +21,7 @@
       :fullscreen
     )
     .art-controls {
-    column-gap: 2px !important;
+    column-gap: 3px !important;
     padding: 0 1px !important;
   }
 
@@ -61,7 +61,7 @@
 
   /* 减小控制栏的内边距 */
   .art-controls {
-    column-gap: 2px !important;
+    column-gap: 3px !important;
     padding: 0 1px !important;
   }
 
