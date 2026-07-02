@@ -22,7 +22,7 @@
     )
     .art-controls {
     column-gap: 2px !important;
-    padding: 0 2px !important;
+    padding: 0 3px !important;
   }
 
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
@@ -73,7 +73,7 @@
   /* 减小控制栏的内边距 */
   .art-controls {
     column-gap: 2px !important;
-    padding: 0 1px !important;
+    padding: 0 2px !important;
   }
 
   .art-controls-left,
