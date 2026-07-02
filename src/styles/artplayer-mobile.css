@@ -36,6 +36,27 @@
   .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
       :fullscreen
     )
+    .art-control:not(.art-control-time) {
+    flex: 0 0 23px !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    width: 23px !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
+    .art-control
+    .art-icon {
+    align-items: center !important;
+    display: flex !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+
+  .art-video-player:not(.art-fullscreen):not(.art-fullscreen-web):not(
+      :fullscreen
+    )
     .art-control-mobileScreenshot {
     min-width: 21px !important;
     padding: 0 !important;
