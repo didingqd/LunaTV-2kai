@@ -85,7 +85,7 @@
 .moontv-skip-marker {
   position: absolute;
   top: 50%;
-  width: 3px;
+  width: 5px;
   height: 8px;
   border-radius: 999px;
   transform: translate(-50%, -50%);
@@ -97,11 +97,11 @@
 }
 
 .moontv-skip-marker-intro {
-  background: #ffffff; /*原来的绿色 background: #34d399; */
+  background: #ffffff;  /*原来的绿色 background: #34d399; */
 }
 
 .moontv-skip-marker-outro {
-  background: #f59e0b;
+  background:#a855f7; /*原来的绿色 background: #f59e0b; */
 }
 
 /* ===== Danmaku System Mobile Optimization ===== */
