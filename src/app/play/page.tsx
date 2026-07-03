@@ -3509,6 +3509,9 @@ function PlayPageClient() {
         ? Math.max(0, duration + skipConfigRef.current.outro_time)
         : 0;
     if (outroStartTime > 0 && currentTime < Math.max(0, outroStartTime - 0.5)) {
+      if (hasBufferedOutroSkipRef.current) {
+        videoEndedHandledRef.current = false;
+      }
       hasBufferedOutroSkipRef.current = false;
     }
 
@@ -3522,12 +3525,21 @@ function PlayPageClient() {
       const outroSkipBufferSeconds = outroSkipBufferSecondsRef.current;
 
       if (outroSkipBufferSeconds > 0) {
+        const shouldResume = !artPlayerRef.current.paused;
         const targetTime = Math.max(
           currentTime,
           Math.min(duration, duration - outroSkipBufferSeconds),
         );
+        if (autoNextEpisodeTimeoutRef.current) {
+          clearTimeout(autoNextEpisodeTimeoutRef.current);
+          autoNextEpisodeTimeoutRef.current = null;
+        }
+        videoEndedHandledRef.current = true;
         artPlayerRef.current.currentTime = targetTime;
         hasBufferedOutroSkipRef.current = true;
+        if (shouldResume) {
+          void artPlayerRef.current.play();
+        }
       } else {
         if (
           currentEpisodeIndexRef.current <
