@@ -3508,13 +3508,6 @@ function PlayPageClient() {
       skipConfigRef.current.outro_time < 0
         ? Math.max(0, duration + skipConfigRef.current.outro_time)
         : 0;
-    if (outroStartTime > 0 && currentTime < Math.max(0, outroStartTime - 0.5)) {
-      if (hasBufferedOutroSkipRef.current) {
-        videoEndedHandledRef.current = false;
-      }
-      hasBufferedOutroSkipRef.current = false;
-    }
-
     // 跳过片尾
     if (
       skipConfigRef.current.outro_time < 0 &&
@@ -3524,33 +3517,27 @@ function PlayPageClient() {
     ) {
       const outroSkipBufferSeconds = outroSkipBufferSecondsRef.current;
 
-      if (outroSkipBufferSeconds > 0) {
-        const shouldResume = !artPlayerRef.current.paused;
-        const targetTime = Math.max(
-          currentTime,
-          Math.min(duration, duration - outroSkipBufferSeconds),
-        );
-        if (autoNextEpisodeTimeoutRef.current) {
-          clearTimeout(autoNextEpisodeTimeoutRef.current);
-          autoNextEpisodeTimeoutRef.current = null;
-        }
-        videoEndedHandledRef.current = true;
-        artPlayerRef.current.currentTime = targetTime;
-        hasBufferedOutroSkipRef.current = true;
-        if (shouldResume) {
-          void artPlayerRef.current.play();
-        }
-      } else {
-        if (
-          currentEpisodeIndexRef.current <
-          (detailRef.current?.episodes?.length || 1) - 1
-        ) {
-          isSkipNextEpisodeTriggeredRef.current = true;
-          handleNextEpisode();
-        } else {
-          artPlayerRef.current.pause();
-        }
+      const shouldResume = !artPlayerRef.current.paused;
+      const targetTime =
+        outroSkipBufferSeconds > 0
+          ? Math.max(
+              currentTime,
+              Math.min(duration, duration - outroSkipBufferSeconds),
+            )
+          : Math.max(currentTime, Math.max(0, duration - 0.05));
+
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
+        autoNextEpisodeTimeoutRef.current = null;
       }
+
+      artPlayerRef.current.currentTime = targetTime;
+      hasBufferedOutroSkipRef.current = true;
+
+      if (shouldResume) {
+        void artPlayerRef.current.play();
+      }
+
       artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
         skipConfigRef.current.outro_time,
       )})`;
@@ -4655,14 +4642,6 @@ function PlayPageClient() {
 
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
-    if (
-      hasBufferedOutroSkipRef.current &&
-      outroSkipBufferSecondsRef.current > 0
-    ) {
-      artPlayerRef.current?.pause();
-      return;
-    }
-
     if (d?.episodes && idx < d.episodes.length - 1) {
       artPlayerRef.current?.pause();
 
