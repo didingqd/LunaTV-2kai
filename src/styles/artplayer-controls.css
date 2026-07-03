@@ -86,7 +86,7 @@
   position: absolute;
   top: 50%;
   width: 3px;
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -97,7 +97,7 @@
 }
 
 .moontv-skip-marker-intro {
-  background: #34d399;
+  background: #ffffff; /*原来的绿色 background: #34d399; */
 }
 
 .moontv-skip-marker-outro {
