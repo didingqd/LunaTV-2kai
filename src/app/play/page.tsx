@@ -711,16 +711,14 @@ function PlayPageClient() {
       setPlayerReady(false);
 
       // 复刻 LunaTV 跳过片头片尾配置：切换视频时先重置当前菜单态，随后按当前视频重新读取
-      setSkipConfig({
-        enable: false,
-        intro_time: 0,
-        outro_time: 0,
-      });
-      skipConfigRef.current = {
+      const resetSkipConfig = {
         enable: false,
         intro_time: 0,
         outro_time: 0,
       };
+      setSkipConfig(resetSkipConfig);
+      skipConfigRef.current = resetSkipConfig;
+      updateSkipProgressMarkers(resetSkipConfig);
       lastSkipCheckRef.current = 0;
 
       // 触发重新加载（通过更新 reloadTrigger 来触发 initAll 重新执行）
@@ -3082,6 +3080,60 @@ function PlayPageClient() {
     });
   };
 
+  const getSkipMarkerPercent = (
+    type: 'intro' | 'outro',
+    config = skipConfigRef.current
+  ) => {
+    const duration = Number(artPlayerRef.current?.duration) || 0;
+    if (!config.enable || duration <= 0) return null;
+
+    const markerTime =
+      type === 'intro'
+        ? config.intro_time
+        : duration + config.outro_time;
+
+    if (markerTime <= 0 || markerTime >= duration) return null;
+    return Math.min(100, Math.max(0, (markerTime / duration) * 100));
+  };
+
+  const updateSkipProgressMarkers = (
+    config = skipConfigRef.current
+  ) => {
+    const progressRoot = artPlayerRef.current?.template?.$progress as
+      | HTMLElement
+      | undefined;
+    if (!progressRoot) return;
+
+    const markerHost =
+      (progressRoot.querySelector('.art-control-progress') as HTMLElement | null) ||
+      progressRoot;
+    markerHost.classList.add('moontv-skip-marker-host');
+
+    (['intro', 'outro'] as const).forEach((type) => {
+      const className = `moontv-skip-marker-${type}`;
+      let marker = markerHost.querySelector(`.${className}`) as HTMLElement | null;
+      const percent = getSkipMarkerPercent(type, config);
+
+      if (percent === null) {
+        marker?.remove();
+        return;
+      }
+
+      if (!marker) {
+        marker = document.createElement('div');
+        marker.className = `moontv-skip-marker ${className}`;
+        markerHost.appendChild(marker);
+      }
+
+      marker.style.left = `${percent}%`;
+      marker.title =
+        type === 'intro'
+          ? `片头跳转点 ${formatTime(config.intro_time)}`
+          : `片尾跳转点 -${formatTime(-config.outro_time)}`;
+      marker.setAttribute('aria-label', marker.title);
+    });
+  };
+
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
     intro_time: number;
@@ -3092,6 +3144,7 @@ function PlayPageClient() {
     try {
       setSkipConfig(newConfig);
       skipConfigRef.current = newConfig;
+      updateSkipProgressMarkers(newConfig);
 
       if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
         await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
@@ -3758,11 +3811,16 @@ function PlayPageClient() {
       try {
         const config = await getSkipConfig(currentSource, currentId);
         if (config) {
-          setSkipConfig({
+          const nextConfig = {
             enable: Boolean(config.enable),
             intro_time: Number(config.intro_time) || 0,
             outro_time: Number(config.outro_time) || 0,
-          });
+          };
+          setSkipConfig(nextConfig);
+          skipConfigRef.current = nextConfig;
+          updateSkipProgressMarkers(nextConfig);
+        } else {
+          updateSkipProgressMarkers(skipConfigRef.current);
         }
       } catch (err) {
         console.error('读取跳过片头片尾配置失败:', err);
@@ -5682,6 +5740,7 @@ function PlayPageClient() {
 
         // 播放器就绪后同步跳过菜单状态，确保当前视频的开关/时间显示正确
         syncSkipSettingsPanel(skipConfigRef.current);
+        updateSkipProgressMarkers(skipConfigRef.current);
 
         // 使用ArtPlayer layers API添加分辨率徽章（带渐变和发光效果）
         const video = artPlayerRef.current.video as HTMLVideoElement;
@@ -6280,6 +6339,13 @@ function PlayPageClient() {
         requestWakeLock();
       }
 
+      artPlayerRef.current.on('video:loadedmetadata', () => {
+        updateSkipProgressMarkers(skipConfigRef.current);
+      });
+      artPlayerRef.current.on('video:durationchange', () => {
+        updateSkipProgressMarkers(skipConfigRef.current);
+      });
+
       artPlayerRef.current.on('video:volumechange', () => {
         lastVolumeRef.current = artPlayerRef.current.volume;
       });
@@ -6495,6 +6561,12 @@ function PlayPageClient() {
       artPlayerRef.current.on('video:ended', () => {
         // 修改点：结束时调用统一切集逻辑，修复上一集结束后停在暂停状态的问题
         handleVideoEnded();
+      });
+      artPlayerRef.current.on('video:loadedmetadata', () => {
+        updateSkipProgressMarkers(skipConfigRef.current);
+      });
+      artPlayerRef.current.on('video:durationchange', () => {
+        updateSkipProgressMarkers(skipConfigRef.current);
       });
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;

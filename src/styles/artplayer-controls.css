@@ -77,6 +77,33 @@
   visibility: hidden !important;
 }
 
+/* ===== Skip Markers ===== */
+.moontv-skip-marker-host {
+  position: relative !important;
+}
+
+.moontv-skip-marker {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1002;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 0 8px rgba(255, 255, 255, 0.55);
+}
+
+.moontv-skip-marker-intro {
+  background: #34d399;
+}
+
+.moontv-skip-marker-outro {
+  background: #f59e0b;
+}
+
 /* ===== Danmaku System Mobile Optimization ===== */
 /* 弹幕面板在不同挂载位置的定位处理 */
 @media (max-width: 768px) {
