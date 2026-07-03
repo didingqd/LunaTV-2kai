@@ -458,6 +458,7 @@ function PlayPageClient() {
     () => loadOutroSkipBufferSeconds(),
   );
   const outroSkipBufferSecondsRef = useRef(outroSkipBufferSeconds);
+  const hasBufferedOutroSkipRef = useRef(false);
   const lastSkipCheckRef = useRef(0);
   const isSkipNextEpisodeTriggeredRef = useRef<boolean>(false);
   useEffect(() => {
@@ -3462,6 +3463,7 @@ function PlayPageClient() {
     try {
       setSkipConfig(newConfig);
       skipConfigRef.current = newConfig;
+      hasBufferedOutroSkipRef.current = false;
 
       if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
         await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
@@ -3502,26 +3504,40 @@ function PlayPageClient() {
       )})`;
     }
 
+    const outroStartTime =
+      skipConfigRef.current.outro_time < 0
+        ? Math.max(0, duration + skipConfigRef.current.outro_time)
+        : 0;
+    if (outroStartTime > 0 && currentTime <= outroStartTime) {
+      hasBufferedOutroSkipRef.current = false;
+    }
+
     // 跳过片尾
     if (
       skipConfigRef.current.outro_time < 0 &&
       duration > 0 &&
-      currentTime >
-        Math.min(
-          duration,
-          duration +
-            skipConfigRef.current.outro_time +
-            outroSkipBufferSecondsRef.current,
-        )
+      currentTime > outroStartTime &&
+      !hasBufferedOutroSkipRef.current
     ) {
-      if (
-        currentEpisodeIndexRef.current <
-        (detailRef.current?.episodes?.length || 1) - 1
-      ) {
-        isSkipNextEpisodeTriggeredRef.current = true;
-        handleNextEpisode();
+      const outroSkipBufferSeconds = outroSkipBufferSecondsRef.current;
+
+      if (outroSkipBufferSeconds > 0) {
+        const targetTime = Math.max(
+          currentTime,
+          Math.min(duration, duration - outroSkipBufferSeconds),
+        );
+        artPlayerRef.current.currentTime = targetTime;
+        hasBufferedOutroSkipRef.current = true;
       } else {
-        artPlayerRef.current.pause();
+        if (
+          currentEpisodeIndexRef.current <
+          (detailRef.current?.episodes?.length || 1) - 1
+        ) {
+          isSkipNextEpisodeTriggeredRef.current = true;
+          handleNextEpisode();
+        } else {
+          artPlayerRef.current.pause();
+        }
       }
       artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
         skipConfigRef.current.outro_time,

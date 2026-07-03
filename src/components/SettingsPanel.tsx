@@ -19,6 +19,7 @@ import {
   DEFAULT_OUTRO_SKIP_BUFFER_SECONDS,
   OUTRO_SKIP_BUFFER_MAX_SECONDS,
   OUTRO_SKIP_BUFFER_MIN_SECONDS,
+  formatOutroSkipBufferSeconds,
   loadOutroSkipBufferSeconds,
   saveOutroSkipBufferSeconds,
   sanitizeOutroSkipBufferSeconds,
@@ -1042,18 +1043,18 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                     片尾跳过缓冲
                   </h4>
                   <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                    跳过片尾时延后触发，避免过早切换到下一集
+                    到达片尾标记后，跳到距离真正片尾指定秒数的位置继续播放
                   </p>
                 </div>
                 <span className='text-sm font-semibold text-green-600 dark:text-green-400 whitespace-nowrap'>
-                  {outroSkipBufferSeconds} 秒
+                  {formatOutroSkipBufferSeconds(outroSkipBufferSeconds)} 秒
                 </span>
               </div>
               <input
                 type='range'
                 min={OUTRO_SKIP_BUFFER_MIN_SECONDS}
                 max={OUTRO_SKIP_BUFFER_MAX_SECONDS}
-                step='1'
+                step='0.1'
                 value={outroSkipBufferSeconds}
                 onChange={(e) =>
                   handleOutroSkipBufferSecondsChange(
@@ -1063,10 +1064,37 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                 className='w-full accent-green-500'
                 aria-label='片尾跳过缓冲秒数'
               />
-              <div className='flex items-center justify-between text-xs text-gray-500 dark:text-gray-400'>
-                <span>{OUTRO_SKIP_BUFFER_MIN_SECONDS} 秒</span>
-                <span>默认 {DEFAULT_OUTRO_SKIP_BUFFER_SECONDS} 秒</span>
-                <span>{OUTRO_SKIP_BUFFER_MAX_SECONDS} 秒</span>
+              <div className='relative h-6 text-xs text-gray-500 dark:text-gray-400'>
+                <div
+                  className='absolute top-0 h-2 border-l border-green-500'
+                  style={{
+                    left: `${
+                      ((DEFAULT_OUTRO_SKIP_BUFFER_SECONDS -
+                        OUTRO_SKIP_BUFFER_MIN_SECONDS) /
+                        (OUTRO_SKIP_BUFFER_MAX_SECONDS -
+                          OUTRO_SKIP_BUFFER_MIN_SECONDS)) *
+                      100
+                    }%`,
+                  }}
+                />
+                <span
+                  className='absolute top-2 -translate-x-1/2 whitespace-nowrap'
+                  style={{
+                    left: `${
+                      ((DEFAULT_OUTRO_SKIP_BUFFER_SECONDS -
+                        OUTRO_SKIP_BUFFER_MIN_SECONDS) /
+                        (OUTRO_SKIP_BUFFER_MAX_SECONDS -
+                          OUTRO_SKIP_BUFFER_MIN_SECONDS)) *
+                      100
+                    }%`,
+                  }}
+                >
+                  默认{' '}
+                  {formatOutroSkipBufferSeconds(
+                    DEFAULT_OUTRO_SKIP_BUFFER_SECONDS,
+                  )}{' '}
+                  秒
+                </span>
               </div>
             </div>
 
