@@ -3508,7 +3508,7 @@ function PlayPageClient() {
       skipConfigRef.current.outro_time < 0
         ? Math.max(0, duration + skipConfigRef.current.outro_time)
         : 0;
-    if (outroStartTime > 0 && currentTime <= outroStartTime) {
+    if (outroStartTime > 0 && currentTime < Math.max(0, outroStartTime - 0.5)) {
       hasBufferedOutroSkipRef.current = false;
     }
 
@@ -3580,9 +3580,11 @@ function PlayPageClient() {
     // 🔥 标记正在切换集数（只在非换源时）
     if (!isSourceChangingRef.current) {
       isEpisodeChangingRef.current = true;
+      hasBufferedOutroSkipRef.current = false;
       // 🔧 修改点：复刻 LunaTV 跳过逻辑后保留冷却重置，避免片尾自动切集与 video:ended 重复触发
       setTimeout(() => {
         isSkipNextEpisodeTriggeredRef.current = false;
+        hasBufferedOutroSkipRef.current = false;
         console.log('✅ 延迟重置自动跳过标志，允许新集数自动跳过片头片尾');
       }, 3500);
       videoEndedHandledRef.current = false;
@@ -4641,6 +4643,14 @@ function PlayPageClient() {
 
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
+    if (
+      hasBufferedOutroSkipRef.current &&
+      outroSkipBufferSecondsRef.current > 0
+    ) {
+      artPlayerRef.current?.pause();
+      return;
+    }
+
     if (d?.episodes && idx < d.episodes.length - 1) {
       artPlayerRef.current?.pause();
 
