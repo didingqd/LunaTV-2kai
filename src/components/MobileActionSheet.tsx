@@ -256,13 +256,14 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
 
       {/* 操作表单 */}
       <div
-        className="relative w-full max-w-lg mx-4 mb-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transition-all duration-200 ease-out"
+        className="relative w-full max-w-lg mx-4 mb-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transition-all duration-200 ease-out flex flex-col overflow-hidden"
         onTouchMove={(e) => {
           // 允许操作表单内部滚动，阻止事件冒泡到外层
           e.stopPropagation();
         }}
         style={{
           marginBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+          maxHeight: 'calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))',
           willChange: 'transform, opacity',
           backfaceVisibility: 'hidden', // 避免闪烁
           transform: isAnimating
@@ -273,7 +274,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
         }}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {poster && (
               <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0">
@@ -315,7 +316,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
         </div>
 
         {/* 操作列表 */}
-        <div className="px-4 py-2">
+        <div className="px-4 py-2 shrink-0">
           {actions.map((action, index) => (
             <div key={action.id}>
               <button
@@ -374,7 +375,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
 
         {/* 播放源信息展示区域 */}
         {isAggregate && sources && sources.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 shrink-0">
             <div className="mb-3">
               <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">可用播放源</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">共 {sources.length} 个播放源</p>
@@ -396,7 +397,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
         {doubanDetails && (
           <div
             ref={scrollRef}
-            className="border-t border-gray-100 dark:border-gray-800 overflow-y-auto"
+            className="border-t border-gray-100 dark:border-gray-800 overflow-y-auto min-h-0 flex-1"
             style={{ maxHeight: '280px', touchAction: 'pan-y' }}
             onTouchMove={(e) => e.stopPropagation()}
             onScroll={() => setShowScrollHint(false)}
