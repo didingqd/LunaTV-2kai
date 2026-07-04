@@ -98,3 +98,37 @@
     height: 3px !important;
   }
 }
+
+/* ===== Portrait Fullscreen (Short Drama / Vertical Video) ===== */
+@media (max-width: 768px) and (orientation: portrait) {
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-controls {
+    column-gap: 1px !important;
+    padding: 0 1px !important;
+  }
+
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-control {
+    min-width: 23px !important;
+    padding: 0 !important;
+  }
+
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-controls-left,
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-controls-right {
+    gap: 1px !important;
+  }
+
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-control-fullscreen {
+    min-width: 24px !important;
+  }
+
+  .art-video-player:is(.art-fullscreen, .art-fullscreen-web, :fullscreen)
+    .art-control-time {
+    font-size: 10px !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+  }
+}
