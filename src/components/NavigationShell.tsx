@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 
 import AIRecommendModal from './AIRecommendModal';
-import { BackButton } from './BackButton';
+import { FastLink } from './FastLink';
 import ModernNav from './ModernNav';
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
@@ -33,7 +33,6 @@ export default function NavigationShell() {
   const pathname = usePathname();
   const { siteName } = useSite();
   const isStandalone = isStandaloneRoute(pathname);
-  const showBackButton = pathname === '/play';
 
   // AI 推荐功能
   const [showAIRecommendModal, setShowAIRecommendModal] = useState(false);
@@ -53,7 +52,6 @@ export default function NavigationShell() {
     <>
       {/* Modern Navigation - Top (Desktop) & Bottom (Mobile) */}
       <ModernNav
-        showBackButton={showBackButton}
         showAIButton={aiEnabled ?? false}
         onAIButtonClick={() => setShowAIRecommendModal(true)}
       />
@@ -63,10 +61,13 @@ export default function NavigationShell() {
         <div className='flex items-center justify-between h-11 px-4'>
           {/* Logo */}
           <div className='flex min-w-0 items-center gap-2'>
-            {showBackButton && <BackButton />}
-            <div className='truncate text-base font-bold bg-linear-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent'>
+            <FastLink
+              href='/'
+              className='truncate text-base font-bold bg-linear-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity'
+              aria-label='返回首页'
+            >
               {siteName}
-            </div>
+            </FastLink>
           </div>
 
           {/* AI Button, Theme Toggle & User Menu */}

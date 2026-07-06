@@ -21,6 +21,7 @@ import DanmuManualMatchModal, { type DanmuManualSelection } from '@/components/D
 import EpisodeSelector from '@/components/EpisodeSelector';
 import NetDiskSearchResults from '@/components/NetDiskSearchResults';
 import AcgSearch from '@/components/AcgSearch';
+import { BackButton } from '@/components/BackButton';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 import CommentSection from '@/components/play/CommentSection';
@@ -6938,14 +6939,17 @@ function PlayPageClient() {
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20 pb-40 md:pb-safe-bottom'>
         {/* 第一行：影片标题（小屏幕用，大屏幕在 PlayInfoPanel 里） */}
         <div className='py-1 lg:hidden'>
-          <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+          <div className='flex items-center gap-2'>
+            <BackButton />
+            <h1 className='min-w-0 flex-1 text-xl font-semibold text-gray-900 dark:text-gray-100'>
             {videoTitle || '影片标题'}
             {totalEpisodes > 1 && (
               <span className='text-gray-500 dark:text-gray-400'>
                 {` > ${detail?.episodes_titles?.[currentEpisodeIndex] || `第 ${currentEpisodeIndex + 1} 集`}`}
               </span>
             )}
-          </h1>
+            </h1>
+          </div>
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2'>

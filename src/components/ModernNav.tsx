@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, queryOptions } from '@tanstack/react-query';
 
 import { FastLink } from './FastLink';
-import { BackButton } from './BackButton';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 import { useSite } from './SiteProvider';
@@ -94,7 +93,6 @@ const BASE_MENU_ITEMS: NavItem[] = [
 ];
 
 interface ModernNavProps {
-  showBackButton?: boolean;
   showAIButton?: boolean;
   onAIButtonClick?: () => void;
 }
@@ -124,7 +122,6 @@ const publicSourcesOptions = () => queryOptions({
 });
 
 export default function ModernNav({
-  showBackButton = false,
   showAIButton = false,
   onAIButtonClick,
 }: ModernNavProps = {}) {
@@ -216,15 +213,12 @@ export default function ModernNav({
       <nav className='hidden md:block fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50'>
         <div className='max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
           <div className='flex items-center justify-between h-16 gap-4'>
-            <div className='flex items-center gap-2 shrink-0'>
-              {showBackButton && <BackButton />}
-              {/* Logo */}
-              <FastLink href='/' className='shrink-0'>
-                <div className='text-xl font-bold bg-linear-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent'>
-                  {siteName}
-                </div>
-              </FastLink>
-            </div>
+            {/* Logo */}
+            <FastLink href='/' className='shrink-0'>
+              <div className='text-xl font-bold bg-linear-to-r from-green-600 via-emerald-600 to-teal-600 dark:from-green-400 dark:via-emerald-400 dark:to-teal-400 bg-clip-text text-transparent'>
+                {siteName}
+              </div>
+            </FastLink>
 
             {/* Navigation Items */}
             <div className='flex items-center justify-center gap-1 lg:gap-2 overflow-x-auto scrollbar-hide flex-1 px-4'>
