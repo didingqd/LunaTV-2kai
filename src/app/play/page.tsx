@@ -6937,8 +6937,8 @@ function PlayPageClient() {
     <>
       <PageLayout activePath='/play'>
       <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20 pb-40 md:pb-safe-bottom'>
-        {/* 第一行：影片标题（小屏幕用，大屏幕在 PlayInfoPanel 里） */}
-        <div className='py-1 lg:hidden'>
+        {/* 第一行：影片标题和返回按钮 */}
+        <div className='py-1'>
           <div className='flex items-center gap-2'>
             <BackButton />
             <h1 className='min-w-0 flex-1 text-xl font-semibold text-gray-900 dark:text-gray-100'>
