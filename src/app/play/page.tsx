@@ -52,6 +52,12 @@ import {
   type FullscreenClockMode,
 } from '@/lib/fullscreen-clock-mode';
 import {
+  loadOutroSkipHintLeadSeconds,
+  OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
+  OUTRO_SKIP_HINT_LEAD_SECONDS_KEY,
+  sanitizeOutroSkipHintLeadSeconds,
+} from '@/lib/outro-skip-hint';
+import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
@@ -103,7 +109,6 @@ const LOCKED_LONG_PRESS_DELAY_MS = 1000;
 const LOCKED_LONG_PRESS_MOVE_THRESHOLD = 18;
 const LOCKED_LONG_PRESS_IGNORE_SELECTORS =
   'button, a, input, textarea, select, label, [role="button"], [data-button], .art-controls, .art-setting, .art-selector, .art-control-lock, .art-progress, .art-bottom, .art-top, .moontv-seek-side-controls';
-const OUTRO_SKIP_HINT_LEAD_SECONDS = 5;
 
 // 🔧 修改点：复刻 LunaTV 快进快退配置模型，保持布局、秒数档位与 localStorage key 完全一致
 type SeekLayoutMode = 'off' | 'both' | 'left' | 'right';
@@ -404,9 +409,42 @@ function PlayPageClient() {
     show: false,
     seconds: 0,
   });
+  const [outroSkipHintLeadSeconds, setOutroSkipHintLeadSeconds] = useState(
+    loadOutroSkipHintLeadSeconds,
+  );
   useEffect(() => {
     skipConfigRef.current = skipConfig;
   }, [skipConfig]);
+
+  useEffect(() => {
+    const syncLeadSeconds = (value: unknown) => {
+      setOutroSkipHintLeadSeconds(sanitizeOutroSkipHintLeadSeconds(value));
+    };
+
+    const handleLeadSecondsChange = (event: Event) => {
+      syncLeadSeconds((event as CustomEvent<number>).detail);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === OUTRO_SKIP_HINT_LEAD_SECONDS_KEY) {
+        syncLeadSeconds(event.newValue);
+      }
+    };
+
+    window.addEventListener(
+      OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
+      handleLeadSecondsChange,
+    );
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
+        handleLeadSecondsChange,
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   // 🔧 修改点：复刻 LunaTV 快进快退状态，使用 seek_layout_mode / seek_seconds 持久化配置
   const [seekLayoutMode, setSeekLayoutMode] = useState<SeekLayoutMode>(() => loadSeekLayoutMode());
@@ -3229,9 +3267,10 @@ function PlayPageClient() {
 
     const secondsUntilOutro = outroJumpTime - currentTime;
     if (
+      outroSkipHintLeadSeconds > 0 &&
       !skipOutroDisabledForEpisodeRef.current &&
       secondsUntilOutro > 0 &&
-      secondsUntilOutro <= OUTRO_SKIP_HINT_LEAD_SECONDS
+      secondsUntilOutro <= outroSkipHintLeadSeconds
     ) {
       updateOutroSkipHint(true, secondsUntilOutro);
     } else {

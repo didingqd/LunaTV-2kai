@@ -20,6 +20,14 @@ import {
   saveFullscreenClockMode,
   type FullscreenClockMode,
 } from '@/lib/fullscreen-clock-mode';
+import {
+  DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS,
+  loadOutroSkipHintLeadSeconds,
+  MAX_OUTRO_SKIP_HINT_LEAD_SECONDS,
+  MIN_OUTRO_SKIP_HINT_LEAD_SECONDS,
+  sanitizeOutroSkipHintLeadSeconds,
+  saveOutroSkipHintLeadSeconds,
+} from '@/lib/outro-skip-hint';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -129,6 +137,9 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   // 修改点：播放器右上角实时时间显示模式由本地设置持久化控制。
   const [fullscreenClockMode, setFullscreenClockMode] =
     useState<FullscreenClockMode>('controls');
+  const [outroSkipHintLeadSeconds, setOutroSkipHintLeadSeconds] = useState(
+    DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS,
+  );
   const [exactSearch, setExactSearch] = useState(true);
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] = useState(false);
@@ -181,6 +192,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     if (es !== null) setExactSearch(es === 'true');
     setPlayerBufferMode(readLS('playerBufferMode', 'standard'));
     setFullscreenClockMode(loadFullscreenClockMode());
+    setOutroSkipHintLeadSeconds(loadOutroSkipHintLeadSeconds());
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -220,6 +232,11 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setFullscreenClockMode(v);
     saveFullscreenClockMode(v);
   };
+  const handleOutroSkipHintLeadSecondsChange = (v: number) => {
+    const nextValue = sanitizeOutroSkipHintLeadSeconds(v);
+    setOutroSkipHintLeadSeconds(nextValue);
+    saveOutroSkipHintLeadSeconds(nextValue);
+  };
   const handleContinueWatchingMinProgressChange = (v: number) => { setContinueWatchingMinProgress(v); localStorage.setItem('continueWatchingMinProgress', v.toString()); };
   const handleContinueWatchingMaxProgressChange = (v: number) => { setContinueWatchingMaxProgress(v); localStorage.setItem('continueWatchingMaxProgress', v.toString()); };
   const handleEnableContinueWatchingFilterToggle = set(setEnableContinueWatchingFilter, 'enableContinueWatchingFilter');
@@ -254,6 +271,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setDownloadFormat('TS');
     setLockedLongPressRate(defaultLockedLongPressRate);
     setFullscreenClockMode('controls');
+    setOutroSkipHintLeadSeconds(DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS);
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -279,6 +297,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     localStorage.setItem(LOCKED_LONG_PRESS_RATE_KEY, String(defaultLockedLongPressRate));
     // 修改点：恢复默认设置时将播放器右上角时间模式恢复为“随控制栏”。
     saveFullscreenClockMode('controls');
+    saveOutroSkipHintLeadSeconds(DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS);
   };
 
   if (!isOpen) return null;
@@ -675,6 +694,35 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+            <div className='space-y-3'>
+              <div className='flex items-center justify-between gap-4'>
+                <div>
+                  <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>片尾跳过提示提前时间</h4>
+                  <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>控制即将跳过片尾提示提前出现的秒数，0 秒表示不提前显示</p>
+                </div>
+                <span className='shrink-0 text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  {outroSkipHintLeadSeconds}s
+                </span>
+              </div>
+              <input
+                type='range'
+                min={MIN_OUTRO_SKIP_HINT_LEAD_SECONDS}
+                max={MAX_OUTRO_SKIP_HINT_LEAD_SECONDS}
+                step={1}
+                value={outroSkipHintLeadSeconds}
+                onChange={(e) =>
+                  handleOutroSkipHintLeadSecondsChange(Number(e.target.value))
+                }
+                className='w-full accent-green-500'
+              />
+              <div className='flex justify-between text-[11px] text-gray-400 dark:text-gray-500'>
+                <span>{MIN_OUTRO_SKIP_HINT_LEAD_SECONDS}s</span>
+                <span>{MAX_OUTRO_SKIP_HINT_LEAD_SECONDS}s</span>
               </div>
             </div>
 
