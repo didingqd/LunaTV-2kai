@@ -3270,13 +3270,19 @@ function PlayPageClient() {
 
     const secondsUntilOutro = outroJumpTime - currentTime;
     const leadSeconds = outroSkipHintLeadSecondsRef.current;
+    const currentPlaybackRate = sanitizePlaybackRate(
+      Number(artPlayerRef.current.playbackRate),
+      lastPlaybackRateRef.current || 1,
+    );
+    const realSecondsUntilOutro = secondsUntilOutro / currentPlaybackRate;
+    const mediaLeadSeconds = leadSeconds * currentPlaybackRate;
     if (
       leadSeconds > 0 &&
       !skipOutroDisabledForEpisodeRef.current &&
       secondsUntilOutro > 0 &&
-      secondsUntilOutro <= leadSeconds
+      secondsUntilOutro <= mediaLeadSeconds
     ) {
-      updateOutroSkipHint(true, secondsUntilOutro);
+      updateOutroSkipHint(true, realSecondsUntilOutro);
     } else {
       updateOutroSkipHint(false);
     }
