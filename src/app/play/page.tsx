@@ -7035,7 +7035,7 @@ function PlayPageClient() {
   }
 
   const outroSkipHintNode = outroSkipHint.show ? (
-    <div className='absolute left-2 bottom-[4.75rem] z-50 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/75 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur-sm sm:left-3 sm:bottom-[5.5rem] sm:text-sm'>
+    <div className='absolute left-1 bottom-[5.25rem] z-50 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/75 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur-sm sm:left-2 sm:bottom-[6rem] sm:text-sm'>
       <span className='whitespace-nowrap'>
         即将跳过片尾
         {outroSkipHint.seconds > 0 ? `(${outroSkipHint.seconds}s)` : ''}
