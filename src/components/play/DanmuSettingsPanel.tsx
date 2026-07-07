@@ -252,7 +252,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   return (
     <div
       ref={panelRef}
-      className={`fixed right-4 bottom-20 z-[9999] w-80 overflow-hidden transition-all ${
+      className={`absolute right-4 bottom-20 z-[2147483000] w-80 overflow-hidden transition-all ${
         prefersReducedMotion
           ? 'duration-0' // 无动画模式
           : 'duration-500' // Spring模拟动画

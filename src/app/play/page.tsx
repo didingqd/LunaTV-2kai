@@ -7407,7 +7407,7 @@ function PlayPageClient() {
 
       {/* 🎨 美化的弹幕设置面板 - Portal 到 ArtPlayer $player 支持全屏 */}
       {isDanmuSettingsPanelOpen && portalContainer && createPortal(
-        <div style={{ all: 'initial', fontFamily: 'Inter, system-ui, sans-serif', position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999 }}>
+        <div style={{ all: 'initial', display: 'block', fontFamily: 'Inter, system-ui, sans-serif', position: 'absolute', inset: 0, pointerEvents: 'auto', zIndex: 2147483000 }}>
           <style>{`.danmu-iso svg { fill: none !important; }`}</style>
           <div className="danmu-iso" style={{ pointerEvents: 'auto' }}>
             <DanmuSettingsPanel
