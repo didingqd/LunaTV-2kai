@@ -3256,8 +3256,17 @@ function PlayPageClient() {
         : null;
 
     if (outroJumpTime === null) {
+      outroSkipTriggeredForEpisodeRef.current = false;
       updateOutroSkipHint(false);
     } else {
+      if (
+        outroSkipTriggeredForEpisodeRef.current &&
+        !outroSkipTransitionRef.current &&
+        currentTime < outroJumpTime - 0.5
+      ) {
+        outroSkipTriggeredForEpisodeRef.current = false;
+      }
+
       const secondsUntilOutro = outroJumpTime - currentTime;
       const leadSeconds = outroSkipHintLeadSecondsRef.current;
       const currentPlaybackRate = sanitizePlaybackRate(
