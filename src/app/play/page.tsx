@@ -3239,6 +3239,10 @@ function PlayPageClient() {
       updateOutroSkipHint(false);
       return;
     }
+    if (isEpisodeChangingRef.current) {
+      updateOutroSkipHint(false);
+      return;
+    }
 
     const currentTime = artPlayerRef.current.currentTime || 0;
     const duration = artPlayerRef.current.duration || 0;
@@ -4264,6 +4268,8 @@ function PlayPageClient() {
 
       // 🔑 标记通过跳过片尾触发了下一集
       isSkipNextEpisodeTriggeredRef.current = true;
+      isEpisodeChangingRef.current = true;
+      currentEpisodeIndexRef.current = idx + 1;
       setCurrentEpisodeIndex(idx + 1);
     }
   };
