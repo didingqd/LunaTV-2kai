@@ -7043,7 +7043,7 @@ function PlayPageClient() {
       <button
         type='button'
         onClick={handleDisableOutroSkipOnce}
-        className='shrink-0 font-medium text-blue-400 transition-colors hover:text-blue-300'
+        className='shrink-0 font-medium text-green-400 transition-colors hover:text-green-300'
       >
         不跳过
       </button>
