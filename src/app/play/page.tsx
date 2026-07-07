@@ -405,6 +405,7 @@ function PlayPageClient() {
   const lastSkipCheckRef = useRef(0);
   const isSkipNextEpisodeTriggeredRef = useRef<boolean>(false);
   const skipOutroDisabledForEpisodeRef = useRef(false);
+  const outroSkipTriggeredForEpisodeRef = useRef(false);
   const [outroSkipHint, setOutroSkipHint] = useState({
     show: false,
     seconds: 0,
@@ -731,6 +732,7 @@ function PlayPageClient() {
   // 重新加载触发器（用于触发 initAll 重新执行）
   useEffect(() => {
     skipOutroDisabledForEpisodeRef.current = false;
+    outroSkipTriggeredForEpisodeRef.current = false;
     setOutroSkipHint({ show: false, seconds: 0 });
     lastSkipCheckRef.current = 0;
   }, [currentSource, currentId, currentEpisodeIndex]);
@@ -3290,9 +3292,15 @@ function PlayPageClient() {
     if (
       outroJumpTime !== null &&
       !skipOutroDisabledForEpisodeRef.current &&
+      !outroSkipTriggeredForEpisodeRef.current &&
       currentTime > outroJumpTime
     ) {
+      outroSkipTriggeredForEpisodeRef.current = true;
       updateOutroSkipHint(false);
+      if (autoNextEpisodeTimeoutRef.current) {
+        clearTimeout(autoNextEpisodeTimeoutRef.current);
+        autoNextEpisodeTimeoutRef.current = null;
+      }
       if (
         currentEpisodeIndexRef.current <
         (detailRef.current?.episodes?.length || 1) - 1

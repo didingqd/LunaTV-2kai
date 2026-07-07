@@ -252,7 +252,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   return (
     <div
       ref={panelRef}
-      className={`absolute right-4 bottom-20 z-[2147483000] w-80 overflow-hidden transition-all ${
+      className={`absolute left-2 right-2 bottom-14 z-[2147483000] flex max-h-[calc(100%-4rem)] flex-col overflow-hidden transition-all sm:left-auto sm:right-4 sm:bottom-20 sm:w-80 sm:max-h-[calc(100%-6rem)] ${
         prefersReducedMotion
           ? 'duration-0' // 无动画模式
           : 'duration-500' // Spring模拟动画
@@ -290,7 +290,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
       />
 
       {/* 头部 - 精致设计 */}
-      <div className='relative flex items-center justify-between px-5 py-4 border-b border-white/10'>
+      <div className='relative flex shrink-0 items-center justify-between px-5 py-4 border-b border-white/10'>
         <div
           className="absolute inset-0 opacity-50"
           style={{
@@ -439,7 +439,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
       )}
 
       {/* 内容区域 - 零滚动设计 */}
-      <div className='px-5 py-4 space-y-4 overflow-hidden'>
+      <div className='min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4'>
         {/* 错误提示 */}
         {error && settings.enabled && (
           <div
@@ -829,7 +829,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 
       {/* 底部装饰条 */}
       <div
-        className="h-1"
+        className="h-1 shrink-0"
         style={{
           background: 'linear-gradient(90deg, transparent 0%, #10b981 50%, transparent 100%)',
           opacity: 0.3,
