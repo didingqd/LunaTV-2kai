@@ -290,25 +290,25 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
       />
 
       {/* 头部 - 精致设计 */}
-      <div className='relative flex shrink-0 items-center justify-between px-5 py-4 border-b border-white/10'>
+      <div className='relative flex shrink-0 items-center justify-between gap-2 px-3 py-3 border-b border-white/10 sm:px-5 sm:py-4'>
         <div
           className="absolute inset-0 opacity-50"
           style={{
             background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%)',
           }}
         />
-        <div className='relative flex items-center gap-3'>
-          <div className="p-2 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-600/20 backdrop-blur-sm">
+        <div className='relative flex min-w-0 items-center gap-2 sm:gap-3'>
+          <div className="shrink-0 p-1.5 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-600/20 backdrop-blur-sm sm:p-2">
             <MessageSquare className='w-4 h-4 text-green-400' />
           </div>
-          <div className="flex flex-col">
-            <span className='font-semibold text-white text-sm tracking-wide'>
+          <div className="flex min-w-0 flex-col">
+            <span className='truncate font-semibold text-white text-sm tracking-wide'>
               弹幕设置
             </span>
-            <span className="text-[10px] text-gray-400">Danmaku Settings</span>
+            <span className="hidden text-[10px] text-gray-400 sm:block">Danmaku Settings</span>
           </div>
           <span
-            className='px-2.5 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-green-500/20 to-emerald-600/20 text-green-300 border border-green-500/30 backdrop-blur-sm'
+            className='shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-green-500/20 to-emerald-600/20 text-green-300 border border-green-500/30 backdrop-blur-sm sm:px-2.5 sm:py-1'
             style={{
               boxShadow: '0 0 12px rgba(16, 185, 129, 0.2)',
             }}
@@ -316,12 +316,12 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
             {loading ? '...' : `${danmuCount}`}
           </span>
         </div>
-        <div className='relative flex items-center gap-1'>
+        <div className='relative flex shrink-0 items-center gap-0.5 sm:gap-1'>
           {/* 加载详情按钮 */}
           {loadMeta && (
             <button
               onClick={() => setShowLoadMeta(!showLoadMeta)}
-              className={`p-2 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95 ${
+              className={`p-1.5 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95 sm:p-2 ${
                 showLoadMeta ? 'bg-white/10' : ''
               }`}
               style={{
@@ -350,7 +350,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
                 }
               }}
               disabled={loading || isReloading}
-              className='p-2 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95'
+              className='p-1.5 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95 sm:p-2'
               style={{
                 transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
@@ -369,7 +369,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
           {onManualMatch && (
             <button
               onClick={onManualMatch}
-              className='p-2 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95'
+              className='p-1.5 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95 sm:p-2'
               style={{
                 transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
@@ -386,7 +386,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
           )}
           <button
             onClick={onClose}
-            className='p-2 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95'
+            className='p-1.5 hover:bg-white/10 rounded-xl transition-all duration-200 group active:scale-95 sm:p-2'
             style={{
               transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}
