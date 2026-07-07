@@ -103,6 +103,7 @@ const LOCKED_LONG_PRESS_DELAY_MS = 1000;
 const LOCKED_LONG_PRESS_MOVE_THRESHOLD = 18;
 const LOCKED_LONG_PRESS_IGNORE_SELECTORS =
   'button, a, input, textarea, select, label, [role="button"], [data-button], .art-controls, .art-setting, .art-selector, .art-control-lock, .art-progress, .art-bottom, .art-top, .moontv-seek-side-controls';
+const OUTRO_SKIP_HINT_LEAD_SECONDS = 5;
 
 // 🔧 修改点：复刻 LunaTV 快进快退配置模型，保持布局、秒数档位与 localStorage key 完全一致
 type SeekLayoutMode = 'off' | 'both' | 'left' | 'right';
@@ -398,6 +399,11 @@ function PlayPageClient() {
   const skipConfigRef = useRef(skipConfig);
   const lastSkipCheckRef = useRef(0);
   const isSkipNextEpisodeTriggeredRef = useRef<boolean>(false);
+  const skipOutroDisabledForEpisodeRef = useRef(false);
+  const [outroSkipHint, setOutroSkipHint] = useState({
+    show: false,
+    seconds: 0,
+  });
   useEffect(() => {
     skipConfigRef.current = skipConfig;
   }, [skipConfig]);
@@ -682,6 +688,12 @@ function PlayPageClient() {
   }, [searchParams]);
 
   // 重新加载触发器（用于触发 initAll 重新执行）
+  useEffect(() => {
+    skipOutroDisabledForEpisodeRef.current = false;
+    setOutroSkipHint({ show: false, seconds: 0 });
+    lastSkipCheckRef.current = 0;
+  }, [currentSource, currentId, currentEpisodeIndex]);
+
   const [reloadTrigger, setReloadTrigger] = useState(0);
   const reloadFlagRef = useRef<string | null>(null);
 
@@ -3164,8 +3176,26 @@ function PlayPageClient() {
     }
   };
 
+  const updateOutroSkipHint = (show: boolean, seconds = 0) => {
+    const normalizedSeconds = Math.max(0, Math.ceil(seconds));
+    setOutroSkipHint((prev) => {
+      if (prev.show === show && prev.seconds === normalizedSeconds) {
+        return prev;
+      }
+      return { show, seconds: normalizedSeconds };
+    });
+  };
+
+  const handleDisableOutroSkipOnce = () => {
+    skipOutroDisabledForEpisodeRef.current = true;
+    updateOutroSkipHint(false);
+  };
+
   const applySkipLogic = () => {
-    if (!skipConfigRef.current.enable || !artPlayerRef.current) return;
+    if (!skipConfigRef.current.enable || !artPlayerRef.current) {
+      updateOutroSkipHint(false);
+      return;
+    }
 
     const currentTime = artPlayerRef.current.currentTime || 0;
     const duration = artPlayerRef.current.duration || 0;
@@ -3187,11 +3217,32 @@ function PlayPageClient() {
     }
 
     // 跳过片尾
+    const outroJumpTime =
+      skipConfigRef.current.outro_time < 0 && duration > 0
+        ? duration + skipConfigRef.current.outro_time
+        : null;
+
+    if (outroJumpTime === null) {
+      updateOutroSkipHint(false);
+      return;
+    }
+
+    const secondsUntilOutro = outroJumpTime - currentTime;
     if (
-      skipConfigRef.current.outro_time < 0 &&
-      duration > 0 &&
-      currentTime > artPlayerRef.current.duration + skipConfigRef.current.outro_time
+      !skipOutroDisabledForEpisodeRef.current &&
+      secondsUntilOutro > 0 &&
+      secondsUntilOutro <= OUTRO_SKIP_HINT_LEAD_SECONDS
     ) {
+      updateOutroSkipHint(true, secondsUntilOutro);
+    } else {
+      updateOutroSkipHint(false);
+    }
+
+    if (
+      !skipOutroDisabledForEpisodeRef.current &&
+      currentTime > outroJumpTime
+    ) {
+      updateOutroSkipHint(false);
       if (
         currentEpisodeIndexRef.current <
         (detailRef.current?.episodes?.length || 1) - 1
@@ -6995,6 +7046,22 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                {outroSkipHint.show && (
+                  <div className='absolute left-3 bottom-16 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-sm sm:left-4 sm:bottom-20 sm:text-sm'>
+                    <span className='whitespace-nowrap'>
+                      即将跳过片尾
+                      {outroSkipHint.seconds > 0 ? `（${outroSkipHint.seconds}s）` : ''}
+                    </span>
+                    <button
+                      type='button'
+                      onClick={handleDisableOutroSkipOnce}
+                      className='shrink-0 font-medium text-blue-400 transition-colors hover:text-blue-300'
+                    >
+                      本次不跳过
+                    </button>
+                  </div>
+                )}
 
                 {/* 🔧 修改点：复刻 LunaTV 快进快退边缘按钮，使用源仓库同款布局/样式容器 */}
                 {seekLayoutMode !== 'off' &&
