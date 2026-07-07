@@ -3242,6 +3242,35 @@ function PlayPageClient() {
     const duration = artPlayerRef.current.duration || 0;
     const now = Date.now();
 
+    // 更新片尾跳过提示；真正的跳过动作仍在下方节流执行
+    const outroJumpTime =
+      skipConfigRef.current.outro_time < 0 && duration > 0
+        ? duration + skipConfigRef.current.outro_time
+        : null;
+
+    if (outroJumpTime === null) {
+      updateOutroSkipHint(false);
+    } else {
+      const secondsUntilOutro = outroJumpTime - currentTime;
+      const leadSeconds = outroSkipHintLeadSecondsRef.current;
+      const currentPlaybackRate = sanitizePlaybackRate(
+        Number(artPlayerRef.current.playbackRate),
+        lastPlaybackRateRef.current || 1,
+      );
+      const realSecondsUntilOutro = secondsUntilOutro / currentPlaybackRate;
+      const mediaLeadSeconds = leadSeconds * currentPlaybackRate;
+      if (
+        leadSeconds > 0 &&
+        !skipOutroDisabledForEpisodeRef.current &&
+        secondsUntilOutro > 0 &&
+        secondsUntilOutro <= mediaLeadSeconds
+      ) {
+        updateOutroSkipHint(true, realSecondsUntilOutro);
+      } else {
+        updateOutroSkipHint(false);
+      }
+    }
+
     // 限制跳过检查频率为1.5秒一次
     if (now - lastSkipCheckRef.current < 1500) return;
     lastSkipCheckRef.current = now;
@@ -3258,36 +3287,8 @@ function PlayPageClient() {
     }
 
     // 跳过片尾
-    const outroJumpTime =
-      skipConfigRef.current.outro_time < 0 && duration > 0
-        ? duration + skipConfigRef.current.outro_time
-        : null;
-
-    if (outroJumpTime === null) {
-      updateOutroSkipHint(false);
-      return;
-    }
-
-    const secondsUntilOutro = outroJumpTime - currentTime;
-    const leadSeconds = outroSkipHintLeadSecondsRef.current;
-    const currentPlaybackRate = sanitizePlaybackRate(
-      Number(artPlayerRef.current.playbackRate),
-      lastPlaybackRateRef.current || 1,
-    );
-    const realSecondsUntilOutro = secondsUntilOutro / currentPlaybackRate;
-    const mediaLeadSeconds = leadSeconds * currentPlaybackRate;
     if (
-      leadSeconds > 0 &&
-      !skipOutroDisabledForEpisodeRef.current &&
-      secondsUntilOutro > 0 &&
-      secondsUntilOutro <= mediaLeadSeconds
-    ) {
-      updateOutroSkipHint(true, realSecondsUntilOutro);
-    } else {
-      updateOutroSkipHint(false);
-    }
-
-    if (
+      outroJumpTime !== null &&
       !skipOutroDisabledForEpisodeRef.current &&
       currentTime > outroJumpTime
     ) {
