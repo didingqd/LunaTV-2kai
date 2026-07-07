@@ -6984,6 +6984,22 @@ function PlayPageClient() {
     );
   }
 
+  const outroSkipHintNode = outroSkipHint.show ? (
+    <div className='absolute left-3 bottom-16 z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-sm sm:left-4 sm:bottom-20 sm:text-sm'>
+      <span className='whitespace-nowrap'>
+        即将跳过片尾
+        {outroSkipHint.seconds > 0 ? `（${outroSkipHint.seconds}s）` : ''}
+      </span>
+      <button
+        type='button'
+        onClick={handleDisableOutroSkipOnce}
+        className='shrink-0 font-medium text-blue-400 transition-colors hover:text-blue-300'
+      >
+        不跳过
+      </button>
+    </div>
+  ) : null;
+
   return (
     <>
       <PageLayout activePath='/play'>
@@ -7047,21 +7063,10 @@ function PlayPageClient() {
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
 
-                {outroSkipHint.show && (
-                  <div className='absolute left-3 bottom-16 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-sm sm:left-4 sm:bottom-20 sm:text-sm'>
-                    <span className='whitespace-nowrap'>
-                      即将跳过片尾
-                      {outroSkipHint.seconds > 0 ? `（${outroSkipHint.seconds}s）` : ''}
-                    </span>
-                    <button
-                      type='button'
-                      onClick={handleDisableOutroSkipOnce}
-                      className='shrink-0 font-medium text-blue-400 transition-colors hover:text-blue-300'
-                    >
-                      本次不跳过
-                    </button>
-                  </div>
-                )}
+                {outroSkipHintNode &&
+                  (portalContainer
+                    ? createPortal(outroSkipHintNode, portalContainer)
+                    : outroSkipHintNode)}
 
                 {/* 🔧 修改点：复刻 LunaTV 快进快退边缘按钮，使用源仓库同款布局/样式容器 */}
                 {seekLayoutMode !== 'off' &&
