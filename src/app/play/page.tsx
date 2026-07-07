@@ -7035,10 +7035,10 @@ function PlayPageClient() {
   }
 
   const outroSkipHintNode = outroSkipHint.show ? (
-    <div className='absolute left-3 bottom-16 z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-sm sm:left-4 sm:bottom-20 sm:text-sm'>
+    <div className='absolute left-2 bottom-[4.75rem] z-50 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/75 px-2.5 py-1.5 text-xs text-white shadow-lg backdrop-blur-sm sm:left-3 sm:bottom-[5.5rem] sm:text-sm'>
       <span className='whitespace-nowrap'>
         即将跳过片尾
-        {outroSkipHint.seconds > 0 ? `（${outroSkipHint.seconds}s）` : ''}
+        {outroSkipHint.seconds > 0 ? `(${outroSkipHint.seconds}s)` : ''}
       </span>
       <button
         type='button'
