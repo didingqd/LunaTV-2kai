@@ -409,8 +409,9 @@ function PlayPageClient() {
     show: false,
     seconds: 0,
   });
+  const outroSkipHintLeadSecondsRef = useRef(loadOutroSkipHintLeadSeconds());
   const [outroSkipHintLeadSeconds, setOutroSkipHintLeadSeconds] = useState(
-    loadOutroSkipHintLeadSeconds,
+    outroSkipHintLeadSecondsRef.current,
   );
   useEffect(() => {
     skipConfigRef.current = skipConfig;
@@ -418,7 +419,9 @@ function PlayPageClient() {
 
   useEffect(() => {
     const syncLeadSeconds = (value: unknown) => {
-      setOutroSkipHintLeadSeconds(sanitizeOutroSkipHintLeadSeconds(value));
+      const nextValue = sanitizeOutroSkipHintLeadSeconds(value);
+      outroSkipHintLeadSecondsRef.current = nextValue;
+      setOutroSkipHintLeadSeconds(nextValue);
     };
 
     const handleLeadSecondsChange = (event: Event) => {
@@ -3266,11 +3269,12 @@ function PlayPageClient() {
     }
 
     const secondsUntilOutro = outroJumpTime - currentTime;
+    const leadSeconds = outroSkipHintLeadSecondsRef.current;
     if (
-      outroSkipHintLeadSeconds > 0 &&
+      leadSeconds > 0 &&
       !skipOutroDisabledForEpisodeRef.current &&
       secondsUntilOutro > 0 &&
-      secondsUntilOutro <= outroSkipHintLeadSeconds
+      secondsUntilOutro <= leadSeconds
     ) {
       updateOutroSkipHint(true, secondsUntilOutro);
     } else {

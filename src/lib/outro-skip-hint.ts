@@ -6,6 +6,10 @@ export const MIN_OUTRO_SKIP_HINT_LEAD_SECONDS = 0;
 export const MAX_OUTRO_SKIP_HINT_LEAD_SECONDS = 10;
 
 export function sanitizeOutroSkipHintLeadSeconds(value: unknown): number {
+  if (value === null || value === undefined || value === '') {
+    return DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS;
+  }
+
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     return DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS;
