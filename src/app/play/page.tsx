@@ -405,12 +405,6 @@ function PlayPageClient() {
   const lastSkipCheckRef = useRef(0);
   const isSkipNextEpisodeTriggeredRef = useRef<boolean>(false);
   const skipOutroDisabledForEpisodeRef = useRef(false);
-  const outroSkipTransitionRef = useRef(false);
-  const outroSkipTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const recentOutroAutoSkipRef = useRef<{
-    targetEpisodeIndex: number;
-    startedAt: number;
-  } | null>(null);
   const [outroSkipHint, setOutroSkipHint] = useState({
     show: false,
     seconds: 0,
@@ -3255,41 +3249,8 @@ function PlayPageClient() {
     return candidates.find((value) => Number.isFinite(value) && value > 0) || 0;
   };
 
-  const endOutroSkipTransition = () => {
-    outroSkipTransitionRef.current = false;
-    if (outroSkipTransitionTimeoutRef.current) {
-      clearTimeout(outroSkipTransitionTimeoutRef.current);
-      outroSkipTransitionTimeoutRef.current = null;
-    }
-  };
-
-  const beginOutroSkipTransition = () => {
-    outroSkipTransitionRef.current = true;
-    if (outroSkipTransitionTimeoutRef.current) {
-      clearTimeout(outroSkipTransitionTimeoutRef.current);
-    }
-    outroSkipTransitionTimeoutRef.current = setTimeout(() => {
-      outroSkipTransitionRef.current = false;
-      outroSkipTransitionTimeoutRef.current = null;
-    }, 5000);
-  };
-
-  const isRecentOutroAutoSkipTarget = (now = Date.now()) => {
-    const recent = recentOutroAutoSkipRef.current;
-    if (!recent) return false;
-    if (now - recent.startedAt > 5000) {
-      recentOutroAutoSkipRef.current = null;
-      return false;
-    }
-    return recent.targetEpisodeIndex === currentEpisodeIndexRef.current;
-  };
-
   const applySkipLogic = () => {
     if (!skipConfigRef.current.enable || !artPlayerRef.current) {
-      updateOutroSkipHint(false);
-      return;
-    }
-    if (outroSkipTransitionRef.current) {
       updateOutroSkipHint(false);
       return;
     }
@@ -3346,27 +3307,12 @@ function PlayPageClient() {
     if (
       outroJumpTime !== null &&
       !skipOutroDisabledForEpisodeRef.current &&
-      !isRecentOutroAutoSkipTarget(now) &&
-      currentTime > outroJumpTime
+      currentTime >= outroJumpTime
     ) {
+      const outroEndTime = Math.max(0, duration - 0.5);
       updateOutroSkipHint(false);
-      if (autoNextEpisodeTimeoutRef.current) {
-        clearTimeout(autoNextEpisodeTimeoutRef.current);
-        autoNextEpisodeTimeoutRef.current = null;
-      }
-      if (
-        currentEpisodeIndexRef.current <
-        (detailRef.current?.episodes?.length || 1) - 1
-      ) {
-        beginOutroSkipTransition();
-        recentOutroAutoSkipRef.current = {
-          targetEpisodeIndex: currentEpisodeIndexRef.current + 1,
-          startedAt: now,
-        };
-        isSkipNextEpisodeTriggeredRef.current = true;
-        handleNextEpisode();
-      } else {
-        artPlayerRef.current.pause();
+      if (currentTime < outroEndTime - 0.05) {
+        artPlayerRef.current.currentTime = outroEndTime;
       }
       artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
         skipConfigRef.current.outro_time
@@ -4332,15 +4278,6 @@ function PlayPageClient() {
   const handleVideoEnded = () => {
     releaseWakeLock();
 
-    if (outroSkipTransitionRef.current || isRecentOutroAutoSkipTarget()) {
-      videoEndedHandledRef.current = true;
-      if (autoNextEpisodeTimeoutRef.current) {
-        clearTimeout(autoNextEpisodeTimeoutRef.current);
-        autoNextEpisodeTimeoutRef.current = null;
-      }
-      return;
-    }
-
     if (videoEndedHandledRef.current) return;
     videoEndedHandledRef.current = true;
 
@@ -5055,7 +4992,6 @@ function PlayPageClient() {
               // 🔑 关键修复：切换集数后显式重置播放时间为 0，确保片头自动跳过能触发
               artPlayerRef.current.currentTime = 0;
               console.log('🎯 集数切换完成，重置播放时间为 0');
-              endOutroSkipTransition();
               isEpisodeChangingRef.current = false;
             }
           }
@@ -5064,7 +5000,6 @@ function PlayPageClient() {
             console.warn('⚠️ 源切换失败，将重建播放器:', error);
             // 重置集数切换标识
             if (isEpisodeChange) {
-              endOutroSkipTransition();
               isEpisodeChangingRef.current = false;
             }
             throw error; // 让外层catch处理
@@ -5096,7 +5031,6 @@ function PlayPageClient() {
       } catch (error) {
         console.warn('Switch方法失败，将重建播放器:', error);
         // 重置集数切换标识
-        endOutroSkipTransition();
         isEpisodeChangingRef.current = false;
         // 如果switch失败，清理播放器并重新创建
         await cleanupPlayer();
@@ -6522,7 +6456,6 @@ function PlayPageClient() {
       }
 
       artPlayerRef.current.on('video:loadedmetadata', () => {
-        endOutroSkipTransition();
         videoEndedHandledRef.current = false;
         updateSkipProgressMarkers(skipConfigRef.current);
       });
@@ -6728,7 +6661,6 @@ function PlayPageClient() {
 
         // 🔥 重置集数切换标识（播放器成功创建后）
         if (isEpisodeChangingRef.current) {
-          endOutroSkipTransition();
           isEpisodeChangingRef.current = false;
           console.log('🎯 播放器创建完成，重置集数切换标识');
         }
@@ -6748,7 +6680,6 @@ function PlayPageClient() {
         handleVideoEnded();
       });
       artPlayerRef.current.on('video:loadedmetadata', () => {
-        endOutroSkipTransition();
         videoEndedHandledRef.current = false;
         updateSkipProgressMarkers(skipConfigRef.current);
       });
@@ -6802,7 +6733,6 @@ function PlayPageClient() {
     } catch (err) {
       console.error('创建播放器失败:', err);
       // 重置集数切换标识
-      endOutroSkipTransition();
       isEpisodeChangingRef.current = false;
       setError('播放器初始化失败');
     }
