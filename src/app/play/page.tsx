@@ -52,9 +52,13 @@ import {
   type FullscreenClockMode,
 } from '@/lib/fullscreen-clock-mode';
 import {
+  loadOutroSkipEndOffsetSeconds,
   loadOutroSkipHintLeadSeconds,
+  OUTRO_SKIP_END_OFFSET_SECONDS_CHANGE_EVENT,
+  OUTRO_SKIP_END_OFFSET_SECONDS_KEY,
   OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
   OUTRO_SKIP_HINT_LEAD_SECONDS_KEY,
+  sanitizeOutroSkipEndOffsetSeconds,
   sanitizeOutroSkipHintLeadSeconds,
 } from '@/lib/outro-skip-hint';
 import {
@@ -410,8 +414,12 @@ function PlayPageClient() {
     seconds: 0,
   });
   const outroSkipHintLeadSecondsRef = useRef(loadOutroSkipHintLeadSeconds());
+  const outroSkipEndOffsetSecondsRef = useRef(loadOutroSkipEndOffsetSeconds());
   const [outroSkipHintLeadSeconds, setOutroSkipHintLeadSeconds] = useState(
     outroSkipHintLeadSecondsRef.current,
+  );
+  const [, setOutroSkipEndOffsetSeconds] = useState(
+    outroSkipEndOffsetSecondsRef.current,
   );
   useEffect(() => {
     skipConfigRef.current = skipConfig;
@@ -423,14 +431,25 @@ function PlayPageClient() {
       outroSkipHintLeadSecondsRef.current = nextValue;
       setOutroSkipHintLeadSeconds(nextValue);
     };
+    const syncEndOffsetSeconds = (value: unknown) => {
+      const nextValue = sanitizeOutroSkipEndOffsetSeconds(value);
+      outroSkipEndOffsetSecondsRef.current = nextValue;
+      setOutroSkipEndOffsetSeconds(nextValue);
+    };
 
     const handleLeadSecondsChange = (event: Event) => {
       syncLeadSeconds((event as CustomEvent<number>).detail);
+    };
+    const handleEndOffsetSecondsChange = (event: Event) => {
+      syncEndOffsetSeconds((event as CustomEvent<number>).detail);
     };
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === OUTRO_SKIP_HINT_LEAD_SECONDS_KEY) {
         syncLeadSeconds(event.newValue);
+      }
+      if (event.key === OUTRO_SKIP_END_OFFSET_SECONDS_KEY) {
+        syncEndOffsetSeconds(event.newValue);
       }
     };
 
@@ -438,12 +457,20 @@ function PlayPageClient() {
       OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
       handleLeadSecondsChange,
     );
+    window.addEventListener(
+      OUTRO_SKIP_END_OFFSET_SECONDS_CHANGE_EVENT,
+      handleEndOffsetSecondsChange,
+    );
     window.addEventListener('storage', handleStorage);
 
     return () => {
       window.removeEventListener(
         OUTRO_SKIP_HINT_LEAD_SECONDS_CHANGE_EVENT,
         handleLeadSecondsChange,
+      );
+      window.removeEventListener(
+        OUTRO_SKIP_END_OFFSET_SECONDS_CHANGE_EVENT,
+        handleEndOffsetSecondsChange,
       );
       window.removeEventListener('storage', handleStorage);
     };
@@ -3313,7 +3340,8 @@ function PlayPageClient() {
       !skipOutroDisabledForEpisodeRef.current &&
       currentTime >= outroJumpTime
     ) {
-      const outroEndTime = Math.max(0, duration - 0.5);
+      const outroEndOffset = outroSkipEndOffsetSecondsRef.current;
+      const outroEndTime = Math.max(0, duration - outroEndOffset);
       updateOutroSkipHint(false);
       if (currentTime < outroEndTime - 0.05) {
         artPlayerRef.current.currentTime = outroEndTime;
