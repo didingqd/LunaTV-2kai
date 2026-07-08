@@ -6657,7 +6657,13 @@ function PlayPageClient() {
             ) {
               artPlayerRef.current.playbackRate = targetRate;
             }
-            artPlayerRef.current.notice.show = '';
+            const currentNotice = String(artPlayerRef.current.notice.show || '');
+            if (
+              !currentNotice.startsWith('已跳过片头') &&
+              !currentNotice.startsWith('已跳过片尾')
+            ) {
+              artPlayerRef.current.notice.show = '';
+            }
         }, 0);
 
         // 隐藏换源加载状态
