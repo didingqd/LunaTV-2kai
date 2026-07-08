@@ -407,6 +407,10 @@ function PlayPageClient() {
   const skipOutroDisabledForEpisodeRef = useRef(false);
   const outroSkipTransitionRef = useRef(false);
   const outroSkipTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recentOutroAutoSkipRef = useRef<{
+    targetEpisodeIndex: number;
+    startedAt: number;
+  } | null>(null);
   const [outroSkipHint, setOutroSkipHint] = useState({
     show: false,
     seconds: 0,
@@ -3270,6 +3274,16 @@ function PlayPageClient() {
     }, 5000);
   };
 
+  const isRecentOutroAutoSkipTarget = (now = Date.now()) => {
+    const recent = recentOutroAutoSkipRef.current;
+    if (!recent) return false;
+    if (now - recent.startedAt > 5000) {
+      recentOutroAutoSkipRef.current = null;
+      return false;
+    }
+    return recent.targetEpisodeIndex === currentEpisodeIndexRef.current;
+  };
+
   const applySkipLogic = () => {
     if (!skipConfigRef.current.enable || !artPlayerRef.current) {
       updateOutroSkipHint(false);
@@ -3332,6 +3346,7 @@ function PlayPageClient() {
     if (
       outroJumpTime !== null &&
       !skipOutroDisabledForEpisodeRef.current &&
+      !isRecentOutroAutoSkipTarget(now) &&
       currentTime > outroJumpTime
     ) {
       updateOutroSkipHint(false);
@@ -3344,6 +3359,10 @@ function PlayPageClient() {
         (detailRef.current?.episodes?.length || 1) - 1
       ) {
         beginOutroSkipTransition();
+        recentOutroAutoSkipRef.current = {
+          targetEpisodeIndex: currentEpisodeIndexRef.current + 1,
+          startedAt: now,
+        };
         isSkipNextEpisodeTriggeredRef.current = true;
         handleNextEpisode();
       } else {
@@ -4313,7 +4332,7 @@ function PlayPageClient() {
   const handleVideoEnded = () => {
     releaseWakeLock();
 
-    if (outroSkipTransitionRef.current) {
+    if (outroSkipTransitionRef.current || isRecentOutroAutoSkipTarget()) {
       videoEndedHandledRef.current = true;
       if (autoNextEpisodeTimeoutRef.current) {
         clearTimeout(autoNextEpisodeTimeoutRef.current);
