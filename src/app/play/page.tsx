@@ -4288,8 +4288,6 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d?.episodes && idx < d.episodes.length - 1) {
-      artPlayerRef.current?.pause();
-
       if (autoNextEpisodeTimeoutRef.current) {
         clearTimeout(autoNextEpisodeTimeoutRef.current);
       }
