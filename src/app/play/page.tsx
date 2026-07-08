@@ -3254,6 +3254,10 @@ function PlayPageClient() {
       updateOutroSkipHint(false);
       return;
     }
+    if (isEpisodeChangingRef.current) {
+      updateOutroSkipHint(false);
+      return;
+    }
 
     const currentTime = artPlayerRef.current.currentTime || 0;
     const duration = getStablePlaybackDuration();
