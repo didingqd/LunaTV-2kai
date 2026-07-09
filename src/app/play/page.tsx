@@ -3313,10 +3313,20 @@ function PlayPageClient() {
       !skipOutroDisabledForEpisodeRef.current &&
       currentTime >= outroJumpTime
     ) {
-      const outroEndTime = Math.max(0, duration - 0.5);
+      const d = detailRef.current;
+      const idx = currentEpisodeIndexRef.current;
+      const hasNextEpisode =
+        Boolean(d?.episodes) && idx < (d?.episodes.length || 0) - 1;
+
       updateOutroSkipHint(false);
-      if (currentTime < outroEndTime - 0.05) {
-        artPlayerRef.current.currentTime = outroEndTime;
+      if (hasNextEpisode) {
+        videoEndedHandledRef.current = true;
+        handleNextEpisode();
+      } else {
+        const outroEndTime = Math.max(0, duration - 0.5);
+        if (currentTime < outroEndTime - 0.05) {
+          artPlayerRef.current.currentTime = outroEndTime;
+        }
       }
       artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
         skipConfigRef.current.outro_time
