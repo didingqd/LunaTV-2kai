@@ -63,6 +63,23 @@
     display: none; /* Chrome, Safari and Opera */
   }
 
+  .user-notification-marquee {
+    animation: user-notification-marquee 24s linear infinite;
+  }
+
+  .user-notification-marquee:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes user-notification-marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
   /* 源浏览器动画 */
   @keyframes fadeInUp {
     from {

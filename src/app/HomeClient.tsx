@@ -30,6 +30,7 @@ import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import SectionTitle from '@/components/SectionTitle';
 import ShortDramaCard from '@/components/ShortDramaCard';
+import SimpleMarkdown from '@/components/SimpleMarkdown';
 import SkeletonCard from '@/components/SkeletonCard';
 import { useSite } from '@/components/SiteProvider';
 import { TelegramWelcomeModal } from '@/components/TelegramWelcomeModal';
@@ -1668,9 +1669,10 @@ function HomeClient({ initialConfig }: {
             <div className='mb-6'>
               <div className='relative overflow-hidden rounded-lg mb-4 bg-green-50 dark:bg-green-900/20'>
                 <div className='absolute inset-y-0 left-0 w-1.5 bg-green-500 dark:bg-green-400'></div>
-                <p className='ml-4 text-gray-600 dark:text-gray-300 leading-relaxed'>
-                  {announcement}
-                </p>
+                <SimpleMarkdown
+                  content={announcement}
+                  className='ml-4 text-gray-600 dark:text-gray-300 leading-relaxed'
+                />
               </div>
             </div>
             <button

@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     const {
       SiteName,
       Announcement,
+      UserNotification,
       SearchDownstreamMaxPage,
       SiteInterfaceCacheTime,
       DoubanProxyType,
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
     } = body as {
       SiteName: string;
       Announcement: string;
+      UserNotification?: string;
       SearchDownstreamMaxPage: number;
       SiteInterfaceCacheTime: number;
       DoubanProxyType: string;
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
     if (
       typeof SiteName !== 'string' ||
       typeof Announcement !== 'string' ||
+      (UserNotification !== undefined && typeof UserNotification !== 'string') ||
       typeof SearchDownstreamMaxPage !== 'number' ||
       typeof SiteInterfaceCacheTime !== 'number' ||
       typeof DoubanProxyType !== 'string' ||
@@ -127,6 +130,7 @@ export async function POST(request: NextRequest) {
       ...adminConfig.SiteConfig, // 保留所有现有字段
       SiteName,
       Announcement,
+      UserNotification: UserNotification || '',
       SearchDownstreamMaxPage,
       SiteInterfaceCacheTime,
       DoubanProxyType,

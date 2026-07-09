@@ -8,6 +8,7 @@ export interface AdminConfig {
   SiteConfig: {
     SiteName: string;
     Announcement: string;
+    UserNotification?: string;
     SearchDownstreamMaxPage: number;
     SiteInterfaceCacheTime: number;
     DoubanProxyType: string;

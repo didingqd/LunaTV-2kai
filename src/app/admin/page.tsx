@@ -380,6 +380,7 @@ const useLoadingState = () => {
 interface SiteConfig {
   SiteName: string;
   Announcement: string;
+  UserNotification: string;
   SearchDownstreamMaxPage: number;
   SiteInterfaceCacheTime: number;
   DoubanProxyType: string;
@@ -5432,6 +5433,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   const [siteSettings, setSiteSettings] = useState<SiteConfig>({
     SiteName: '',
     Announcement: '',
+    UserNotification: '',
     SearchDownstreamMaxPage: 1,
     SiteInterfaceCacheTime: 7200,
     DoubanProxyType: 'direct',
@@ -5534,6 +5536,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     if (config?.SiteConfig) {
       setSiteSettings({
         ...config.SiteConfig,
+        UserNotification: config.SiteConfig.UserNotification || '',
         DoubanProxyType: config.SiteConfig.DoubanProxyType || 'direct',
         DoubanProxy: config.SiteConfig.DoubanProxy || '',
         DoubanImageProxyType:
@@ -5709,6 +5712,27 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
             }))
           }
           rows={3}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+        />
+      </div>
+
+      {/* 用户通知 */}
+      <div>
+        <label
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
+          用户通知
+        </label>
+        <textarea
+          value={siteSettings.UserNotification}
+          onChange={(e) =>
+            setSiteSettings((prev) => ({
+              ...prev,
+              UserNotification: e.target.value,
+            }))
+          }
+          rows={2}
+          placeholder="显示在顶栏下方的一行滚动通知，留空则不显示"
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent"
         />
       </div>

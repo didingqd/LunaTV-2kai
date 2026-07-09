@@ -19,6 +19,7 @@ import NavigationShell from '../components/NavigationShell';
 import { SessionTracker } from '../components/SessionTracker';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
+import UserNotificationBar from '../components/UserNotificationBar';
 import { WatchRoomProvider } from '../components/WatchRoomProvider';
 import { DownloadProvider } from '../contexts/DownloadContext';
 import { GlobalCacheProvider } from '../contexts/GlobalCacheContext';
@@ -68,6 +69,7 @@ export default async function RootLayout({
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
 
+  let userNotification = process.env.USER_NOTIFICATION || '';
   let doubanProxyType = process.env.NEXT_PUBLIC_DOUBAN_PROXY_TYPE || 'direct';
   let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
   let doubanImageProxyType =
@@ -92,6 +94,7 @@ export default async function RootLayout({
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
     announcement = config.SiteConfig.Announcement;
+    userNotification = config.SiteConfig.UserNotification || '';
 
     doubanProxyType = config.SiteConfig.DoubanProxyType;
     doubanProxy = config.SiteConfig.DoubanProxy;
@@ -148,6 +151,7 @@ export default async function RootLayout({
     // 禁用预告片：Vercel 自动检测，或用户手动设置 DISABLE_HERO_TRAILER=true
     DISABLE_HERO_TRAILER: process.env.VERCEL === '1' || process.env.DISABLE_HERO_TRAILER === 'true',
   };
+  const hasUserNotification = Boolean(userNotification.trim());
 
   return (
     <html lang='zh-CN' translate='no' suppressHydrationWarning>
@@ -181,7 +185,11 @@ export default async function RootLayout({
             <GlobalCacheProvider>
               <DownloadProvider>
                 <WatchRoomProvider>
-                  <SiteProvider siteName={siteName} announcement={announcement}>
+                  <SiteProvider
+                    siteName={siteName}
+                    announcement={announcement}
+                    userNotification={userNotification}
+                  >
                     <GlobalDOMErrorHandler />
                     <ChunkErrorGuard />
                     {/* 修改点：全局挂载翻译插件冲突提示，不占用页面布局空间。 */}
@@ -190,8 +198,15 @@ export default async function RootLayout({
                     <RouteWarmup />
                     {/* 导航栏在 layout 层，自动持久化 */}
                     <NavigationShell />
+                    <UserNotificationBar />
                     {/* 主内容区域 - 只有这部分会在路由切换时重新渲染 */}
-                    <main className='w-full min-h-screen pt-[44px] md:pt-16 pb-16 md:pb-8'>
+                    <main
+                      className={`w-full min-h-screen ${
+                        hasUserNotification
+                          ? 'pt-[68px] md:pt-[88px]'
+                          : 'pt-[44px] md:pt-16'
+                      } pb-16 md:pb-8`}
+                    >
                       <div className='w-full max-w-[2560px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20'>
                         {/* 修改点：主页面内容增加 DOM 容错边界，同时保留原有空 Suspense fallback，避免恢复全屏加载遮罩。 */}
                         <DOMErrorBoundary componentName='PageContent'>
