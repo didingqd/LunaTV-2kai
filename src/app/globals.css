@@ -64,10 +64,14 @@
   }
 
   .user-notification-marquee {
+    transform: translateX(0);
+  }
+
+  .user-notification-marquee.is-scrolling {
     animation: user-notification-marquee 24s linear infinite;
   }
 
-  .user-notification-marquee:hover {
+  .user-notification-marquee.is-scrolling:hover {
     animation-play-state: paused;
   }
 

@@ -2,6 +2,7 @@
 
 import { Megaphone } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
 import { useSite } from './SiteProvider';
 
@@ -23,7 +24,26 @@ function isStandaloneRoute(pathname: string) {
 export default function UserNotificationBar() {
   const pathname = usePathname();
   const { userNotification } = useSite();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  const [shouldScroll, setShouldScroll] = useState(false);
   const text = userNotification?.trim();
+
+  useEffect(() => {
+    if (!text) return;
+
+    const updateScrollState = () => {
+      const container = containerRef.current;
+      const textElement = textRef.current;
+      if (!container || !textElement) return;
+
+      setShouldScroll(textElement.scrollWidth > container.clientWidth + 8);
+    };
+
+    updateScrollState();
+    window.addEventListener('resize', updateScrollState);
+    return () => window.removeEventListener('resize', updateScrollState);
+  }, [text]);
 
   if (!text || isStandaloneRoute(pathname)) return null;
 
@@ -34,12 +54,20 @@ export default function UserNotificationBar() {
           <Megaphone className='h-3.5 w-3.5' />
           <span>通知</span>
         </div>
-        <div className='min-w-0 flex-1 overflow-hidden'>
-          <div className='inline-flex min-w-full whitespace-nowrap user-notification-marquee'>
-            <span className='pr-16'>{text}</span>
-            <span className='pr-16' aria-hidden='true'>
+        <div ref={containerRef} className='min-w-0 flex-1 overflow-hidden'>
+          <div
+            className={`inline-flex w-max whitespace-nowrap user-notification-marquee ${
+              shouldScroll ? 'is-scrolling' : ''
+            }`}
+          >
+            <span ref={textRef} className={shouldScroll ? 'pr-16' : ''}>
               {text}
             </span>
+            {shouldScroll && (
+              <span className='pr-16' aria-hidden='true'>
+                {text}
+              </span>
+            )}
           </div>
         </div>
       </div>
