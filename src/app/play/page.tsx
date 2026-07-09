@@ -3313,7 +3313,7 @@ function PlayPageClient() {
       !skipOutroDisabledForEpisodeRef.current &&
       currentTime >= outroJumpTime
     ) {
-      const outroEndTime = Math.max(0, duration - 1);
+      const outroEndTime = Math.max(0, duration - 0.5);
       updateOutroSkipHint(false);
       if (currentTime < outroEndTime - 0.05) {
         artPlayerRef.current.currentTime = outroEndTime;
