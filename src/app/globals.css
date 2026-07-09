@@ -68,7 +68,7 @@
   }
 
   .user-notification-marquee.is-scrolling {
-    animation: user-notification-marquee 24s linear infinite;
+    animation: user-notification-marquee var(--notification-marquee-duration, 24s) linear infinite;
   }
 
   .user-notification-marquee.is-scrolling:hover {

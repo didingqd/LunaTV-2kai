@@ -2,7 +2,7 @@
 
 import { Megaphone } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { useSite } from './SiteProvider';
 
@@ -14,6 +14,7 @@ const STANDALONE_ROUTES = [
   '/source-test',
   '/watch-room/screen',
 ];
+const MARQUEE_PIXELS_PER_SECOND = 48;
 
 function isStandaloneRoute(pathname: string) {
   return STANDALONE_ROUTES.some(
@@ -27,22 +28,55 @@ export default function UserNotificationBar() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const textRef = useRef<HTMLSpanElement | null>(null);
   const [shouldScroll, setShouldScroll] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(24);
   const text = userNotification?.trim();
 
   useEffect(() => {
     if (!text) return;
+
+    let rafId = 0;
+    let timeoutId = 0;
+    let cancelled = false;
 
     const updateScrollState = () => {
       const container = containerRef.current;
       const textElement = textRef.current;
       if (!container || !textElement) return;
 
-      setShouldScroll(textElement.scrollWidth > container.clientWidth + 8);
+      const textWidth = textElement.scrollWidth;
+      setShouldScroll(textWidth > container.clientWidth + 8);
+      setDurationSeconds(textWidth / MARQUEE_PIXELS_PER_SECOND);
     };
 
-    updateScrollState();
-    window.addEventListener('resize', updateScrollState);
-    return () => window.removeEventListener('resize', updateScrollState);
+    const scheduleUpdate = () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(updateScrollState);
+    };
+
+    scheduleUpdate();
+    timeoutId = window.setTimeout(scheduleUpdate, 250);
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(scheduleUpdate);
+    if (containerRef.current) resizeObserver?.observe(containerRef.current);
+    if (textRef.current) resizeObserver?.observe(textRef.current);
+
+    document.fonts?.ready.then(() => {
+      if (!cancelled) scheduleUpdate();
+    });
+
+    window.addEventListener('resize', scheduleUpdate);
+    return () => {
+      cancelled = true;
+      if (rafId) window.cancelAnimationFrame(rafId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleUpdate);
+    };
   }, [text]);
 
   if (!text || isStandaloneRoute(pathname)) return null;
@@ -59,6 +93,13 @@ export default function UserNotificationBar() {
             className={`inline-flex w-max whitespace-nowrap user-notification-marquee ${
               shouldScroll ? 'is-scrolling' : ''
             }`}
+            style={
+              shouldScroll
+                ? ({
+                    '--notification-marquee-duration': `${durationSeconds}s`,
+                  } as CSSProperties)
+                : undefined
+            }
           >
             <span className='inline-flex items-center'>
               <span ref={textRef}>{text}</span>
