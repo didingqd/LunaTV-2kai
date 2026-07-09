@@ -15,7 +15,7 @@ const STANDALONE_ROUTES = [
   '/watch-room/screen',
 ];
 const MARQUEE_PIXELS_PER_SECOND = 48;
-const MARQUEE_GAP_PX = 32;
+const MARQUEE_GAP_PX = 48;
 
 function isStandaloneRoute(pathname: string) {
   return STANDALONE_ROUTES.some(
