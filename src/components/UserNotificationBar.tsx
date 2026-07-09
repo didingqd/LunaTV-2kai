@@ -62,18 +62,10 @@ export default function UserNotificationBar() {
           >
             <span className='inline-flex items-center'>
               <span ref={textRef}>{text}</span>
-              {shouldScroll && (
-                <span className='px-6 text-green-500/70 dark:text-green-300/60'>
-                  ·
-                </span>
-              )}
             </span>
             {shouldScroll && (
               <span className='inline-flex items-center' aria-hidden='true'>
                 <span>{text}</span>
-                <span className='px-6 text-green-500/70 dark:text-green-300/60'>
-                  ·
-                </span>
               </span>
             )}
           </div>
