@@ -3048,21 +3048,31 @@ function PlayPageClient() {
   const formatTime = (seconds: number): string => {
     if (seconds === 0) return '00:00';
 
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.round(seconds % 60);
+    const normalizedSeconds = Math.max(0, Math.round(seconds * 10) / 10);
+    const totalWholeSeconds = Math.floor(normalizedSeconds);
+    const decimal = Math.round((normalizedSeconds - totalWholeSeconds) * 10);
+    const hours = Math.floor(totalWholeSeconds / 3600);
+    const minutes = Math.floor((totalWholeSeconds % 3600) / 60);
+    const remainingSeconds = totalWholeSeconds % 60;
+    const decimalText = decimal > 0 ? `.${decimal}` : '';
 
     if (hours === 0) {
       // 不到一小时，格式为 00:00
       return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
         .toString()
-        .padStart(2, '0')}`;
+        .padStart(2, '0')}${decimalText}`;
     } else {
       // 超过一小时，格式为 00:00:00
       return `${hours.toString().padStart(2, '0')}:${minutes
         .toString()
-        .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}${decimalText}`;
     }
+  };
+
+  const normalizeSkipTime = (seconds: number): number => {
+    if (!Number.isFinite(seconds)) return 0;
+    const normalized = Math.round(seconds * 10) / 10;
+    return Object.is(normalized, -0) ? 0 : normalized;
   };
 
   // 🔧 修改点：复刻 LunaTV 跳过配置菜单同步与保存逻辑，替代旧跳过浮层设置
@@ -3096,7 +3106,9 @@ function PlayPageClient() {
           ? '设置片头时间'
           : `${formatTime(config.intro_time)}`,
       onClick: function () {
-        const currentTime = artPlayerRef.current?.currentTime || 0;
+        const currentTime = normalizeSkipTime(
+          artPlayerRef.current?.currentTime || 0
+        );
         if (currentTime > 0) {
           const nextConfig = {
             ...skipConfigRef.current,
@@ -3117,11 +3129,12 @@ function PlayPageClient() {
           ? '设置片尾时间'
           : `-${formatTime(-config.outro_time)}`,
       onClick: function () {
-        const outroTime =
+        const outroTime = normalizeSkipTime(
           -(
             artPlayerRef.current?.duration -
             artPlayerRef.current?.currentTime
-          ) || 0;
+          ) || 0
+        );
         if (outroTime < 0) {
           const nextConfig = {
             ...skipConfigRef.current,
@@ -3195,23 +3208,33 @@ function PlayPageClient() {
   }) => {
     if (!currentSourceRef.current || !currentIdRef.current) return;
 
-    try {
-      setSkipConfig(newConfig);
-      skipConfigRef.current = newConfig;
-      updateSkipProgressMarkers(newConfig);
+    const normalizedConfig = {
+      ...newConfig,
+      intro_time: normalizeSkipTime(newConfig.intro_time),
+      outro_time: normalizeSkipTime(newConfig.outro_time),
+    };
 
-      if (!newConfig.enable && !newConfig.intro_time && !newConfig.outro_time) {
+    try {
+      setSkipConfig(normalizedConfig);
+      skipConfigRef.current = normalizedConfig;
+      updateSkipProgressMarkers(normalizedConfig);
+
+      if (
+        !normalizedConfig.enable &&
+        !normalizedConfig.intro_time &&
+        !normalizedConfig.outro_time
+      ) {
         await deleteSkipConfig(currentSourceRef.current, currentIdRef.current);
       } else {
         await saveSkipConfig(
           currentSourceRef.current,
           currentIdRef.current,
-          newConfig
+          normalizedConfig
         );
       }
 
-      syncSkipSettingsPanel(newConfig);
-      console.log('跳过片头片尾配置已保存:', newConfig);
+      syncSkipSettingsPanel(normalizedConfig);
+      console.log('跳过片头片尾配置已保存:', normalizedConfig);
     } catch (err) {
       console.error('保存跳过片头片尾配置失败:', err);
     }
@@ -5434,7 +5457,9 @@ function PlayPageClient() {
                 ? '设置片头时间'
                 : `${formatTime(skipConfigRef.current.intro_time)}`,
             onClick: function () {
-              const currentTime = artPlayerRef.current?.currentTime || 0;
+              const currentTime = normalizeSkipTime(
+                artPlayerRef.current?.currentTime || 0
+              );
               if (currentTime > 0) {
                 const nextConfig = {
                   ...skipConfigRef.current,
@@ -5455,11 +5480,12 @@ function PlayPageClient() {
                 ? '设置片尾时间'
                 : `-${formatTime(-skipConfigRef.current.outro_time)}`,
             onClick: function () {
-              const outroTime =
+              const outroTime = normalizeSkipTime(
                 -(
                   artPlayerRef.current?.duration -
                   artPlayerRef.current?.currentTime
-                ) || 0;
+                ) || 0
+              );
               if (outroTime < 0) {
                 const nextConfig = {
                   ...skipConfigRef.current,
