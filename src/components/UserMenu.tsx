@@ -171,7 +171,7 @@ export const UserMenu: React.FC = () => {
   const dataQueryEnabled = typeof window !== 'undefined' && !!authInfo?.username && storageType !== 'localstorage';
 
   // 🚀 TanStack Query - 播放记录
-  const { data: playRecords = [] } = usePlayRecordsQuery({
+  const { data: playRecords = [], refetch: refetchPlayRecords } = usePlayRecordsQuery({
     enabled: dataQueryEnabled,
     enableFilter: enableContinueWatchingFilter,
     minProgress: continueWatchingMinProgress,
@@ -212,6 +212,7 @@ export const UserMenu: React.FC = () => {
     if (willOpen && showWatchingUpdates) {
       console.log('打开菜单时强制刷新追番更新...');
       refreshWatchingUpdates();
+      void refetchPlayRecords();
     }
   };
 
@@ -272,6 +273,7 @@ export const UserMenu: React.FC = () => {
 
   const handleContinueWatching = () => {
     setIsOpen(false);
+    void refetchPlayRecords();
     setIsContinueWatchingOpen(true);
   };
 

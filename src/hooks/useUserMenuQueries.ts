@@ -189,7 +189,7 @@ const playRecordsOptions = (
     const sortedRecords = validPlayRecords.sort((a, b) => b.save_time - a.save_time);
     return sortedRecords.slice(0, 12); // Only take the latest 12
   },
-  staleTime: 2 * 60 * 1000, // 2 minutes
+  staleTime: 15 * 1000,
   gcTime: 10 * 60 * 1000,
 });
 
