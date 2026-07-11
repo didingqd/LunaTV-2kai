@@ -7131,7 +7131,7 @@ function PlayPageClient() {
               className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
                 }`}
             >
-              <div className='relative w-full h-[300px] lg:h-full'>
+              <div className='relative isolate z-0 w-full h-[300px] lg:h-full'>
                 <div
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
