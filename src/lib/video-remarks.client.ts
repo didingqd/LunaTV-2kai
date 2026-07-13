@@ -9,6 +9,7 @@ const STORAGE_KEY = 'moontv_video_card_remarks';
 
 let cache: RemarksMap | null = null;
 let syncPromise: Promise<RemarksMap> | null = null;
+let syncListenersInstalled = false;
 const listeners = new Set<() => void>();
 
 export function videoRemarkKey(source: string, id: string) {
@@ -93,6 +94,7 @@ export function subscribeVideoRemarks(listener: () => void) {
 }
 
 export async function syncVideoRemarks() {
+  installSyncListeners();
   if (syncPromise) return syncPromise;
 
   syncPromise = (async () => {
@@ -131,6 +133,20 @@ export async function syncVideoRemarks() {
   } finally {
     syncPromise = null;
   }
+}
+
+function installSyncListeners() {
+  if (syncListenersInstalled || typeof window === 'undefined') return;
+  syncListenersInstalled = true;
+
+  window.addEventListener('focus', () => {
+    syncVideoRemarks().catch(() => {});
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      syncVideoRemarks().catch(() => {});
+    }
+  });
 }
 
 export async function saveVideoRemark(
