@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,react-hooks/exhaustive-deps,@typescript-eslint/no-empty-function */
 
-import { ExternalLink, Heart, Link, PlayCircleIcon, Radio, Star, Trash2, Sparkles, Bell, BellRing } from 'lucide-react';
+import { ExternalLink, Heart, Link, PlayCircleIcon, Radio, Star, Trash2, Sparkles, Bell, BellRing, MessageSquareText } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
@@ -33,6 +33,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { processImageUrl, isSeriesCompleted } from '@/lib/utils';
+import { getLocalVideoRemark, saveVideoRemark, subscribeVideoRemarks, syncVideoRemarks } from '@/lib/video-remarks.client';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
@@ -123,6 +124,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   const [searchFavorited, setSearchFavorited] = useState<boolean | null>(null); // 搜索结果的收藏状态
   const [showAIChat, setShowAIChat] = useState(false); // AI问片弹窗
   const [isNavigating, setIsNavigating] = useState(false); // 导航加载状态
+  const [customRemark, setCustomRemark] = useState('');
 
   // AI功能状态：优先使用父组件传递的值，否则自己检测
   const [aiEnabledLocal, setAiEnabledLocal] = useState(false);
@@ -198,6 +200,33 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
   // 修改点：搜索聚合卡片优先复用 douban_id 收藏；缺失时退回标题年份标识，保证所有搜索聚合结果都有收藏入口
   const favoriteSource = actualSource || (from === 'search' && isAggregate ? (actualDoubanId ? 'douban' : 'search_aggregate') : '');
   const favoriteId = actualId || (from === 'search' && isAggregate ? (actualDoubanId ? actualDoubanId.toString() : searchAggregateFavoriteId) : '');
+
+  useEffect(() => {
+    if (!favoriteSource || !favoriteId) {
+      setCustomRemark('');
+      return;
+    }
+
+    const refreshRemark = () => {
+      setCustomRemark(getLocalVideoRemark(favoriteSource, favoriteId));
+    };
+
+    refreshRemark();
+    const unsubscribe = subscribeVideoRemarks(refreshRemark);
+    syncVideoRemarks().catch(() => {});
+
+    return unsubscribe;
+  }, [favoriteSource, favoriteId]);
+
+  const handleEditRemark = useCallback(() => {
+    if (!favoriteSource || !favoriteId) return;
+
+    const next = window.prompt('备注', customRemark);
+    if (next === null) return;
+
+    setCustomRemark(next.trim());
+    saveVideoRemark(favoriteSource, favoriteId, next).catch(() => {});
+  }, [favoriteSource, favoriteId, customRemark]);
 
   // 判断是否为即将上映（未发布的内容）- 只有真正未上映的才算
   const isUpcoming = useMemo(() =>
@@ -863,6 +892,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       });
     }
 
+    if (favoriteSource && favoriteId) {
+      actions.push({
+        id: 'remark',
+        label: customRemark ? '编辑备注' : '添加备注',
+        icon: <MessageSquareText size={20} />,
+        onClick: handleEditRemark,
+        color: 'default' as const,
+      });
+    }
+
     return actions;
   }, [
     config,
@@ -882,6 +921,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     handleDeleteRecord,
     aiEnabled,
     actualTitle,
+    favoriteSource,
+    favoriteId,
+    customRemark,
+    handleEditRemark,
   ]);
 
   return (
@@ -1309,6 +1352,23 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
           })()}
 
           {/* 评分徽章 - 动态颜色 - 🎯 使用容器查询替代媒体查询 */}
+          {customRemark && (
+            <div
+              className="absolute bottom-2 right-2 max-w-[70%] truncate bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md shadow-lg text-white/85 text-[10px] font-medium transition-all duration-300 ease-out group-hover:scale-105 z-30"
+              style={{
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                WebkitTouchCallout: 'none',
+              } as React.CSSProperties}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                return false;
+              }}
+            >
+              {customRemark}
+            </div>
+          )}
+
           {config.showRating && rate && ratingBadgeStyle && (
               <div
                 className={`absolute top-2 right-2 ${ratingBadgeStyle.bgColor} ${ratingBadgeStyle.ringColor} ${ratingBadgeStyle.shadowColor} ${ratingBadgeStyle.textColor} ${ratingBadgeStyle.glowClass} text-xs font-bold rounded-full flex flex-col items-center justify-center transition-all duration-300 ease-out group-hover:scale-110 backdrop-blur-sm w-9 h-9 @[180px]:w-10 @[180px]:h-10`}
