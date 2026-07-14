@@ -4,58 +4,22 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
-import { db } from '@/lib/db';
 import {
   getDbQueryCount,
   recordRequest,
   resetDbQueryCount,
 } from '@/lib/performance-monitor';
+import {
+  BANGUMI_DATE_ORIGIN,
+  MANUAL_ORIGIN,
+  buildRemarkKey,
+  normalizeOrigin,
+  normalizeRecord,
+  readRemarks,
+  writeRemarks,
+} from '@/lib/video-remarks.server';
 
 export const runtime = 'nodejs';
-
-type RemarkRecord = {
-  remark: string;
-  updatedAt: number;
-};
-
-type RemarksMap = Record<string, RemarkRecord>;
-
-function remarksCacheKey(username: string) {
-  return `user:${username}:video_remarks`;
-}
-
-function buildRemarkKey(source: string, id: string) {
-  return `${source.trim()}__${id.trim()}`;
-}
-
-function normalizeRecord(value: unknown): RemarkRecord | null {
-  if (typeof value === 'string') {
-    const remark = value.trim();
-    return remark ? { remark, updatedAt: 0 } : null;
-  }
-
-  if (!value || typeof value !== 'object') return null;
-  const raw = value as Record<string, unknown>;
-  const remark = typeof raw.remark === 'string' ? raw.remark.trim() : '';
-  if (!remark) return null;
-
-  const updatedAt =
-    typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
-      ? raw.updatedAt
-      : 0;
-
-  return { remark, updatedAt };
-}
-
-function normalizeRemarks(value: unknown): RemarksMap {
-  if (!value || typeof value !== 'object') return {};
-
-  const entries = Object.entries(value as Record<string, unknown>)
-    .map(([key, record]) => [key, normalizeRecord(record)] as const)
-    .filter((entry): entry is readonly [string, RemarkRecord] => !!entry[1]);
-
-  return Object.fromEntries(entries);
-}
 
 async function requireUser(request: NextRequest) {
   const authInfo = getAuthInfoFromCookie(request);
@@ -73,14 +37,6 @@ async function requireUser(request: NextRequest) {
   }
 
   return { username: authInfo.username };
-}
-
-async function readRemarks(username: string): Promise<RemarksMap> {
-  return normalizeRemarks(await db.getCache(remarksCacheKey(username)));
-}
-
-async function writeRemarks(username: string, remarks: RemarksMap) {
-  await db.setCache(remarksCacheKey(username), remarks);
 }
 
 function recordApiRequest(
@@ -144,6 +100,7 @@ export async function GET(request: NextRequest) {
       const record = remarks[buildRemarkKey(source, id)] || {
         remark: '',
         updatedAt: 0,
+        origin: MANUAL_ORIGIN,
       };
       return jsonResponse('GET', startTime, startMemory, 200, 0, record);
     }
@@ -175,6 +132,7 @@ export async function POST(request: NextRequest) {
     const source = typeof body.source === 'string' ? body.source.trim() : '';
     const id = typeof body.id === 'string' ? body.id.trim() : '';
     const remark = typeof body.remark === 'string' ? body.remark.trim() : '';
+    const origin = normalizeOrigin(body.origin);
     const updatedAt =
       typeof body.updatedAt === 'number' && Number.isFinite(body.updatedAt)
         ? body.updatedAt
@@ -190,6 +148,24 @@ export async function POST(request: NextRequest) {
     const key = buildRemarkKey(source, id);
     const existing = remarks[key];
 
+    if (origin === BANGUMI_DATE_ORIGIN) {
+      if (!remark) {
+        return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
+          success: true,
+          record: existing || { remark: '', updatedAt, origin },
+          ignored: true,
+        });
+      }
+
+      if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) {
+        return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
+          success: true,
+          record: existing,
+          ignored: true,
+        });
+      }
+    }
+
     if (existing && existing.updatedAt > updatedAt) {
       return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
         success: true,
@@ -198,8 +174,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (remark) {
-      remarks[key] = { remark, updatedAt };
+    if (remark || origin === MANUAL_ORIGIN) {
+      remarks[key] = { remark, updatedAt, origin };
     } else {
       delete remarks[key];
     }
@@ -208,7 +184,7 @@ export async function POST(request: NextRequest) {
 
     return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
       success: true,
-      record: remarks[key] || { remark: '', updatedAt },
+      record: remarks[key] || { remark: '', updatedAt, origin },
     });
   } catch (err) {
     console.error('保存视频备注失败', err);

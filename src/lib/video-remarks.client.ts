@@ -1,11 +1,15 @@
 export type VideoRemarkRecord = {
   remark: string;
   updatedAt: number;
+  origin: VideoRemarkOrigin;
 };
 
 type RemarksMap = Record<string, VideoRemarkRecord>;
+type VideoRemarkOrigin = 'manual' | 'bangumi_date';
 
 const STORAGE_KEY = 'moontv_video_card_remarks';
+const MANUAL_ORIGIN: VideoRemarkOrigin = 'manual';
+const BANGUMI_DATE_ORIGIN: VideoRemarkOrigin = 'bangumi_date';
 
 let cache: RemarksMap | null = null;
 let syncPromise: Promise<RemarksMap> | null = null;
@@ -16,20 +20,25 @@ export function videoRemarkKey(source: string, id: string) {
   return `${source.trim()}__${id.trim()}`;
 }
 
+function normalizeOrigin(value: unknown): VideoRemarkOrigin {
+  return value === BANGUMI_DATE_ORIGIN ? BANGUMI_DATE_ORIGIN : MANUAL_ORIGIN;
+}
+
 function normalizeRecord(value: unknown): VideoRemarkRecord | null {
   if (typeof value === 'string') {
-    return { remark: value.trim(), updatedAt: 0 };
+    return { remark: value.trim(), updatedAt: 0, origin: MANUAL_ORIGIN };
   }
 
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const remark = typeof raw.remark === 'string' ? raw.remark.trim() : '';
+  const origin = normalizeOrigin(raw.origin);
   const updatedAt =
     typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
       ? raw.updatedAt
       : 0;
 
-  return { remark, updatedAt };
+  return { remark, updatedAt, origin };
 }
 
 function normalizeMap(value: unknown): RemarksMap {
@@ -72,6 +81,14 @@ function mergeRemarks(local: RemarksMap, remote: RemarksMap) {
 
   for (const [key, localRecord] of Object.entries(local)) {
     const remoteRecord = remote[key];
+    if (
+      localRecord.origin === BANGUMI_DATE_ORIGIN &&
+      remoteRecord &&
+      remoteRecord.origin !== BANGUMI_DATE_ORIGIN
+    ) {
+      continue;
+    }
+
     if (!remoteRecord || localRecord.updatedAt > remoteRecord.updatedAt) {
       merged[key] = localRecord;
       localWins.push([key, localRecord]);
@@ -120,6 +137,7 @@ export async function syncVideoRemarks() {
             id: key.slice(separator + 2),
             remark: record.remark,
             updatedAt: record.updatedAt,
+            origin: record.origin,
           }),
         });
       }),
@@ -158,6 +176,7 @@ export async function saveVideoRemark(
   const record: VideoRemarkRecord = {
     remark: remark.trim(),
     updatedAt: Date.now(),
+    origin: MANUAL_ORIGIN,
   };
 
   writeLocal({
@@ -174,6 +193,7 @@ export async function saveVideoRemark(
         id,
         remark: record.remark,
         updatedAt: record.updatedAt,
+        origin: record.origin,
       }),
     });
 
@@ -190,4 +210,80 @@ export async function saveVideoRemark(
   } catch {
     // Offline edits remain in localStorage and will be reconciled on next sync.
   }
+}
+
+export async function saveBangumiDateRemarkIfAllowed(
+  source: string,
+  id: string,
+  date: string | null | undefined,
+) {
+  const remark = date?.trim() || '';
+  if (!remark) return;
+
+  const key = videoRemarkKey(source, id);
+  const existing = readLocal()[key];
+  if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) return;
+
+  const record: VideoRemarkRecord = {
+    remark,
+    updatedAt: Date.now(),
+    origin: BANGUMI_DATE_ORIGIN,
+  };
+
+  try {
+    const response = await fetch('/api/remarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source,
+        id,
+        remark: record.remark,
+        updatedAt: record.updatedAt,
+        origin: record.origin,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const serverRecord = normalizeRecord(data?.record);
+      if (serverRecord) {
+        writeLocal({
+          ...readLocal(),
+          [key]: serverRecord,
+        });
+        return;
+      }
+    }
+  } catch {
+    // Fall back to local-only auto remark below.
+  }
+
+  const latest = readLocal();
+  const latestExisting = latest[key];
+  if (latestExisting && latestExisting.origin !== BANGUMI_DATE_ORIGIN) return;
+
+  writeLocal({
+    ...latest,
+    [key]: record,
+  });
+}
+
+export async function pushVideoRemarkToAll(source?: string, id?: string) {
+  const response = await fetch('/api/admin/remarks/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(source && id ? { source, id } : {}),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `push remarks failed: ${response.status}`);
+  }
+
+  return data as {
+    success: boolean;
+    sourceRecords: number;
+    updatedUsers: number;
+    insertedRecords: number;
+  };
 }
