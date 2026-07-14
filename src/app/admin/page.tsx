@@ -5188,6 +5188,24 @@ const CategoryConfig = ({
   );
 };
 
+// 首页与分类配置聚合组件
+const HomeAndCategoryConfig = ({
+  config,
+  refreshConfig,
+}: {
+  config: AdminConfig | null;
+  refreshConfig: () => Promise<void>;
+}) => {
+  return (
+    <div className='space-y-8'>
+      <HomePageConfig config={config} refreshConfig={refreshConfig} />
+      <div className='border-t border-gray-200 dark:border-gray-700 pt-6'>
+        <CategoryConfig config={config} refreshConfig={refreshConfig} />
+      </div>
+    </div>
+  );
+};
+
 // 新增配置文件组件
 const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | null; refreshConfig: () => Promise<void> }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
@@ -8135,8 +8153,7 @@ function AdminPageClient() {
     sourceTest: false,
     liveSource: false,
     siteConfig: false,
-    homePageConfig: false,
-    categoryConfig: false,
+    homeAndCategoryConfig: false,
     netdiskConfig: false,
     aiRecommendConfig: false,
     youtubeConfig: false,
@@ -8303,19 +8320,19 @@ function AdminPageClient() {
               <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
-            {/* 首页模块配置标签 */}
+            {/* 首页与分类配置标签 */}
             <CollapsibleTab
-              title='首页模块配置'
+              title='首页与分类配置'
               icon={
                 <Layout
                   size={20}
                   className='text-gray-600 dark:text-gray-400'
                 />
               }
-              isExpanded={expandedTabs.homePageConfig}
-              onToggle={() => toggleTab('homePageConfig')}
+              isExpanded={expandedTabs.homeAndCategoryConfig}
+              onToggle={() => toggleTab('homeAndCategoryConfig')}
             >
-              <HomePageConfig config={config} refreshConfig={fetchConfig} />
+              <HomeAndCategoryConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 用户配置标签 */}
@@ -8382,21 +8399,6 @@ function AdminPageClient() {
               onToggle={() => toggleTab('liveSource')}
             >
               <LiveSourceConfig config={config} refreshConfig={fetchConfig} />
-            </CollapsibleTab>
-
-            {/* 分类配置标签 */}
-            <CollapsibleTab
-              title='分类配置'
-              icon={
-                <FolderOpen
-                  size={20}
-                  className='text-gray-600 dark:text-gray-400'
-                />
-              }
-              isExpanded={expandedTabs.categoryConfig}
-              onToggle={() => toggleTab('categoryConfig')}
-            >
-              <CategoryConfig config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 网盘搜索配置标签 */}
