@@ -16,6 +16,7 @@ import { normalizeDownloadSource } from '@/lib/download';
 import { getSeekKeyboardDelta } from '@/lib/user-menu-indicator';
 import { useDanmu } from '@/hooks/useDanmu';
 import type { DanmuManualOverride } from '@/hooks/useDanmu';
+import { useWatchingFollows } from '@/hooks/useWatchingFollows';
 import DownloadEpisodeSelector from '@/components/download/DownloadEpisodeSelector';
 import DanmuManualMatchModal, { type DanmuManualSelection } from '@/components/DanmuManualMatchModal';
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -690,6 +691,14 @@ function PlayPageClient() {
   );
   const [currentId, setCurrentId] = useState(searchParams.get('id') || '');
 
+  const {
+    isFollowing,
+    createFollow,
+    deleteFollow,
+    isCreating: isCreatingFollow,
+    isDeleting: isDeletingFollow,
+  } = useWatchingFollows();
+
   // 解析 source 参数以获取 embyKey（仅用于 API 调用）
   const parseSourceForApi = (source: string): { source: string; embyKey?: string } => {
     if (source.startsWith('emby_')) {
@@ -1170,6 +1179,58 @@ function PlayPageClient() {
 
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
+  const followingCurrentSource =
+    !!currentSource && !!currentId && isFollowing(currentSource, currentId);
+
+  const handleToggleWatchingFollow = useCallback(async () => {
+    if (!currentSource || !currentId) {
+      toast.error('当前资源身份无效，无法追更');
+      return;
+    }
+
+    try {
+      if (followingCurrentSource) {
+        await deleteFollow(currentSource, currentId);
+        toast.success('已取消追更');
+        return;
+      }
+
+      const latestEpisodes = detail?.episodes?.length ?? 0;
+      if (!detail || latestEpisodes <= 0) {
+        toast.error('详情尚未加载完成，无法建立追更基线');
+        return;
+      }
+
+      await createFollow({
+        source: currentSource,
+        id: currentId,
+        title: detail.title || videoTitle,
+        cover: detail.poster || videoCover,
+        year: detail.year || videoYear,
+        type:
+          detail.type_name ||
+          searchType ||
+          (latestEpisodes > 1 ? 'tv' : undefined),
+        originalEpisodes: latestEpisodes,
+      });
+      toast.success('已添加追更');
+    } catch (followError) {
+      toast.error(
+        followError instanceof Error ? followError.message : '追更操作失败',
+      );
+    }
+  }, [
+    createFollow,
+    currentId,
+    currentSource,
+    deleteFollow,
+    detail,
+    followingCurrentSource,
+    searchType,
+    videoCover,
+    videoTitle,
+    videoYear,
+  ]);
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
@@ -7381,6 +7442,9 @@ function PlayPageClient() {
           tmdbNumberOfSeasons={tmdbData?.numberOfSeasons}
           favorited={favorited}
           onToggleFavorite={handleToggleFavorite}
+          following={followingCurrentSource}
+          followLoading={isCreatingFollow || isDeletingFollow}
+          onToggleFollow={handleToggleWatchingFollow}
           detail={detail}
           movieDetails={movieDetails}
           bangumiDetails={bangumiDetails}

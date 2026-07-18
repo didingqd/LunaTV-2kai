@@ -5,6 +5,7 @@ import { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react
 import { Heart } from 'lucide-react';
 import VideoCard from '@/components/VideoCard';
 import CommentSection from '@/components/play/CommentSection';
+import WatchingFollowButton from '@/components/play/WatchingFollowButton';
 import { processImageUrl } from '@/lib/utils';
 
 type Tab = 'overview' | 'cast' | 'recommendations' | 'comments';
@@ -25,6 +26,9 @@ interface PlayInfoPanelProps {
   tmdbNumberOfSeasons?: number | null;
   favorited: boolean;
   onToggleFavorite: () => void;
+  following: boolean;
+  followLoading?: boolean;
+  onToggleFollow: () => void;
   detail?: any;
   movieDetails?: any;
   bangumiDetails?: any;
@@ -47,7 +51,7 @@ export default function PlayInfoPanel(props: PlayInfoPanelProps) {
   const {
     title, year, cover, sourceName, totalEpisodes, currentEpisodeIndex,
     episodeName, backdropUrl, tmdbPoster, tmdbOverview, tmdbRating, tmdbLogo, tmdbNumberOfSeasons,
-    favorited, onToggleFavorite,
+    favorited, onToggleFavorite, following, followLoading, onToggleFollow,
     detail, movieDetails, bangumiDetails, shortdramaDetails,
     movieComments, commentsError, loadingMovieDetails, loadingBangumiDetails,
     loadingComments, loadingCelebrityWorks, selectedCelebrityName,
@@ -180,7 +184,7 @@ export default function PlayInfoPanel(props: PlayInfoPanelProps) {
               </p>
             )}
 
-            {/* 按钮行 — 收藏 */}
+            {/* 按钮行 — 收藏与追更保持独立 */}
             <div className="flex flex-wrap gap-2.5">
               <button
                 onClick={onToggleFavorite}
@@ -190,6 +194,11 @@ export default function PlayInfoPanel(props: PlayInfoPanelProps) {
                 <Heart className={`size-4 transition-colors ${favorited ? 'fill-rose-500 text-rose-500' : ''}`} />
                 {favorited ? '已加入收藏' : '加入收藏'}
               </button>
+              <WatchingFollowButton
+                following={following}
+                loading={followLoading}
+                onToggle={onToggleFollow}
+              />
             </div>
           </div>
         </section>

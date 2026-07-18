@@ -10,6 +10,7 @@ import {
   Download,
   Heart,
   KeyRound,
+  ListChecks,
   LogOut,
   PlayCircle,
   Settings,
@@ -286,6 +287,14 @@ export const UserMenu: React.FC = () => {
     setIsFavoritesOpen(true);
   };
 
+  const handleWatchingFollows = () => {
+    setIsOpen(false);
+    navigateWithBrowserPreference({
+      href: '/follows',
+      routerPush: (href) => router.push(href),
+    });
+  };
+
   const handleCloseFavorites = () => {
     setIsFavoritesOpen(false);
   };
@@ -522,6 +531,15 @@ export const UserMenu: React.FC = () => {
               )}
             </button>
           )}
+
+          {/* 我的追更与收藏、播放记录保持独立 */}
+          <button
+            onClick={handleWatchingFollows}
+            className='relative flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 transition-[background-color] duration-150 ease-in-out hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+          >
+            <ListChecks className='h-4 w-4 text-gray-500 dark:text-gray-400' />
+            <span className='font-medium'>我的追更</span>
+          </button>
 
           {/* 管理面板按钮 */}
           {showAdminPanel && (
