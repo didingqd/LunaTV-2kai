@@ -12,6 +12,8 @@ import {
   Bell,
   BellRing,
   MessageSquareText,
+  Check,
+  Plus,
   Send,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -81,6 +83,9 @@ export interface VideoCardProps {
   currentEpisode?: number;
   douban_id?: number;
   onDelete?: () => void;
+  following?: boolean;
+  followLoading?: boolean;
+  onToggleFollow?: () => void | Promise<void>;
   rate?: string;
   type?: string;
   isBangumi?: boolean;
@@ -121,6 +126,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       currentEpisode,
       douban_id,
       onDelete,
+      following = false,
+      followLoading = false,
+      onToggleFollow,
       rate,
       type = '',
       isBangumi = false,
@@ -1045,6 +1053,20 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         }
       }
 
+      // 仅由“继续观看”弹层显式启用，不影响其他 playrecord 卡片。
+      if (from === 'playrecord' && onToggleFollow && actualSource && actualId) {
+        actions.push({
+          id: 'toggle-follow',
+          label: following ? '取消加追' : '加追',
+          icon: following ? <Check size={20} /> : <Plus size={20} />,
+          onClick: () => {
+            void onToggleFollow();
+          },
+          disabled: followLoading,
+          color: following ? ('danger' as const) : ('default' as const),
+        });
+      }
+
       // 删除播放记录或取消追更操作
       if (
         config.showCheckCircle &&
@@ -1133,6 +1155,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       handleClick,
       handlePlayInNewTab,
       handleToggleFavorite,
+      following,
+      followLoading,
+      onToggleFollow,
       handleDeleteRecord,
       aiEnabled,
       actualTitle,

@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
@@ -49,10 +50,7 @@ import {
   useInvalidateUserMenuData,
 } from '@/hooks/useUserMenuQueries';
 import { useWatchingUpdatesQuery, useRefreshWatchingUpdates } from '@/hooks/useWatchingUpdates';
-import {
-  useDeleteWatchingFollowMutation,
-  useWatchingFollowsArrayQuery,
-} from '@/hooks/useWatchingFollows';
+import { useWatchingFollows } from '@/hooks/useWatchingFollows';
 import { useSourcesQuery } from '@/hooks/useSourcesQuery';
 
 interface AuthInfo {
@@ -192,12 +190,16 @@ export const UserMenu: React.FC = () => {
 
   // WatchingFollow 在远端与 localStorage 模式下使用同一查询入口。
   const {
-    data: watchingFollows = [],
-    refetch: refetchWatchingFollows,
-  } = useWatchingFollowsArrayQuery();
-  const deleteWatchingFollowMutation = useDeleteWatchingFollowMutation();
+    list: watchingFollows,
+    isFollowing,
+    createFollow,
+    deleteFollow,
+    refresh: refreshWatchingFollows,
+    isCreating: isCreatingFollow,
+    isDeleting: isDeletingFollow,
+  } = useWatchingFollows();
   const { data: sources = [] } = useSourcesQuery({
-    enabled: isWatchingFollowsOpen,
+    enabled: isWatchingFollowsOpen || isContinueWatchingOpen,
   });
   const watchingFollowSourceNames = new Map(
     sources.map((source) => [source.key, source.name || source.key]),
@@ -308,7 +310,7 @@ export const UserMenu: React.FC = () => {
 
   const handleWatchingFollows = () => {
     setIsOpen(false);
-    void refetchWatchingFollows();
+    void refreshWatchingFollows();
     setIsWatchingFollowsOpen(true);
   };
 
@@ -341,6 +343,54 @@ export const UserMenu: React.FC = () => {
   const parseKey = (key: string) => {
     const [source, id] = key.split('+');
     return { source, id };
+  };
+
+  const resolveSourceKey = (source: string) =>
+    sources.find((item) => item.key === source || item.name === source)?.key ||
+    source;
+
+  const handleToggleContinueWatchingFollow = async (
+    record: PlayRecord & { key: string },
+  ) => {
+    const identity = parseKey(record.key);
+    const source = resolveSourceKey(identity.source);
+
+    try {
+      if (isFollowing(source, identity.id)) {
+        await deleteFollow(source, identity.id);
+        toast.success('已取消加追');
+        return;
+      }
+
+      const response = await fetch(
+        `/api/detail?source=${encodeURIComponent(source)}&id=${encodeURIComponent(identity.id)}`,
+        { cache: 'no-store' },
+      );
+      if (!response.ok) throw new Error('详情获取失败，无法建立追更基线');
+
+      const detail = await response.json();
+      const latestEpisodes = Array.isArray(detail.episodes)
+        ? detail.episodes.length
+        : 0;
+      if (latestEpisodes <= 0) throw new Error('详情缺少有效剧集信息');
+
+      await createFollow({
+        source,
+        id: identity.id,
+        title: detail.title || record.title,
+        cover: detail.poster || record.cover,
+        year: String(detail.year || record.year || ''),
+        type:
+          detail.type_name ||
+          record.type ||
+          (latestEpisodes > 1 ? 'tv' : undefined),
+        originalEpisodes: latestEpisodes,
+        enabled: true,
+      });
+      toast.success('已加追');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '追更操作失败');
+    }
   };
 
   // 计算播放进度百分比
@@ -1046,6 +1096,7 @@ export const UserMenu: React.FC = () => {
           <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
             {playRecords.map((record) => {
               const { source, id } = parseKey(record.key);
+              const followSource = resolveSourceKey(source);
               const newEpisodesCount = getNewEpisodesCount(record);
               return (
                 <div key={record.key} className='relative group/card'>
@@ -1064,6 +1115,11 @@ export const UserMenu: React.FC = () => {
                       from='playrecord'
                       type={record.total_episodes > 1 ? 'tv' : ''}
                       remarks={record.remarks}
+                      following={isFollowing(followSource, id)}
+                      followLoading={isCreatingFollow || isDeletingFollow}
+                      onToggleFollow={() =>
+                        handleToggleContinueWatchingFollow(record)
+                      }
                     />
                   </div>
                   {/* 新集数徽章 - Netflix 统一风格 */}
@@ -1294,10 +1350,7 @@ export const UserMenu: React.FC = () => {
                   from='follow'
                   type={follow.type || ''}
                   onDelete={() =>
-                    deleteWatchingFollowMutation.mutate({
-                      source: follow.source,
-                      id: follow.id,
-                    })
+                    void deleteFollow(follow.source, follow.id)
                   }
                 />
               );
