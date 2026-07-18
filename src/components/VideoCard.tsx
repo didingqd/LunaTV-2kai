@@ -71,7 +71,13 @@ export interface VideoCardProps {
   source_names?: string[];
   progress?: number;
   year?: string;
-  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'reminder';
+  from:
+    | 'playrecord'
+    | 'favorite'
+    | 'search'
+    | 'douban'
+    | 'reminder'
+    | 'follow';
   currentEpisode?: number;
   douban_id?: number;
   onDelete?: () => void;
@@ -542,7 +548,14 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       async (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        if (from !== 'playrecord' || !actualSource || !actualId) return;
+        if (!actualSource || !actualId) return;
+
+        if (from === 'follow') {
+          onDelete?.();
+          return;
+        }
+
+        if (from !== 'playrecord') return;
 
         deletePlayRecordMutation.mutate(
           { source: actualSource, id: actualId },
@@ -829,6 +842,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           showRating: false,
           showYear: false,
         },
+        follow: {
+          showSourceName: true,
+          showProgress: false,
+          showPlayButton: true,
+          showHeart: true,
+          showCheckCircle: true,
+          showDoubanLink: false,
+          showRating: false,
+          showYear: false,
+        },
         search: {
           showSourceName: true,
           showProgress: false,
@@ -1022,16 +1045,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         }
       }
 
-      // 删除播放记录操作
+      // 删除播放记录或取消追更操作
       if (
         config.showCheckCircle &&
-        from === 'playrecord' &&
+        (from === 'playrecord' || from === 'follow') &&
         actualSource &&
         actualId
       ) {
         actions.push({
-          id: 'delete',
-          label: '删除记录',
+          id: from === 'follow' ? 'unfollow' : 'delete',
+          label: from === 'follow' ? '取消追更' : '删除记录',
           icon: <Trash2 size={20} />,
           onClick: () => {
             const mockEvent = {

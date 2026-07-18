@@ -49,6 +49,11 @@ import {
   useInvalidateUserMenuData,
 } from '@/hooks/useUserMenuQueries';
 import { useWatchingUpdatesQuery, useRefreshWatchingUpdates } from '@/hooks/useWatchingUpdates';
+import {
+  useDeleteWatchingFollowMutation,
+  useWatchingFollowsArrayQuery,
+} from '@/hooks/useWatchingFollows';
+import { useSourcesQuery } from '@/hooks/useSourcesQuery';
 
 interface AuthInfo {
   username?: string;
@@ -65,6 +70,7 @@ export const UserMenu: React.FC = () => {
   const [isWatchingUpdatesOpen, setIsWatchingUpdatesOpen] = useState(false);
   const [isContinueWatchingOpen, setIsContinueWatchingOpen] = useState(false);
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
+  const [isWatchingFollowsOpen, setIsWatchingFollowsOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>(() => {
     // 🔧 优化：直接从 RUNTIME_CONFIG 读取初始值，避免默认值导致的多次渲染
@@ -130,7 +136,7 @@ export const UserMenu: React.FC = () => {
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
-    if (isSettingsOpen || isChangePasswordOpen || isWatchingUpdatesOpen || isContinueWatchingOpen || isFavoritesOpen) {
+    if (isSettingsOpen || isChangePasswordOpen || isWatchingUpdatesOpen || isContinueWatchingOpen || isFavoritesOpen || isWatchingFollowsOpen) {
       const body = document.body;
       const html = document.documentElement;
 
@@ -149,7 +155,7 @@ export const UserMenu: React.FC = () => {
         html.style.overflow = originalHtmlOverflow;
       };
     }
-  }, [isSettingsOpen, isChangePasswordOpen, isWatchingUpdatesOpen, isContinueWatchingOpen, isFavoritesOpen]);
+  }, [isSettingsOpen, isChangePasswordOpen, isWatchingUpdatesOpen, isContinueWatchingOpen, isFavoritesOpen, isWatchingFollowsOpen]);
 
   // 数据查询条件（从 localStorage 读初始值，供 playRecords query 用）
   const [continueWatchingMinProgress] = useState(() =>
@@ -183,6 +189,19 @@ export const UserMenu: React.FC = () => {
   const { data: favorites = [] } = useFavoritesQuery({
     enabled: dataQueryEnabled,
   });
+
+  // WatchingFollow 在远端与 localStorage 模式下使用同一查询入口。
+  const {
+    data: watchingFollows = [],
+    refetch: refetchWatchingFollows,
+  } = useWatchingFollowsArrayQuery();
+  const deleteWatchingFollowMutation = useDeleteWatchingFollowMutation();
+  const { data: sources = [] } = useSourcesQuery({
+    enabled: isWatchingFollowsOpen,
+  });
+  const watchingFollowSourceNames = new Map(
+    sources.map((source) => [source.key, source.name || source.key]),
+  );
 
   // 🚀 TanStack Query - 修改密码
   const changePasswordMutation = useChangePasswordMutation();
@@ -289,10 +308,12 @@ export const UserMenu: React.FC = () => {
 
   const handleWatchingFollows = () => {
     setIsOpen(false);
-    navigateWithBrowserPreference({
-      href: '/follows',
-      routerPush: (href) => router.push(href),
-    });
+    void refetchWatchingFollows();
+    setIsWatchingFollowsOpen(true);
+  };
+
+  const handleCloseWatchingFollows = () => {
+    setIsWatchingFollowsOpen(false);
   };
 
   const handleCloseFavorites = () => {
@@ -539,6 +560,11 @@ export const UserMenu: React.FC = () => {
           >
             <ListChecks className='h-4 w-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>我的追更</span>
+            {watchingFollows.length > 0 && (
+              <span className='ml-auto text-xs text-gray-400'>
+                {watchingFollows.length}
+              </span>
+            )}
           </button>
 
           {/* 管理面板按钮 */}
@@ -1210,6 +1236,94 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
+  // 我的追更弹窗内容，卡片交互统一复用 VideoCard。
+  const watchingFollowsPanel = (
+    <>
+      <div
+        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-1000'
+        onClick={handleCloseWatchingFollows}
+        onTouchMove={(e) => {
+          e.preventDefault();
+        }}
+        onWheel={(e) => {
+          e.preventDefault();
+        }}
+        style={{ touchAction: 'none' }}
+      />
+
+      <div
+        className='fixed inset-x-4 top-1/2 transform -translate-y-1/2 max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-1001 max-h-[80vh] overflow-y-auto'
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className='p-6'>
+          <div className='flex items-center justify-between mb-4'>
+            <h3 className='text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2'>
+              <ListChecks className='w-6 h-6 text-green-500' />
+              我的追更
+            </h3>
+            <button
+              onClick={handleCloseWatchingFollows}
+              className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
+              aria-label='关闭我的追更'
+            >
+              <X className='w-5 h-5' />
+            </button>
+          </div>
+
+          <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
+            {watchingFollows.map((follow) => {
+              const update = watchingUpdates?.updatedSeries.find(
+                (series) =>
+                  series.sourceKey === follow.source &&
+                  series.videoId === follow.id,
+              );
+
+              return (
+                <VideoCard
+                  key={`${follow.source}+${follow.id}`}
+                  id={follow.id}
+                  title={follow.title}
+                  poster={follow.cover}
+                  year={follow.year}
+                  source={follow.source}
+                  source_name={
+                    watchingFollowSourceNames.get(follow.source) || follow.source
+                  }
+                  episodes={update?.latestEpisodes}
+                  currentEpisode={update?.currentEpisode}
+                  from='follow'
+                  type={follow.type || ''}
+                  onDelete={() =>
+                    deleteWatchingFollowMutation.mutate({
+                      source: follow.source,
+                      id: follow.id,
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
+
+          {watchingFollows.length === 0 && (
+            <div className='text-center py-12'>
+              <ListChecks className='w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4' />
+              <p className='text-gray-500 dark:text-gray-400 mb-2'>暂无追更</p>
+              <p className='text-xs text-gray-400 dark:text-gray-500'>
+                在详情页点击追更按钮即可添加
+              </p>
+            </div>
+          )}
+
+          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
+            <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+              点击海报即可播放，长按或右键查看更多操作
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <div className='relative'>
@@ -1261,6 +1375,11 @@ export const UserMenu: React.FC = () => {
       {isFavoritesOpen &&
         mounted &&
         createPortal(favoritesPanel, document.body)}
+
+      {/* 使用 Portal 将我的追更面板渲染到 document.body */}
+      {isWatchingFollowsOpen &&
+        mounted &&
+        createPortal(watchingFollowsPanel, document.body)}
 
       {/* 版本面板 */}
       <VersionPanel
