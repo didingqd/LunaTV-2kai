@@ -13,6 +13,10 @@ import {
   normalizeRemarks,
   writeRemarks,
 } from '@/lib/video-remarks.server';
+import {
+  createWatchingFollow,
+  watchingFollowCreateSchema,
+} from '@/lib/watching-follow';
 
 export const runtime = 'nodejs';
 
@@ -199,6 +203,24 @@ export async function POST(req: NextRequest) {
             username,
             key,
             upgradedReminder,
+          );
+        }
+      }
+
+      // 导入追更关注。originalEpisodes 按备份原值恢复，不做任何推导。
+      if (user.watchingFollows) {
+        for (const follow of Object.values(user.watchingFollows)) {
+          const parsed = watchingFollowCreateSchema.safeParse(follow);
+          if (!parsed.success) {
+            console.warn(`跳过用户 ${username} 的无效追更关注记录`);
+            continue;
+          }
+          const restoredFollow = createWatchingFollow(parsed.data);
+          await db.saveWatchingFollow(
+            username,
+            restoredFollow.source,
+            restoredFollow.id,
+            restoredFollow,
           );
         }
       }

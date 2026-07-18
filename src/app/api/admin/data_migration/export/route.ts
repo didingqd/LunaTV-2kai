@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
         favorites: await db.getAllFavorites(username),
         // 想看（即将上映提醒）
         reminders: await db.getAllReminders(username),
+        // 追更关注
+        watchingFollows: await db.getAllWatchingFollows(username),
         // 搜索历史
         searchHistory: await db.getSearchHistory(username),
         // 跳过片头片尾配置

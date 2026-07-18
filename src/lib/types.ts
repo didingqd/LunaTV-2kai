@@ -69,6 +69,20 @@ export interface Reminder {
   remarks?: string; // 备注信息（如"X天后上映"、"今日上映"等）
 }
 
+// 追更关注关系。更新结果由客户端基于此记录、PlayRecord 和 detail 计算。
+export interface WatchingFollow {
+  source: string;
+  id: string;
+  title: string;
+  cover: string;
+  year: string;
+  type?: string;
+  originalEpisodes: number; // 创建关注时客户端获取到的最新集数快照，创建后不可变
+  createdAt: number;
+  updatedAt: number;
+  enabled: boolean;
+}
+
 // 短剧分类数据结构
 export interface ShortDramaCategory {
   type_id: number;
@@ -159,6 +173,21 @@ export interface IStorage {
   setReminder(userName: string, key: string, reminder: Reminder): Promise<void>;
   getAllReminders(userName: string): Promise<{ [key: string]: Reminder }>;
   deleteReminder(userName: string, key: string): Promise<void>;
+
+  // 追更关注相关
+  getWatchingFollow(
+    userName: string,
+    key: string
+  ): Promise<WatchingFollow | null>;
+  setWatchingFollow(
+    userName: string,
+    key: string,
+    follow: WatchingFollow
+  ): Promise<void>;
+  getAllWatchingFollows(
+    userName: string
+  ): Promise<{ [key: string]: WatchingFollow }>;
+  deleteWatchingFollow(userName: string, key: string): Promise<void>;
 
   // 用户相关
   registerUser(userName: string, password: string): Promise<void>;

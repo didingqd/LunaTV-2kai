@@ -14,9 +14,11 @@ import {
   Reminder,
   SkipConfig,
   UserPlayStat,
+  WatchingFollow,
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
+import { assertWatchingFollowCanBeStored } from './watching-follow';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -224,6 +226,49 @@ export class DbManager {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
     await this.storage.deleteReminder(userName, key);
+  }
+
+  // ==================== 追更关注相关方法 ====================
+
+  async getWatchingFollow(
+    userName: string,
+    source: string,
+    id: string
+  ): Promise<WatchingFollow | null> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    return this.storage.getWatchingFollow(userName, key);
+  }
+
+  async saveWatchingFollow(
+    userName: string,
+    source: string,
+    id: string,
+    follow: WatchingFollow
+  ): Promise<void> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    const existing = await this.storage.getWatchingFollow(userName, key);
+    assertWatchingFollowCanBeStored(existing, source, id, follow);
+
+    await this.storage.setWatchingFollow(userName, key, follow);
+  }
+
+  async getAllWatchingFollows(
+    userName: string
+  ): Promise<{ [key: string]: WatchingFollow }> {
+    incrementDbQuery();
+    return this.storage.getAllWatchingFollows(userName);
+  }
+
+  async deleteWatchingFollow(
+    userName: string,
+    source: string,
+    id: string
+  ): Promise<void> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    await this.storage.deleteWatchingFollow(userName, key);
   }
 
   // 🚀 批量保存收藏（Upstash 优化，使用 mset 只算1条命令）

@@ -24,6 +24,7 @@ import {
   Reminder,
   SkipConfig,
   UserPlayStat,
+  WatchingFollow,
 } from './types';
 
 const SEARCH_HISTORY_LIMIT = 20;
@@ -119,6 +120,13 @@ export class SqliteStorage implements IStorage {
       );
 
       CREATE TABLE IF NOT EXISTS reminders (
+        username TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (username, key)
+      );
+
+      CREATE TABLE IF NOT EXISTS watching_follows (
         username TEXT NOT NULL,
         key TEXT NOT NULL,
         value TEXT NOT NULL,
@@ -363,6 +371,51 @@ export class SqliteStorage implements IStorage {
       .run(userName, key);
   }
 
+  // ==================== 追更关注 ====================
+
+  async getWatchingFollow(
+    userName: string,
+    key: string,
+  ): Promise<WatchingFollow | null> {
+    const row = this.db
+      .prepare(
+        'SELECT value FROM watching_follows WHERE username = ? AND key = ?',
+      )
+      .get(userName, key) as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as WatchingFollow) : null;
+  }
+
+  async setWatchingFollow(
+    userName: string,
+    key: string,
+    follow: WatchingFollow,
+  ): Promise<void> {
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO watching_follows (username, key, value) VALUES (?, ?, ?)',
+      )
+      .run(userName, key, JSON.stringify(follow));
+  }
+
+  async getAllWatchingFollows(
+    userName: string,
+  ): Promise<Record<string, WatchingFollow>> {
+    const rows = this.db
+      .prepare('SELECT key, value FROM watching_follows WHERE username = ?')
+      .all(userName) as Array<{ key: string; value: string }>;
+    const result: Record<string, WatchingFollow> = {};
+    for (const row of rows) {
+      result[row.key] = JSON.parse(row.value) as WatchingFollow;
+    }
+    return result;
+  }
+
+  async deleteWatchingFollow(userName: string, key: string): Promise<void> {
+    this.db
+      .prepare('DELETE FROM watching_follows WHERE username = ? AND key = ?')
+      .run(userName, key);
+  }
+
   // ==================== 用户 V1 ====================
 
   async registerUser(userName: string, password: string): Promise<void> {
@@ -421,6 +474,9 @@ export class SqliteStorage implements IStorage {
         .run(userName);
       this.db.prepare('DELETE FROM favorites WHERE username = ?').run(userName);
       this.db.prepare('DELETE FROM reminders WHERE username = ?').run(userName);
+      this.db
+        .prepare('DELETE FROM watching_follows WHERE username = ?')
+        .run(userName);
       this.db
         .prepare('DELETE FROM search_history WHERE username = ?')
         .run(userName);
@@ -769,6 +825,7 @@ export class SqliteStorage implements IStorage {
       'play_records',
       'favorites',
       'reminders',
+      'watching_follows',
       'search_history',
       'skip_configs',
       'episode_skip_configs',

@@ -14,6 +14,7 @@ import {
   Reminder,
   SkipConfig,
   UserPlayStat,
+  WatchingFollow,
 } from './types';
 
 // 搜索历史最大条数
@@ -308,6 +309,54 @@ export abstract class BaseRedisStorage implements IStorage {
     await this.withRetry(() => this.client.del(this.reminderHashKey(userName)));
   }
 
+  // ---------- 追更关注 ----------
+  private watchingFollowHashKey(user: string) {
+    return `u:${user}:watching-follows`;
+  }
+
+  async getWatchingFollow(
+    userName: string,
+    key: string
+  ): Promise<WatchingFollow | null> {
+    const value = await this.withRetry(() =>
+      this.client.hGet(this.watchingFollowHashKey(userName), key)
+    );
+    return value ? (JSON.parse(value) as WatchingFollow) : null;
+  }
+
+  async setWatchingFollow(
+    userName: string,
+    key: string,
+    follow: WatchingFollow
+  ): Promise<void> {
+    await this.withRetry(() =>
+      this.client.hSet(
+        this.watchingFollowHashKey(userName),
+        key,
+        JSON.stringify(follow)
+      )
+    );
+  }
+
+  async getAllWatchingFollows(
+    userName: string
+  ): Promise<Record<string, WatchingFollow>> {
+    const all = await this.withRetry(() =>
+      this.client.hGetAll(this.watchingFollowHashKey(userName))
+    );
+    const result: Record<string, WatchingFollow> = {};
+    for (const [field, raw] of Object.entries(all)) {
+      if (raw) result[field] = JSON.parse(raw) as WatchingFollow;
+    }
+    return result;
+  }
+
+  async deleteWatchingFollow(userName: string, key: string): Promise<void> {
+    await this.withRetry(() =>
+      this.client.hDel(this.watchingFollowHashKey(userName), key)
+    );
+  }
+
   // ---------- 批量写入（hSet 支持多字段，一次命令）----------
   async setPlayRecordsBatch(
     userName: string,
@@ -400,6 +449,7 @@ export abstract class BaseRedisStorage implements IStorage {
     await this.withRetry(() => this.client.del(this.prHashKey(userName)));
     await this.withRetry(() => this.client.del(this.favHashKey(userName)));
     await this.withRetry(() => this.client.del(this.reminderHashKey(userName))); // 删除提醒
+    await this.withRetry(() => this.client.del(this.watchingFollowHashKey(userName)));
     await this.withRetry(() => this.client.del(this.skipHashKey(userName)));
     await this.withRetry(() => this.client.del(this.episodeSkipHashKey(userName)));
 
