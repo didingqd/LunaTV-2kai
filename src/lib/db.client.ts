@@ -18,6 +18,11 @@ import { QueryClient } from '@tanstack/react-query';
 import { getAuthInfoFromBrowserCookie } from './auth';
 import { SkipConfig, UserPlayStat, SkipSegment, EpisodeSkipConfig } from './types';
 import type { PlayRecord } from './types';
+import {
+  normalizePlayRecordKeys,
+  playbackFactsOnly,
+  playRecordStorageKey,
+} from './play-record';
 
 // 重新导出类型以保持API兼容性
 export type { PlayRecord, SkipConfig, SkipSegment, EpisodeSkipConfig } from './types';
@@ -787,85 +792,33 @@ export function generateStorageKey(source: string, id: string): string {
   return `${source}+${id}`;
 }
 
-/**
- * 检查是否应该更新原始集数
- *
- * 设计思路：original_episodes 记录的是"用户上次知道的总集数"
- * 当用户观看了超出原始集数的新集数后，说明用户已经"消费"了这次更新提醒
- * 此时应该更新 original_episodes，这样下次更新才能准确计算新增集数
- *
- * 更新条件（简化版，只需满足以下条件）：
- * 1. 用户观看了超过原始集数的集数（说明看了新更新的内容）
- * 2. 用户观看进度有实质性进展（防止误触）
- *
- * 关键修复：移除了对 newRecord.total_episodes 的依赖，因为前端传入的 total_episodes
- * 可能不是最新的。只要用户看了超过原始集数的集数，就说明用户已经知道了新集数的存在，
- * 应该从数据库/API获取最新的 total_episodes 并更新 original_episodes
- *
- * 例子：
- * - 第一次看到第6集 → original_episodes = 6
- * - 更新到第8集 → 提醒"2集新增"
- * - 用户看第7集 → original_episodes 更新为 8（用户已消费这次更新）
- * - 下次更新到第10集 → 提醒"2集新增"（10-8），而不是"4集新增"（10-6）
- */
-async function checkShouldUpdateOriginalEpisodes(existingRecord: PlayRecord, newRecord: PlayRecord, recordKey: string, skipFetch = false): Promise<{ shouldUpdate: boolean; latestTotalEpisodes: number }> {
-  // 🔧 优化：默认使用缓存数据，除非明确要求从数据库读取（skipFetch = false）
-  let originalEpisodes = existingRecord.original_episodes || existingRecord.total_episodes;
-  let freshRecord = existingRecord;
+export function generatePlayRecordStorageKey(source: string, id: string): string {
+  return playRecordStorageKey(source, id);
+}
 
-  // 🔧 优化：只在必要时才从数据库读取（例如用户切换集数时）
-  if (!skipFetch) {
-    try {
-      console.log(`🔍 从数据库读取最新的 original_episodes (${recordKey})...`);
-      const freshRecordsResponse = await fetch('/api/playrecords');
-      if (freshRecordsResponse.ok) {
-        const freshRecords = await freshRecordsResponse.json();
+function normalizePlayRecords(
+  records: Record<string, PlayRecord>,
+): Record<string, PlayRecord> {
+  return normalizePlayRecordKeys(records).records;
+}
 
-        // 🔑 关键修复：直接用 recordKey 匹配，确保是同一个 source+id
-        if (freshRecords[recordKey]) {
-          freshRecord = freshRecords[recordKey];
-          originalEpisodes = freshRecord.original_episodes || freshRecord.total_episodes;
+function restoreCachedPlayRecords(
+  records: Record<string, PlayRecord> | null,
+): void {
+  cacheManager.cachePlayRecords(records ?? {});
+}
 
-          // 🔧 自动修复：如果 original_episodes 大于当前 total_episodes，说明之前存错了
-          if (originalEpisodes > freshRecord.total_episodes) {
-            console.warn(`⚠️ 检测到错误数据：original_episodes(${originalEpisodes}) > total_episodes(${freshRecord.total_episodes})，自动修正为 ${freshRecord.total_episodes}`);
-            originalEpisodes = freshRecord.total_episodes;
-            freshRecord.original_episodes = freshRecord.total_episodes;
-          }
-
-          console.log(`📚 从数据库读取到最新 original_episodes: ${existingRecord.title} (${recordKey}) = ${originalEpisodes}集`);
-        } else {
-          console.warn(`⚠️ 数据库中未找到记录: ${recordKey}`);
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ 从数据库读取 original_episodes 失败，使用缓存值', error);
-    }
-  }
-
-  // 条件1：用户观看进度超过了原始集数（说明用户已经看了新更新的集数）
-  const hasWatchedBeyondOriginal = newRecord.index > originalEpisodes;
-
-  // 条件2：用户观看进度有实质性进展（不是刚点进去就退出）
-  const hasSignificantProgress = newRecord.play_time > 60; // 观看超过1分钟
-
-  if (!hasWatchedBeyondOriginal || !hasSignificantProgress) {
-    console.log(`✗ 不更新原始集数: ${existingRecord.title} - 观看第${newRecord.index}集，原始${originalEpisodes}集 (${hasWatchedBeyondOriginal ? '观看时间不足' : '未超过原始集数'})`);
-    return { shouldUpdate: false, latestTotalEpisodes: newRecord.total_episodes };
-  }
-
-  // 用户看了超过原始集数的集数，获取最新的 total_episodes
-  console.log(`🔍 用户看了第${newRecord.index}集（超过原始${originalEpisodes}集），从数据库获取最新集数...`);
-
+async function revalidatePlayRecordsCache(): Promise<void> {
   try {
-    const latestTotalEpisodes = Math.max(freshRecord.total_episodes, originalEpisodes, newRecord.total_episodes);
-    console.log(`✓ 应更新原始集数: ${existingRecord.title} - 用户看了第${newRecord.index}集（超过原始${originalEpisodes}集），数据库最新集数${freshRecord.total_episodes}集，播放器集数${newRecord.total_episodes}集 → 更新原始集数为${latestTotalEpisodes}集`);
-
-    return { shouldUpdate: true, latestTotalEpisodes };
+    const freshData = normalizePlayRecords(
+      await fetchFromApi<Record<string, PlayRecord>>('/api/playrecords'),
+    );
+    cacheManager.cachePlayRecords(freshData);
+    window.dispatchEvent(
+      new CustomEvent('playRecordsUpdated', { detail: freshData }),
+    );
   } catch (error) {
-    console.error('❌ 获取最新集数失败:', error);
-    // 失败时仍然更新，使用保守的值
-    return { shouldUpdate: true, latestTotalEpisodes: Math.max(newRecord.total_episodes, originalEpisodes, existingRecord.total_episodes) };
+    console.warn('[后台同步] 播放记录校准失败，保留当前缓存:', error);
   }
 }
 
@@ -888,7 +841,9 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
     if (forceRefresh) {
       try {
         console.log('🔄 强制刷新播放记录，跳过缓存直接从API获取');
-        const freshData = await fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`);
+        const freshData = normalizePlayRecords(
+          await fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`),
+        );
         cacheManager.cachePlayRecords(freshData);
         // 触发数据更新事件
         window.dispatchEvent(
@@ -901,12 +856,16 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
         console.error('强制刷新播放记录失败:', err);
         // 失败时尝试返回缓存数据作为降级
         const cachedData = cacheManager.getCachedPlayRecords();
-        return cachedData || {};
+        return cachedData ? normalizePlayRecords(cachedData) : {};
       }
     }
 
     // 优先从缓存获取数据
-    const cachedData = cacheManager.getCachedPlayRecords();
+    const cachedRawData = cacheManager.getCachedPlayRecords();
+    const cachedData = cachedRawData
+      ? normalizePlayRecords(cachedRawData)
+      : null;
+    if (cachedData) cacheManager.cachePlayRecords(cachedData);
 
     if (cachedData) {
       // 检查是否需要后台同步（60秒内不重复同步）
@@ -916,7 +875,8 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
 
       // 返回缓存数据，同时后台异步更新
       fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-        .then((freshData) => {
+        .then((rawFreshData) => {
+          const freshData = normalizePlayRecords(rawFreshData);
           // 只有数据真正不同时才更新缓存
           if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
             cacheManager.cachePlayRecords(freshData);
@@ -938,9 +898,11 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
       // 缓存为空，直接从 API 获取并缓存（带重试）
       try {
         console.log('📥 缓存为空，从API获取播放记录（带重试机制）');
-        const freshData = await fetchFromApi<Record<string, PlayRecord>>(
-          `/api/playrecords`,
-          2 // 最多重试2次
+        const freshData = normalizePlayRecords(
+          await fetchFromApi<Record<string, PlayRecord>>(
+            `/api/playrecords`,
+            2 // 最多重试2次
+          ),
         );
         cacheManager.cachePlayRecords(freshData);
         console.log('✓ 成功获取并缓存播放记录');
@@ -966,7 +928,12 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
   try {
     const raw = localStorage.getItem(PLAY_RECORDS_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, PlayRecord>;
+    const parsed = JSON.parse(raw) as Record<string, PlayRecord>;
+    const normalized = normalizePlayRecordKeys(parsed);
+    if (normalized.changed) {
+      localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(normalized.records));
+    }
+    return normalized.records;
   } catch (err) {
     console.error('读取播放记录失败:', err);
     return {};
@@ -982,52 +949,18 @@ export async function savePlayRecord(
   id: string,
   record: PlayRecord
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
-
-  // 🔧 优化：优先使用缓存数据，避免每次保存都请求服务器
-  // 只在缓存为空时才从服务器获取
-  let existingRecords = cacheManager.getCachedPlayRecords();
-  if (!existingRecords || Object.keys(existingRecords).length === 0) {
-    existingRecords = await getAllPlayRecords();
-  }
-  const existingRecord = existingRecords[key];
-
-  // 🔑 关键修复：确保 original_episodes 一定有值，否则新集数检测永远失效
-  // 优先级：传入值 > 现有记录值 > 当前 total_episodes
-  if (!record.original_episodes || record.original_episodes <= 0) {
-    if (existingRecord?.original_episodes && existingRecord.original_episodes > 0) {
-      // 使用现有记录的 original_episodes
-      record.original_episodes = existingRecord.original_episodes;
-      console.log(`✓ 使用现有原始集数: ${key} = ${existingRecord.original_episodes}集`);
-    } else {
-      // 首次保存或旧数据补充：使用当前 total_episodes
-      record.original_episodes = record.total_episodes;
-      console.log(`✓ 设置原始集数: ${key} = ${record.total_episodes}集 ${existingRecord ? '(补充旧数据)' : '(首次保存)'}`);
-    }
-  }
-
-  // 检查用户是否观看了超过原始集数的新集数
-  let shouldClearCache = false;
-  if (existingRecord?.original_episodes && existingRecord.original_episodes > 0) {
-    // 🔧 优化：在常规保存时跳过 fetch（skipFetch = true），使用缓存数据检查
-    // 这样可以避免每次保存都发送 GET 请求，大幅减少网络开销
-    const updateResult = await checkShouldUpdateOriginalEpisodes(existingRecord, record, key, true);
-    if (updateResult.shouldUpdate) {
-      record.original_episodes = updateResult.latestTotalEpisodes;
-      // 🔑 同时更新 total_episodes 为最新值
-      record.total_episodes = updateResult.latestTotalEpisodes;
-      console.log(`✓ 更新原始集数: ${key} = ${existingRecord.original_episodes}集 -> ${updateResult.latestTotalEpisodes}集（用户已观看新集数）`);
-
-      // 🔑 标记需要清除缓存（在数据库更新成功后执行）
-      shouldClearCache = true;
-    }
-  }
+  const key = generatePlayRecordStorageKey(source, id);
+  const playbackRecord = playbackFactsOnly(record) as PlayRecord;
+  const currentCachedRecords = cacheManager.getCachedPlayRecords();
+  const previousCachedRecords = currentCachedRecords
+    ? { ...currentCachedRecords }
+    : null;
 
   // 数据库存储模式：乐观更新策略（包括 redis、upstash 和 kvrocks）
   if (STORAGE_TYPE !== 'localstorage') {
     // 立即更新缓存
     const cachedRecords = cacheManager.getCachedPlayRecords() || {};
-    cachedRecords[key] = record;
+    cachedRecords[key] = playbackRecord;
     cacheManager.cachePlayRecords(cachedRecords);
 
     // 触发立即更新事件
@@ -1044,30 +977,19 @@ export async function savePlayRecord(
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ key, record }),
+        body: JSON.stringify({ key, record: playbackRecord }),
       });
 
-      // 🔑 关键修复：数据库更新成功后，invalidate TanStack Query 缓存
-      if (shouldClearCache) {
-        try {
-          // Invalidate 播放记录和追番更新缓存
-          invalidateQueryCache(['playRecords']);
-          invalidateQueryCache(['watchingUpdates']);
-
-          console.log('✅ 数据库更新成功，已 invalidate TanStack Query 缓存');
-        } catch (cacheError) {
-          console.warn('Invalidate 缓存失败:', cacheError);
-        }
-      } else {
-        // 常规保存也需要 invalidate，确保数据同步
-        invalidateQueryCache(['playRecords']);
-      }
+      invalidateQueryCache(['playRecords']);
+      invalidateQueryCache(['watchingUpdates']);
+      await revalidatePlayRecordsCache();
 
       // 异步更新用户统计数据（不阻塞主流程）
-      updateUserStats(record).catch(err => {
+      updateUserStats(playbackRecord).catch(err => {
         console.warn('更新用户统计数据失败:', err);
       });
     } catch (err) {
+      restoreCachedPlayRecords(previousCachedRecords);
       await handleDatabaseOperationFailure('playRecords', err);
       throw err;
     }
@@ -1082,7 +1004,7 @@ export async function savePlayRecord(
 
   try {
     const allRecords = await getAllPlayRecords();
-    allRecords[key] = record;
+    allRecords[key] = playbackRecord;
     localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
     window.dispatchEvent(
       new CustomEvent('playRecordsUpdated', {
@@ -1091,7 +1013,7 @@ export async function savePlayRecord(
     );
 
     // 异步更新用户统计数据（不阻塞主流程）
-    updateUserStats(record).catch(err => {
+    updateUserStats(playbackRecord).catch(err => {
       console.warn('更新用户统计数据失败:', err);
     });
   } catch (err) {
@@ -1108,10 +1030,18 @@ export async function deletePlayRecord(
   source: string,
   id: string
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
+  const key = generatePlayRecordStorageKey(source, id);
+  const currentCachedRecords = cacheManager.getCachedPlayRecords();
+  const previousCachedRecords = currentCachedRecords
+    ? { ...currentCachedRecords }
+    : null;
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
+    if (currentCachedRecords) {
+      delete currentCachedRecords[key];
+      cacheManager.cachePlayRecords(currentCachedRecords);
+    }
     // 触发立即更新事件（保持向后兼容）
     window.dispatchEvent(
       new CustomEvent('playRecordsUpdated', {
@@ -1128,7 +1058,9 @@ export async function deletePlayRecord(
       // Invalidate TanStack Query 缓存
       invalidateQueryCache(['playRecords']);
       invalidateQueryCache(['watchingUpdates']);
+      await revalidatePlayRecordsCache();
     } catch (err) {
+      restoreCachedPlayRecords(previousCachedRecords);
       await handleDatabaseOperationFailure('playRecords', err);
       triggerGlobalError('删除播放记录失败');
       throw err;
@@ -1626,6 +1558,10 @@ export async function isFavorited(
  * 数据库存储模式下使用乐观更新：先更新缓存，再异步同步到数据库。
  */
 export async function clearAllPlayRecords(): Promise<void> {
+  const currentCachedRecords = cacheManager.getCachedPlayRecords();
+  const previousCachedRecords = currentCachedRecords
+    ? { ...currentCachedRecords }
+    : null;
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
     // 立即更新缓存
@@ -1644,7 +1580,9 @@ export async function clearAllPlayRecords(): Promise<void> {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
       });
+      await revalidatePlayRecordsCache();
     } catch (err) {
+      restoreCachedPlayRecords(previousCachedRecords);
       await handleDatabaseOperationFailure('playRecords', err);
       triggerGlobalError('清空播放记录失败');
       throw err;

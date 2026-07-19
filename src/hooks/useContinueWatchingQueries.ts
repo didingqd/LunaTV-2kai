@@ -3,6 +3,8 @@
 import { useQuery, queryOptions } from '@tanstack/react-query';
 import { usePlayRecordsArrayQuery } from './usePlayRecordsQuery';
 import { useWatchingUpdatesQuery as useWatchingUpdates } from './useWatchingUpdates';
+import { normalizePlayRecordKeys } from '@/lib/play-record';
+import type { PlayRecord } from '@/lib/types';
 
 /**
  * Query options for continue watching records
@@ -14,7 +16,9 @@ const continueWatchingOptions = () => queryOptions({
     if (!response.ok) {
       throw new Error(`Failed to fetch play records: ${response.status}`);
     }
-    const allRecords = await response.json();
+    const allRecords = normalizePlayRecordKeys(
+      (await response.json()) as Record<string, PlayRecord>,
+    ).records;
     const recordsArray = Object.entries(allRecords).map(([key, record]: [string, any]) => ({
       ...record,
       key,
@@ -24,6 +28,7 @@ const continueWatchingOptions = () => queryOptions({
   },
   staleTime: 2 * 60 * 1000, // 2 minutes
   gcTime: 10 * 60 * 1000,
+  refetchOnMount: 'always',
 });
 
 /**

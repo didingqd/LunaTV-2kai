@@ -17,6 +17,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { playRecordStorageKey } from '@/lib/play-record';
 import {
   savePlayRecord,
   saveFavorite,
@@ -108,7 +109,7 @@ export function useSavePlayRecordMutation(): UseMutationResult<
 
       // 3. 乐观更新缓存
       queryClient.setQueryData<Record<string, PlayRecord>>(['playRecords'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = playRecordStorageKey(source, id);
         return {
           ...old,
           [key]: record,

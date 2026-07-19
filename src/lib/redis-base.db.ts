@@ -4,6 +4,7 @@ import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
 import { hashPassword as hashPwd, isHashed, verifyPassword } from './password';
+import { parsePlayRecordStorageKey } from './play-record';
 import {
   ContentStat,
   EpisodeSkipConfig,
@@ -1437,10 +1438,11 @@ export abstract class BaseRedisStorage implements IStorage {
       // 转换为ContentStat数组并排序
       const contentStats: ContentStat[] = Array.from(contentMap.entries())
         .map(([key, data]) => {
-          const [source, id] = key.split('+');
+          const identity = parsePlayRecordStorageKey(key);
+          if (!identity) return null;
           return {
-            source,
-            id,
+            source: identity.source,
+            id: identity.id,
             title: data.record.title,
             source_name: data.record.source_name,
             cover: data.record.cover,

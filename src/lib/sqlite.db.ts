@@ -13,6 +13,7 @@ type DatabaseSync = any;
 
 import { AdminConfig } from './admin.types';
 import { hashPassword as hashPwd, isHashed, verifyPassword } from './password';
+import { parsePlayRecordStorageKey } from './play-record';
 import {
   ContentStat,
   CrashLog,
@@ -1271,12 +1272,11 @@ export class SqliteStorage implements IStorage {
           const firstVal = entries.length > 0 ? entries[0] : null;
           if (!firstVal) return null;
           const record = JSON.parse(firstVal) as PlayRecord;
-          const sep = row.key.indexOf('+');
-          const source = sep >= 0 ? row.key.substring(0, sep) : '';
-          const id = sep >= 0 ? row.key.substring(sep + 1) : row.key;
+          const identity = parsePlayRecordStorageKey(row.key);
+          if (!identity) return null;
           return {
-            source,
-            id,
+            source: identity.source,
+            id: identity.id,
             title: record.title,
             source_name: record.source_name,
             cover: record.cover,

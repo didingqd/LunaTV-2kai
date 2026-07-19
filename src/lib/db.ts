@@ -19,6 +19,11 @@ import {
 import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
 import {
+  legacyPlayRecordStorageKey,
+  parsePlayRecordStorageKey,
+  playRecordStorageKey,
+} from './play-record';
+import {
   assertWatchingFollowCanBeStored,
   migrateStoredWatchingFollow,
   watchingFollowStorageKey,
@@ -76,8 +81,8 @@ export function generateStorageKey(source: string, id: string): string {
 export class DbManager {
   private storage: IStorage;
 
-  constructor() {
-    this.storage = getStorage();
+  constructor(storage?: IStorage) {
+    this.storage = storage ?? getStorage();
     // 启动时自动触发数据迁移（异步，不阻塞构造）
     if (
       this.storage &&
@@ -103,8 +108,21 @@ export class DbManager {
     id: string,
   ): Promise<PlayRecord | null> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
-    return this.storage.getPlayRecord(userName, key);
+    const key = playRecordStorageKey(source, id);
+    const current = await this.storage.getPlayRecord(userName, key);
+    const legacyKey = legacyPlayRecordStorageKey(source, id);
+    if (current) {
+      if (legacyKey !== key) {
+        await this.storage.deletePlayRecord(userName, legacyKey);
+      }
+      return current;
+    }
+
+    const legacy = await this.storage.getPlayRecord(userName, legacyKey);
+    if (!legacy) return null;
+    await this.storage.setPlayRecord(userName, key, legacy);
+    await this.storage.deletePlayRecord(userName, legacyKey);
+    return legacy;
   }
 
   async savePlayRecord(
@@ -114,15 +132,39 @@ export class DbManager {
     record: PlayRecord,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = playRecordStorageKey(source, id);
     await this.storage.setPlayRecord(userName, key, record);
+    const legacyKey = legacyPlayRecordStorageKey(source, id);
+    if (legacyKey !== key) {
+      await this.storage.deletePlayRecord(userName, legacyKey);
+    }
   }
 
   async getAllPlayRecords(userName: string): Promise<{
     [key: string]: PlayRecord;
   }> {
     incrementDbQuery();
-    return this.storage.getAllPlayRecords(userName);
+    const stored = await this.storage.getAllPlayRecords(userName);
+    const result: Record<string, PlayRecord> = {};
+
+    for (const [storedKey, record] of Object.entries(stored)) {
+      const identity = parsePlayRecordStorageKey(storedKey);
+      if (!identity || identity.isLegacy) continue;
+      result[playRecordStorageKey(identity.source, identity.id)] = record;
+    }
+
+    for (const [storedKey, record] of Object.entries(stored)) {
+      const identity = parsePlayRecordStorageKey(storedKey);
+      if (!identity || !identity.isLegacy) continue;
+      const key = playRecordStorageKey(identity.source, identity.id);
+      if (!(key in result)) {
+        result[key] = record;
+        await this.storage.setPlayRecord(userName, key, record);
+      }
+      await this.storage.deletePlayRecord(userName, storedKey);
+    }
+
+    return result;
   }
 
   async deletePlayRecord(
@@ -131,8 +173,12 @@ export class DbManager {
     id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = playRecordStorageKey(source, id);
     await this.storage.deletePlayRecord(userName, key);
+    const legacyKey = legacyPlayRecordStorageKey(source, id);
+    if (legacyKey !== key) {
+      await this.storage.deletePlayRecord(userName, legacyKey);
+    }
   }
 
   // 🚀 批量保存播放记录（Upstash 优化，使用 mset 只算1条命令）
@@ -147,10 +193,18 @@ export class DbManager {
       incrementDbQuery();
       const batchData: { [key: string]: PlayRecord } = {};
       for (const { source, id, record } of records) {
-        const key = generateStorageKey(source, id);
+        const key = playRecordStorageKey(source, id);
         batchData[key] = record;
       }
       await this.storage.setPlayRecordsBatch(userName, batchData);
+      await Promise.all(
+        records.map(({ source, id }) =>
+          this.storage.deletePlayRecord(
+            userName,
+            legacyPlayRecordStorageKey(source, id),
+          ),
+        ),
+      );
     } else {
       // 回退：逐条保存
       for (const { source, id, record } of records) {

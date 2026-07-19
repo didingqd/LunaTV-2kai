@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient, queryOptions } from '@tanstack/react-query';
 import { checkForUpdates, type UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord } from '@/lib/types';
+import { normalizePlayRecordKeys } from '@/lib/play-record';
 
 // ─── Emby Config Types ──────────────────────────────────────────────────────
 
@@ -162,7 +163,9 @@ const playRecordsOptions = (
     if (!response.ok) {
       throw new Error(`Failed to fetch play records: ${response.status}`);
     }
-    const records = await response.json() as Record<string, PlayRecord>;
+    const records = normalizePlayRecordKeys(
+      (await response.json()) as Record<string, PlayRecord>,
+    ).records;
 
     const recordsArray = Object.entries(records).map(([key, record]) => ({
       ...record,
@@ -191,6 +194,7 @@ const playRecordsOptions = (
   },
   staleTime: 15 * 1000,
   gcTime: 10 * 60 * 1000,
+  refetchOnMount: 'always',
 });
 
 /**

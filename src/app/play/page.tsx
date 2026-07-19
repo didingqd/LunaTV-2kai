@@ -62,7 +62,7 @@ import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
-  generateStorageKey,
+  generatePlayRecordStorageKey,
   getAllFavorites,
   getAllPlayRecords,
   getSkipConfig,
@@ -3959,7 +3959,7 @@ function PlayPageClient() {
 
       try {
         const allRecords = await getAllPlayRecords();
-        const key = generateStorageKey(currentSource, currentId);
+        const key = generatePlayRecordStorageKey(currentSource, currentId);
         const record = allRecords[key];
 
         if (record) {
@@ -4280,7 +4280,10 @@ function PlayPageClient() {
       // 🔥 优化：检查目标集数是否有历史播放记录
       try {
         const allRecords = await getAllPlayRecords();
-        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
+        const key = generatePlayRecordStorageKey(
+          currentSourceRef.current,
+          currentIdRef.current,
+        );
         const record = allRecords[key];
 
         // 如果历史记录的集数与目标集数匹配，且有播放进度
@@ -4611,11 +4614,6 @@ function PlayPageClient() {
 
     try {
       // 获取现有播放记录以保持原始集数
-      const existingRecord = await getAllPlayRecords().then(records => {
-        const key = generateStorageKey(currentSourceRef.current, currentIdRef.current);
-        return records[key];
-      }).catch(() => null);
-
       const currentTotalEpisodes = detailRef.current?.episodes.length || 1;
 
       // 尝试从换源列表中获取更准确的 remarks（搜索接口比详情接口更可能有 remarks）
@@ -4634,7 +4632,6 @@ function PlayPageClient() {
           cover: detailRef.current?.poster || '',
           index: currentEpisodeIndexRef.current + 1,
           total_episodes: currentTotalEpisodes,
-          original_episodes: existingRecord?.original_episodes,
           play_time: Math.floor(currentTime),
           total_time: Math.floor(duration),
           save_time: Date.now(),

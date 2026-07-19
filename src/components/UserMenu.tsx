@@ -35,6 +35,7 @@ import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { CURRENT_VERSION } from '@/lib/version';
 import { UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord, Favorite } from '@/lib/types';
+import { parsePlayRecordStorageKey } from '@/lib/play-record';
 
 import { useDownload } from '@/contexts/DownloadContext';
 
@@ -342,11 +343,7 @@ export const UserMenu: React.FC = () => {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const separator = key.indexOf('+');
-    if (separator <= 0) return { source: key, id: '' };
-    const source = key.slice(0, separator);
-    const id = key.slice(separator + 1);
-    return { source, id };
+    return parsePlayRecordStorageKey(key) ?? { source: key, id: '' };
   };
 
   const resolveSourceKey = (source: string) =>

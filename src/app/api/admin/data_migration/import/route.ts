@@ -8,6 +8,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
+import { parsePlayRecordStorageKey } from '@/lib/play-record';
 import {
   MANUAL_ORIGIN,
   normalizeRemarks,
@@ -138,6 +139,11 @@ export async function POST(req: NextRequest) {
       // 导入播放记录（带数据升级）
       if (user.playRecords) {
         for (const [key, record] of Object.entries(user.playRecords)) {
+          const identity = parsePlayRecordStorageKey(key);
+          if (!identity) {
+            console.warn(`跳过用户 ${username} 的无效播放记录键: ${key}`);
+            continue;
+          }
           // 数据升级：确保所有必需字段存在
           const recordData = record as any;
           const upgradedRecord = {
@@ -151,9 +157,10 @@ export async function POST(req: NextRequest) {
             // 确保 original_episodes 字段存在
             original_episodes: recordData.original_episodes || undefined,
           };
-          await (db as any).storage.setPlayRecord(
+          await db.savePlayRecord(
             username,
-            key,
+            identity.source,
+            identity.id,
             upgradedRecord,
           );
         }

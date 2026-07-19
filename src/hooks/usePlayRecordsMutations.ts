@@ -17,6 +17,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { playRecordStorageKey } from '@/lib/play-record';
 import {
   savePlayRecord,
   deletePlayRecord,
@@ -108,7 +109,7 @@ export function useSavePlayRecordMutation(): UseMutationResult<
 
       // 3. 立即更新缓存（乐观更新）
       queryClient.setQueryData<Record<string, PlayRecord>>(['playRecords'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = playRecordStorageKey(source, id);
         return {
           ...old,
           [key]: record,
@@ -182,7 +183,7 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
       const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
 
       // 3. 立即从缓存中删除
-      const key = `${source}+${id}`;
+      const key = playRecordStorageKey(source, id);
       queryClient.setQueryData<Record<string, PlayRecord>>(['playRecords'], (old = {}) => {
         const newRecords = { ...old };
         delete newRecords[key];

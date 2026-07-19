@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { watchingFollowsQueryOptions } from './useWatchingFollows';
 import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { getAllPlayRecords } from '@/lib/db.client';
+import { parsePlayRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
   loadWatchCompletionThreshold,
@@ -71,17 +72,6 @@ export interface WatchingFollowDetectionCandidate {
   record: PlayRecord & { key: string };
 }
 
-function parseLegacyPlayRecordKey(
-  key: string,
-): { source: string; id: string } | null {
-  const separator = key.indexOf('+');
-  if (separator <= 0 || separator === key.length - 1) return null;
-  return {
-    source: key.slice(0, separator),
-    id: key.slice(separator + 1),
-  };
-}
-
 /** Build detection inputs by joining explicit follows to playback facts. */
 export function buildWatchingFollowCandidates(
   follows: Record<string, WatchingFollow>,
@@ -91,7 +81,7 @@ export function buildWatchingFollowCandidates(
   const recordsByIdentity = new Map<string, PlayRecord & { key: string }>();
 
   for (const record of records) {
-    const parsed = parseLegacyPlayRecordKey(record.key);
+    const parsed = parsePlayRecordStorageKey(record.key);
     if (!parsed) continue;
 
     const rawSource = parsed.source;

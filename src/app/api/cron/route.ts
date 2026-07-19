@@ -13,6 +13,7 @@ import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/perform
 import { cleanupExpiredCache, validateCacheSize } from '@/lib/video-cache';
 import { cronCache } from '@/lib/server-cache';
 import { DEFAULT_CRON_CONFIG } from '@/lib/admin.types';
+import { parsePlayRecordStorageKey } from '@/lib/play-record';
 
 export const runtime = 'nodejs';
 
@@ -672,19 +673,12 @@ async function refreshRecordAndFavorites() {
         const { results: recordResults, errors: recordErrors } = await processBatch(
           recordsToProcess,
           async ([key, record]) => {
-            const [source, id] = key.split('+');
-            if (!source || !id) {
+            const identity = parsePlayRecordStorageKey(key);
+            if (!identity) {
               console.warn(`跳过无效的播放记录键: ${key}`);
               return null;
             }
-
-            // 🔥 优化 3: 仅刷新连载中的剧集（已完结的跳过）
-            if (cronConfig.onlyRefreshOngoing) {
-              if (record.original_episodes && record.total_episodes >= record.original_episodes) {
-                console.log(`⏭️ 跳过已完结剧集: ${record.title} (${record.total_episodes}/${record.original_episodes})`);
-                return null;
-              }
-            }
+            const { source, id } = identity;
 
             const detail = await getDetail(source, id, record.title);
             if (!detail) {

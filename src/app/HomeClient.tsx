@@ -39,6 +39,7 @@ import { useFavoritesQuery } from '@/hooks/useFavoritesQuery';
 import { usePlayRecordsQuery } from '@/hooks/usePlayRecordsQuery';
 import { useRemindersQuery } from '@/hooks/useRemindersQuery';
 import { useWatchingUpdatesQuery } from '@/hooks/useWatchingUpdates';
+import { playRecordStorageKey } from '@/lib/play-record';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -558,7 +559,7 @@ function HomeClient({
         const id = key.slice(plusIndex + 1);
 
         // 查找对应的播放记录，获取当前集数
-        const playRecord = allPlayRecords[key];
+        const playRecord = allPlayRecords[playRecordStorageKey(source, id)];
         const currentEpisode = playRecord?.index;
 
         return {

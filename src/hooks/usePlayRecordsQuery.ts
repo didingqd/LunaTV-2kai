@@ -17,6 +17,7 @@
 
 import { useQuery, queryOptions } from '@tanstack/react-query';
 import type { PlayRecord } from '@/lib/types';
+import { normalizePlayRecordKeys, playRecordStorageKey } from '@/lib/play-record';
 
 // ============================================================================
 // Query Options（可复用的查询配置）
@@ -40,7 +41,7 @@ export const playRecordsQueryOptions = queryOptions({
     }
 
     const data = await response.json();
-    return data as Record<string, PlayRecord>;
+    return normalizePlayRecordKeys(data as Record<string, PlayRecord>).records;
   },
   // 5分钟内数据被认为是新鲜的，不会重新请求
   staleTime: 5 * 60 * 1000,
@@ -48,6 +49,7 @@ export const playRecordsQueryOptions = queryOptions({
   gcTime: 10 * 60 * 1000,
   // 重试1次（默认3次太多）
   retry: 1,
+  refetchOnMount: 'always',
 });
 
 // ============================================================================
@@ -117,7 +119,9 @@ export function usePlayRecordsArrayQuery(options?: { enabled?: boolean }) {
         throw new Error(`Failed to fetch play records: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, PlayRecord>;
+      const data = normalizePlayRecordKeys(
+        (await response.json()) as Record<string, PlayRecord>,
+      ).records;
 
       // 转换为数组并排序
       const recordsArray = Object.entries(data).map(([key, record]) => ({
@@ -131,6 +135,7 @@ export function usePlayRecordsArrayQuery(options?: { enabled?: boolean }) {
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     retry: 1,
+    refetchOnMount: 'always',
     enabled: options?.enabled,
   });
 }
@@ -165,14 +170,17 @@ export function usePlayRecordQuery(
         throw new Error(`Failed to fetch play records: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, PlayRecord>;
-      const key = `${source}+${id}`;
+      const data = normalizePlayRecordKeys(
+        (await response.json()) as Record<string, PlayRecord>,
+      ).records;
+      const key = playRecordStorageKey(source, id);
 
       return data[key] || null;
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     retry: 1,
+    refetchOnMount: 'always',
     enabled: options?.enabled,
   });
 }

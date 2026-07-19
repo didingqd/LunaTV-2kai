@@ -7,6 +7,10 @@ import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/performance-monitor';
 import { PlayRecord } from '@/lib/types';
+import {
+  parsePlayRecordStorageKey,
+  playbackFactsOnly,
+} from '@/lib/play-record';
 
 export const runtime = 'nodejs';
 
@@ -249,9 +253,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse, { status: 400 });
     }
 
-    // 从key中解析source和id
-    const [source, id] = key.split('+');
-    if (!source || !id) {
+    const identity = parsePlayRecordStorageKey(key);
+    if (!identity) {
       const errorResponse = { error: 'Invalid key format' };
       const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -271,23 +274,16 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取现有播放记录以保持原始集数
+    const { source, id } = identity;
     const existingRecord = await db.getPlayRecord(authInfo.username, source, id);
-
-    // 🔑 关键修复：信任客户端传来的 original_episodes（已经过 checkShouldUpdateOriginalEpisodes 验证）
-    // 只有在客户端没有提供时，才使用数据库中的值作为 fallback
-    let originalEpisodes: number;
-    if (record.original_episodes !== undefined && record.original_episodes !== null) {
-      // 客户端已经设置了 original_episodes，信任它（可能是更新后的值）
-      originalEpisodes = record.original_episodes;
-    } else {
-      // 客户端没有提供，使用数据库中的值或当前 total_episodes
-      originalEpisodes = existingRecord?.original_episodes || existingRecord?.total_episodes || record.total_episodes;
-    }
+    const playbackFacts = playbackFactsOnly(record);
 
     const finalRecord = {
-      ...record,
+      ...playbackFacts,
       save_time: record.save_time ?? Date.now(),
-      original_episodes: originalEpisodes,
+      ...(existingRecord?.original_episodes !== undefined
+        ? { original_episodes: existingRecord.original_episodes }
+        : {}),
     } as PlayRecord;
 
     await db.savePlayRecord(authInfo.username, source, id, finalRecord);
@@ -416,8 +412,8 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 如果提供了 key，删除单条播放记录
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const identity = parsePlayRecordStorageKey(key);
+      if (!identity) {
         const errorResponse = { error: 'Invalid key format' };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -436,15 +432,21 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json(errorResponse, { status: 400 });
       }
 
-      await db.deletePlayRecord(username, source, id);
+      await db.deletePlayRecord(username, identity.source, identity.id);
     } else {
       // 未提供 key，则清空全部播放记录
       // 目前 DbManager 没有对应方法，这里直接遍历删除
       const all = await db.getAllPlayRecords(username);
       await Promise.all(
-        Object.keys(all).map(async (k) => {
-          const [s, i] = k.split('+');
-          if (s && i) await db.deletePlayRecord(username, s, i);
+        Object.keys(all).map(async (key) => {
+          const identity = parsePlayRecordStorageKey(key);
+          if (identity) {
+            await db.deletePlayRecord(
+              username,
+              identity.source,
+              identity.id,
+            );
+          }
         })
       );
     }

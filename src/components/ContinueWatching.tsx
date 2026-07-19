@@ -5,6 +5,7 @@ import { Clock, Trash2 } from 'lucide-react';
 import { useEffect, useState, memo } from 'react';
 
 import type { PlayRecord } from '@/lib/db.client';
+import { parsePlayRecordStorageKey } from '@/lib/play-record';
 // 🚀 TanStack Query Mutations
 import { useClearPlayRecordsMutation } from '@/hooks/usePlayRecordsMutations';
 // 🚀 TanStack Query Queries
@@ -61,11 +62,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const separator = key.indexOf('+');
-    if (separator <= 0) return { source: key, id: '' };
-    const source = key.slice(0, separator);
-    const id = key.slice(separator + 1);
-    return { source, id };
+    return parsePlayRecordStorageKey(key) ?? { source: key, id: '' };
   };
 
   // 检查播放记录是否有新集数更新

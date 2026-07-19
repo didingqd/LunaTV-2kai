@@ -1,5 +1,6 @@
 import type { PlayRecord, WatchingFollow } from '@/lib/types';
 import { watchingFollowKey } from '@/lib/api/watching-follow';
+import { playRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
   watchedEpisodesForRecord,
@@ -184,7 +185,9 @@ describe('WatchingFollow update detection candidates', () => {
 
   it('preserves plus signs in PlayRecord ids when joining candidates', () => {
     const follow = createFollow({ id: 'video+1' });
-    const record = createRecord({ key: 'source-a+video+1' });
+    const record = createRecord({
+      key: playRecordStorageKey('source-a', 'video+1'),
+    });
 
     expect(
       buildWatchingFollowCandidates(
@@ -215,7 +218,7 @@ function createRecord(
   overrides: Partial<PlayRecord & { key: string }> = {},
 ): PlayRecord & { key: string } {
   return {
-    key: 'source-a+video-1',
+    key: playRecordStorageKey('source-a', 'video-1'),
     title: 'Demo',
     source_name: 'Source A',
     cover: 'cover.jpg',
