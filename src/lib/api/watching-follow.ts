@@ -1,12 +1,16 @@
 import type { WatchingFollow } from '@/lib/types';
+import {
+  migrateStoredWatchingFollow,
+  watchingFollowStorageKey,
+} from '@/lib/watching-follow';
 
 export const LOCAL_WATCHING_FOLLOWS_KEY = 'watching_follows_local_v1';
 
 export type CreateWatchingFollowInput = Pick<
   WatchingFollow,
-  'source' | 'id' | 'title' | 'cover' | 'year' | 'originalEpisodes'
+  'source' | 'id' | 'title' | 'cover' | 'year' | 'type' | 'originalEpisodes'
 > &
-  Partial<Pick<WatchingFollow, 'type' | 'createdAt' | 'updatedAt' | 'enabled'>>;
+  Partial<Pick<WatchingFollow, 'enabled'>>;
 
 export type UpdateWatchingFollowInput = Partial<
   Pick<WatchingFollow, 'title' | 'cover' | 'year' | 'type' | 'enabled'>
@@ -23,7 +27,7 @@ export class WatchingFollowApiError extends Error {
 }
 
 export function watchingFollowKey(source: string, id: string): string {
-  return `${source}+${id}`;
+  return watchingFollowStorageKey(source, id);
 }
 
 export function isLocalWatchingFollowMode(): boolean {
@@ -57,7 +61,7 @@ export function parseWatchingFollow(value: unknown): WatchingFollow {
     typeof follow.title !== 'string' ||
     typeof follow.cover !== 'string' ||
     typeof follow.year !== 'string' ||
-    (follow.type !== undefined && typeof follow.type !== 'string') ||
+    typeof follow.type !== 'string' ||
     typeof follow.originalEpisodes !== 'number' ||
     !Number.isInteger(follow.originalEpisodes) ||
     follow.originalEpisodes < 0 ||
@@ -76,7 +80,7 @@ export function parseWatchingFollow(value: unknown): WatchingFollow {
     title: follow.title,
     cover: follow.cover,
     year: follow.year,
-    type: follow.type as string | undefined,
+    type: follow.type,
     originalEpisodes: follow.originalEpisodes,
     createdAt: follow.createdAt,
     updatedAt: follow.updatedAt,
@@ -118,7 +122,20 @@ function readLocalWatchingFollows(): Record<string, WatchingFollow> {
   if (!raw) return {};
 
   try {
-    return parseWatchingFollowRecord(JSON.parse(raw));
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new WatchingFollowApiError('Invalid local WatchingFollow data');
+    }
+    const migrated: Record<string, WatchingFollow> = {};
+    for (const value of Object.values(parsed as Record<string, unknown>)) {
+      const follow = migrateStoredWatchingFollow(value);
+      if (!follow) continue;
+      migrated[watchingFollowKey(follow.source, follow.id)] = follow;
+    }
+    if (JSON.stringify(parsed) !== JSON.stringify(migrated)) {
+      writeLocalWatchingFollows(migrated);
+    }
+    return migrated;
   } catch (error) {
     throw new WatchingFollowApiError(
       error instanceof Error
@@ -176,8 +193,8 @@ export async function postWatchingFollow(
     year: input.year,
     type: input.type,
     originalEpisodes: input.originalEpisodes,
-    createdAt: input.createdAt ?? now,
-    updatedAt: input.updatedAt ?? now,
+    createdAt: now,
+    updatedAt: now,
     enabled: input.enabled ?? true,
   };
 
@@ -195,7 +212,16 @@ export async function postWatchingFollow(
   const response = await requestJson('/api/watching-follows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(follow),
+    body: JSON.stringify({
+      source: follow.source,
+      id: follow.id,
+      title: follow.title,
+      cover: follow.cover,
+      year: follow.year,
+      type: follow.type,
+      originalEpisodes: follow.originalEpisodes,
+      enabled: follow.enabled,
+    }),
   });
   return parseWatchingFollow(response);
 }

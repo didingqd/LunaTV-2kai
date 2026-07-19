@@ -1210,7 +1210,7 @@ function PlayPageClient() {
         type:
           detail.type_name ||
           searchType ||
-          (latestEpisodes > 1 ? 'tv' : undefined),
+          (latestEpisodes > 1 ? 'tv' : ''),
         originalEpisodes: latestEpisodes,
       });
       toast.success('已添加追更');

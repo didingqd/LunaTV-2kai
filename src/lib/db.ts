@@ -18,7 +18,11 @@ import {
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
-import { assertWatchingFollowCanBeStored } from './watching-follow';
+import {
+  assertWatchingFollowCanBeStored,
+  migrateStoredWatchingFollow,
+  watchingFollowStorageKey,
+} from './watching-follow';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -43,7 +47,7 @@ function createStorage(): IStorage {
       if (process.env.EDGEONE_PAGES === '1') {
         throw new Error(
           '[LunaTV] SQLite storage is not supported on EdgeOne Pages: the platform has no persistent filesystem. ' +
-          'Please set NEXT_PUBLIC_STORAGE_TYPE to "upstash", "redis", or "kvrocks".'
+            'Please set NEXT_PUBLIC_STORAGE_TYPE to "upstash", "redis", or "kvrocks".',
         );
       }
       return new SqliteStorage();
@@ -75,14 +79,20 @@ export class DbManager {
   constructor() {
     this.storage = getStorage();
     // 启动时自动触发数据迁移（异步，不阻塞构造）
-    if (this.storage && typeof (this.storage as any).migrateData === 'function') {
-      (this.storage as any).migrateData().then(async () => {
-        if (typeof (this.storage as any).migratePasswords === 'function') {
-          await (this.storage as any).migratePasswords();
-        }
-      }).catch((err: any) => {
-        console.error('数据迁移异常:', err);
-      });
+    if (
+      this.storage &&
+      typeof (this.storage as any).migrateData === 'function'
+    ) {
+      (this.storage as any)
+        .migrateData()
+        .then(async () => {
+          if (typeof (this.storage as any).migratePasswords === 'function') {
+            await (this.storage as any).migratePasswords();
+          }
+        })
+        .catch((err: any) => {
+          console.error('数据迁移异常:', err);
+        });
     }
   }
 
@@ -90,7 +100,7 @@ export class DbManager {
   async getPlayRecord(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<PlayRecord | null> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -101,7 +111,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    record: PlayRecord
+    record: PlayRecord,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -118,7 +128,7 @@ export class DbManager {
   async deletePlayRecord(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -128,7 +138,7 @@ export class DbManager {
   // 🚀 批量保存播放记录（Upstash 优化，使用 mset 只算1条命令）
   async savePlayRecordsBatch(
     userName: string,
-    records: Array<{ source: string; id: string; record: PlayRecord }>
+    records: Array<{ source: string; id: string; record: PlayRecord }>,
   ): Promise<void> {
     if (records.length === 0) return;
 
@@ -153,7 +163,7 @@ export class DbManager {
   async getFavorite(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<Favorite | null> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -164,7 +174,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    favorite: Favorite
+    favorite: Favorite,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -172,7 +182,7 @@ export class DbManager {
   }
 
   async getAllFavorites(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: Favorite }> {
     incrementDbQuery();
     return this.storage.getAllFavorites(userName);
@@ -181,7 +191,7 @@ export class DbManager {
   async deleteFavorite(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -193,7 +203,7 @@ export class DbManager {
   async getReminder(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<Reminder | null> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -204,7 +214,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    reminder: Reminder
+    reminder: Reminder,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -212,7 +222,7 @@ export class DbManager {
   }
 
   async getAllReminders(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: Reminder }> {
     incrementDbQuery();
     return this.storage.getAllReminders(userName);
@@ -221,7 +231,7 @@ export class DbManager {
   async deleteReminder(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
@@ -233,48 +243,102 @@ export class DbManager {
   async getWatchingFollow(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<WatchingFollow | null> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
-    return this.storage.getWatchingFollow(userName, key);
+    const key = watchingFollowStorageKey(source, id);
+    const current = await this.storage.getWatchingFollow(userName, key);
+    if (current) {
+      return this.migrateWatchingFollowValue(userName, key, current);
+    }
+
+    const legacyKey = generateStorageKey(source, id);
+    const legacy = await this.storage.getWatchingFollow(userName, legacyKey);
+    if (!legacy) return null;
+    const migrated = await this.migrateWatchingFollowValue(
+      userName,
+      key,
+      legacy,
+    );
+    await this.storage.deleteWatchingFollow(userName, legacyKey);
+    return migrated;
   }
 
   async saveWatchingFollow(
     userName: string,
     source: string,
     id: string,
-    follow: WatchingFollow
+    follow: WatchingFollow,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
-    const existing = await this.storage.getWatchingFollow(userName, key);
+    const key = watchingFollowStorageKey(source, id);
+    const rawExisting = await this.storage.getWatchingFollow(userName, key);
+    const existing = rawExisting
+      ? await this.migrateWatchingFollowValue(userName, key, rawExisting)
+      : null;
     assertWatchingFollowCanBeStored(existing, source, id, follow);
 
     await this.storage.setWatchingFollow(userName, key, follow);
   }
 
   async getAllWatchingFollows(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: WatchingFollow }> {
     incrementDbQuery();
-    return this.storage.getAllWatchingFollows(userName);
+    const stored = await this.storage.getAllWatchingFollows(userName);
+    const result: Record<string, WatchingFollow> = {};
+    for (const [storedKey, raw] of Object.entries(stored)) {
+      const follow = await this.migrateWatchingFollowValue(
+        userName,
+        storedKey,
+        raw,
+      );
+      if (!follow) continue;
+      const key = watchingFollowStorageKey(follow.source, follow.id);
+      result[key] = follow;
+      if (storedKey !== key) {
+        const existing = await this.storage.getWatchingFollow(userName, key);
+        if (!existing)
+          await this.storage.setWatchingFollow(userName, key, follow);
+        await this.storage.deleteWatchingFollow(userName, storedKey);
+      }
+    }
+    return result;
   }
 
   async deleteWatchingFollow(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = watchingFollowStorageKey(source, id);
+    const legacyKey = generateStorageKey(source, id);
     await this.storage.deleteWatchingFollow(userName, key);
+    if (legacyKey !== key) {
+      await this.storage.deleteWatchingFollow(userName, legacyKey);
+    }
+  }
+
+  private migrateWatchingFollowValue(
+    userName: string,
+    key: string,
+    raw: WatchingFollow,
+  ): Promise<WatchingFollow> {
+    const migrated = migrateStoredWatchingFollow(raw);
+    if (!migrated) throw new Error('Invalid WatchingFollow storage value');
+    if (JSON.stringify(raw) !== JSON.stringify(migrated)) {
+      return this.storage
+        .setWatchingFollow(userName, key, migrated)
+        .then(() => migrated);
+    }
+    return Promise.resolve(migrated);
   }
 
   // 🚀 批量保存收藏（Upstash 优化，使用 mset 只算1条命令）
   async saveFavoritesBatch(
     userName: string,
-    favorites: Array<{ source: string; id: string; favorite: Favorite }>
+    favorites: Array<{ source: string; id: string; favorite: Favorite }>,
   ): Promise<void> {
     if (favorites.length === 0) return;
 
@@ -298,7 +362,7 @@ export class DbManager {
   async isFavorited(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<boolean> {
     incrementDbQuery();
     const favorite = await this.getFavorite(userName, source, id);
@@ -339,11 +403,18 @@ export class DbManager {
     role: 'owner' | 'admin' | 'user' = 'user',
     tags?: string[],
     oidcSub?: string,
-    enabledApis?: string[]
+    enabledApis?: string[],
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).createUserV2 === 'function') {
-      await (this.storage as any).createUserV2(userName, password, role, tags, oidcSub, enabledApis);
+      await (this.storage as any).createUserV2(
+        userName,
+        password,
+        role,
+        tags,
+        oidcSub,
+        enabledApis,
+      );
     }
   }
 
@@ -432,7 +503,7 @@ export class DbManager {
   async getSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<SkipConfig | null> {
     incrementDbQuery();
     if (typeof (this.storage as any).getSkipConfig === 'function') {
@@ -445,7 +516,7 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    config: SkipConfig
+    config: SkipConfig,
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).setSkipConfig === 'function') {
@@ -456,7 +527,7 @@ export class DbManager {
   async deleteSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).deleteSkipConfig === 'function') {
@@ -465,7 +536,7 @@ export class DbManager {
   }
 
   async getAllSkipConfigs(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: SkipConfig }> {
     incrementDbQuery();
     if (typeof (this.storage as any).getAllSkipConfigs === 'function') {
@@ -478,7 +549,7 @@ export class DbManager {
   async getEpisodeSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<EpisodeSkipConfig | null> {
     incrementDbQuery();
     if (typeof (this.storage as any).getEpisodeSkipConfig === 'function') {
@@ -491,18 +562,23 @@ export class DbManager {
     userName: string,
     source: string,
     id: string,
-    config: EpisodeSkipConfig
+    config: EpisodeSkipConfig,
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).saveEpisodeSkipConfig === 'function') {
-      await (this.storage as any).saveEpisodeSkipConfig(userName, source, id, config);
+      await (this.storage as any).saveEpisodeSkipConfig(
+        userName,
+        source,
+        id,
+        config,
+      );
     }
   }
 
   async deleteEpisodeSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).deleteEpisodeSkipConfig === 'function') {
@@ -511,7 +587,7 @@ export class DbManager {
   }
 
   async getAllEpisodeSkipConfigs(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: EpisodeSkipConfig }> {
     incrementDbQuery();
     if (typeof (this.storage as any).getAllEpisodeSkipConfigs === 'function') {
@@ -539,7 +615,11 @@ export class DbManager {
     return null;
   }
 
-  async setCache(key: string, data: any, expireSeconds?: number): Promise<void> {
+  async setCache(
+    key: string,
+    data: any,
+    expireSeconds?: number,
+  ): Promise<void> {
     incrementDbQuery();
     if (typeof this.storage.setCache === 'function') {
       await this.storage.setCache(key, data, expireSeconds);
@@ -606,7 +686,7 @@ export class DbManager {
       lastPlayTime: 0,
       recentRecords: [],
       avgWatchTime: 0,
-      mostWatchedSource: ''
+      mostWatchedSource: '',
     };
   }
 
@@ -624,11 +704,16 @@ export class DbManager {
     _userName: string,
     _source: string,
     _id: string,
-    _watchTime: number
+    _watchTime: number,
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).updatePlayStatistics === 'function') {
-      await (this.storage as any).updatePlayStatistics(_userName, _source, _id, _watchTime);
+      await (this.storage as any).updatePlayStatistics(
+        _userName,
+        _source,
+        _id,
+        _watchTime,
+      );
     }
   }
 
@@ -636,11 +721,22 @@ export class DbManager {
     userName: string,
     loginTime: number,
     isFirstLogin?: boolean,
-    loginMeta?: { ip?: string; location?: string; device?: string; browser?: string; os?: string }
+    loginMeta?: {
+      ip?: string;
+      location?: string;
+      device?: string;
+      browser?: string;
+      os?: string;
+    },
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).updateUserLoginStats === 'function') {
-      await (this.storage as any).updateUserLoginStats(userName, loginTime, isFirstLogin, loginMeta);
+      await (this.storage as any).updateUserLoginStats(
+        userName,
+        loginTime,
+        isFirstLogin,
+        loginMeta,
+      );
     }
   }
 

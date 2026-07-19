@@ -13,7 +13,7 @@ export const watchingFollowCreateSchema = z
     title: requiredText,
     cover: metadataText,
     year: z.string().max(32),
-    type: z.string().max(64).optional(),
+    type: z.string().max(64),
     originalEpisodes: z.number().int().nonnegative(),
     createdAt: timestamp.optional(),
     updatedAt: timestamp.optional(),
@@ -26,7 +26,7 @@ export const watchingFollowUpdateSchema = z
     title: requiredText.optional(),
     cover: metadataText.optional(),
     year: z.string().max(32).optional(),
-    type: z.string().max(64).nullable().optional(),
+    type: z.string().max(64).optional(),
     enabled: z.boolean().optional(),
   })
   .strict()
@@ -40,6 +40,32 @@ export type WatchingFollowCreateInput = z.infer<
 export type WatchingFollowUpdateInput = z.infer<
   typeof watchingFollowUpdateSchema
 >;
+
+export function watchingFollowStorageKey(source: string, id: string): string {
+  return encodeURIComponent(JSON.stringify([source, id]));
+}
+
+export function migrateStoredWatchingFollow(
+  value: unknown,
+): WatchingFollow | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const {
+    original_episodes: originalEpisodesLegacy,
+    created_at: createdAtLegacy,
+    updated_at: updatedAtLegacy,
+    ...rest
+  } = raw;
+  const normalized = {
+    ...rest,
+    type: raw.type ?? '',
+    originalEpisodes: raw.originalEpisodes ?? originalEpisodesLegacy,
+    createdAt: raw.createdAt ?? createdAtLegacy,
+    updatedAt: raw.updatedAt ?? updatedAtLegacy,
+  };
+  const parsed = watchingFollowCreateSchema.safeParse(normalized);
+  return parsed.success ? createWatchingFollow(parsed.data) : null;
+}
 
 export function assertWatchingFollowCanBeStored(
   existing: WatchingFollow | null,
@@ -79,14 +105,12 @@ export function updateWatchingFollow(
   input: WatchingFollowUpdateInput,
   now = Date.now(),
 ): WatchingFollow {
-  const type = input.type === null ? undefined : (input.type ?? existing.type);
-
   return {
     ...existing,
     title: input.title ?? existing.title,
     cover: input.cover ?? existing.cover,
     year: input.year ?? existing.year,
-    type,
+    type: input.type ?? existing.type,
     enabled: input.enabled ?? existing.enabled,
     updatedAt: now,
     originalEpisodes: existing.originalEpisodes,

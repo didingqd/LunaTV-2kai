@@ -76,7 +76,7 @@ export interface WatchingFollow {
   title: string;
   cover: string;
   year: string;
-  type?: string;
+  type: string;
   originalEpisodes: number; // 创建关注时客户端获取到的最新集数快照，创建后不可变
   createdAt: number;
   updatedAt: number;

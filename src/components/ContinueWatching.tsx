@@ -61,7 +61,10 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
+    const separator = key.indexOf('+');
+    if (separator <= 0) return { source: key, id: '' };
+    const source = key.slice(0, separator);
+    const id = key.slice(separator + 1);
     return { source, id };
   };
 

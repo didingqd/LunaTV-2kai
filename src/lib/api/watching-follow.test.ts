@@ -71,6 +71,7 @@ describe('WatchingFollow client service', () => {
       title: 'Main Demo',
       cover: '',
       year: '2026',
+      type: 'tv',
       originalEpisodes: 10,
       enabled: true,
     });
@@ -80,6 +81,7 @@ describe('WatchingFollow client service', () => {
       title: 'Other Demo',
       cover: '',
       year: '2026',
+      type: 'tv',
       originalEpisodes: 12,
       enabled: true,
     });
@@ -101,6 +103,7 @@ describe('WatchingFollow client service', () => {
       title: 'Demo',
       cover: '',
       year: '2026',
+      type: 'tv',
       originalEpisodes: 20,
       createdAt: 100,
       updatedAt: 100,
@@ -116,6 +119,7 @@ describe('WatchingFollow client service', () => {
       title: 'Demo',
       cover: '',
       year: '2026',
+      type: 'tv',
       originalEpisodes: 20,
       enabled: true,
     });
@@ -134,9 +138,36 @@ describe('WatchingFollow client service', () => {
     expect(
       JSON.parse(fetchMock.mock.calls[0][1]?.body as string),
     ).toMatchObject({
+      type: 'tv',
       originalEpisodes: 20,
       enabled: true,
     });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).not.toEqual(
+      expect.objectContaining({
+        createdAt: expect.anything(),
+        updatedAt: expect.anything(),
+      }),
+    );
+  });
+
+  it('uses an encoded local key for source and id with plus signs', async () => {
+    const follow = await postWatchingFollow({
+      source: 'main+alt',
+      id: 'video+1',
+      title: 'Demo',
+      cover: '',
+      year: '2026',
+      type: 'tv',
+      originalEpisodes: 1,
+      enabled: true,
+    });
+
+    expect(await getWatchingFollows()).toEqual({
+      [watchingFollowKey('main+alt', 'video+1')]: follow,
+    });
+    expect(Object.keys(await getWatchingFollows())).not.toContain(
+      'main+alt+video+1',
+    );
   });
 
   it('gets and parses the backend follow list', async () => {
@@ -149,6 +180,7 @@ describe('WatchingFollow client service', () => {
       title: 'Demo',
       cover: '',
       year: '2026',
+      type: 'tv',
       originalEpisodes: 20,
       createdAt: 100,
       updatedAt: 100,
@@ -176,6 +208,7 @@ describe('WatchingFollow client service', () => {
           title: 'Demo',
           cover: '',
           year: '2026',
+          type: 'tv',
           originalEpisodes: 1,
           createdAt: 1,
           updatedAt: 1,

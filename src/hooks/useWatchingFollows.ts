@@ -13,6 +13,7 @@ import {
   isWatchingFollowActive,
   postWatchingFollow,
   type CreateWatchingFollowInput,
+  watchingFollowKey,
 } from '@/lib/api/watching-follow';
 import type { WatchingFollow } from '@/lib/types';
 
@@ -69,7 +70,7 @@ export function useCreateWatchingFollowMutation() {
         watchingFollowsQueryKey,
         (previous = {}) => ({
           ...previous,
-          [`${follow.source}+${follow.id}`]: follow,
+          [watchingFollowKey(follow.source, follow.id)]: follow,
         }),
       );
     },

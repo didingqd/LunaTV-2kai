@@ -37,6 +37,18 @@ export async function POST(request: NextRequest) {
       return noStoreJson({ error: 'Invalid JSON body' }, { status: 400 });
     }
 
+    if (
+      typeof body === 'object' &&
+      body !== null &&
+      (Object.prototype.hasOwnProperty.call(body, 'createdAt') ||
+        Object.prototype.hasOwnProperty.call(body, 'updatedAt'))
+    ) {
+      return noStoreJson(
+        { error: 'createdAt and updatedAt are server generated' },
+        { status: 400 },
+      );
+    }
+
     const parsed = watchingFollowCreateSchema.safeParse(body);
     if (!parsed.success) {
       return noStoreJson(

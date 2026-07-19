@@ -26,6 +26,10 @@ import {
   UserPlayStat,
   WatchingFollow,
 } from './types';
+import {
+  migrateStoredWatchingFollow,
+  watchingFollowStorageKey,
+} from './watching-follow';
 
 const SEARCH_HISTORY_LIMIT = 20;
 const CACHE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 60 分钟
@@ -46,6 +50,7 @@ export class SqliteStorage implements IStorage {
     if (isBuild) {
       this.db = new DatabaseSync(':memory:');
       this.initTables();
+      this.migrateWatchingFollowValues();
       return;
     }
 
@@ -67,6 +72,7 @@ export class SqliteStorage implements IStorage {
       this.db.exec('PRAGMA journal_mode = WAL');
 
       this.initTables();
+      this.migrateWatchingFollowValues();
 
       // 定时清理过期缓存
       this.cleanupTimer = setInterval(() => {
@@ -193,6 +199,49 @@ export class SqliteStorage implements IStorage {
     `);
 
     console.log('[SQLite] 数据表初始化完成');
+  }
+
+  private migrateWatchingFollowValues(): void {
+    const rows = this.db
+      .prepare('SELECT username, key, value FROM watching_follows')
+      .all() as Array<{ username: string; key: string; value: string }>;
+    const update = this.db.prepare(
+      'UPDATE watching_follows SET key = ?, value = ? WHERE username = ? AND key = ?',
+    );
+    const insert = this.db.prepare(
+      'INSERT OR IGNORE INTO watching_follows (username, key, value) VALUES (?, ?, ?)',
+    );
+    const remove = this.db.prepare(
+      'DELETE FROM watching_follows WHERE username = ? AND key = ?',
+    );
+
+    this.db.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(row.value);
+        } catch {
+          continue;
+        }
+        const follow = migrateStoredWatchingFollow(raw);
+        if (!follow) continue;
+        const key = watchingFollowStorageKey(follow.source, follow.id);
+        const value = JSON.stringify(follow);
+        if (row.key === key) {
+          if (row.value !== value) {
+            update.run(key, value, row.username, row.key);
+          }
+          continue;
+        }
+        insert.run(row.username, key, value);
+        remove.run(row.username, row.key);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   close(): void {
@@ -1264,7 +1313,13 @@ export class SqliteStorage implements IStorage {
     userName: string,
     loginTime: number,
     isFirstLogin?: boolean,
-    loginMeta?: { ip?: string; location?: string; device?: string; browser?: string; os?: string }
+    loginMeta?: {
+      ip?: string;
+      location?: string;
+      device?: string;
+      browser?: string;
+      os?: string;
+    },
   ): Promise<void> {
     const row = this.db
       .prepare('SELECT * FROM login_stats WHERE username = ?')
@@ -1290,12 +1345,16 @@ export class SqliteStorage implements IStorage {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        userName, loginCount, firstLoginTime, loginTime, loginTime,
-        loginMeta?.ip ?? (row?.last_login_ip ?? null),
-        loginMeta?.location ?? (row?.last_login_location ?? null),
-        loginMeta?.device ?? (row?.last_login_device ?? null),
-        loginMeta?.browser ?? (row?.last_login_browser ?? null),
-        loginMeta?.os ?? (row?.last_login_os ?? null),
+        userName,
+        loginCount,
+        firstLoginTime,
+        loginTime,
+        loginTime,
+        loginMeta?.ip ?? row?.last_login_ip ?? null,
+        loginMeta?.location ?? row?.last_login_location ?? null,
+        loginMeta?.device ?? row?.last_login_device ?? null,
+        loginMeta?.browser ?? row?.last_login_browser ?? null,
+        loginMeta?.os ?? row?.last_login_os ?? null,
       );
   }
 

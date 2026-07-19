@@ -1,7 +1,9 @@
 import {
   assertWatchingFollowCanBeStored,
   createWatchingFollow,
+  migrateStoredWatchingFollow,
   updateWatchingFollow,
+  watchingFollowStorageKey,
   watchingFollowCreateSchema,
   watchingFollowUpdateSchema,
 } from '@/lib/watching-follow';
@@ -56,6 +58,14 @@ describe('WatchingFollow domain', () => {
     expect(result.success).toBe(false);
   });
 
+  it('拒绝通过更新输入提交 null type', () => {
+    const result = watchingFollowUpdateSchema.safeParse({
+      type: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('创建输入不接受客户端派生状态', () => {
     const result = watchingFollowCreateSchema.safeParse({
       ...createInput,
@@ -91,5 +101,29 @@ describe('WatchingFollow domain', () => {
     expect(() =>
       assertWatchingFollowCanBeStored(null, 'source-b', follow.id, follow),
     ).toThrow('WatchingFollow identity does not match its storage key');
+  });
+
+  it('迁移旧存储字段到 camelCase，并使用安全存储 key', () => {
+    const migrated = migrateStoredWatchingFollow({
+      source: 'source+a',
+      id: 'video+123',
+      title: '测试剧集',
+      cover: '',
+      year: '2026',
+      type: 'tv',
+      original_episodes: 12,
+      created_at: 1000,
+      updated_at: 1000,
+      enabled: true,
+    });
+
+    expect(migrated).toMatchObject({
+      originalEpisodes: 12,
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    expect(watchingFollowStorageKey('source+a', 'video+123')).toBe(
+      encodeURIComponent(JSON.stringify(['source+a', 'video+123'])),
+    );
   });
 });

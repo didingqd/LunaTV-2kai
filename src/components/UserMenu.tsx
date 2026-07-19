@@ -31,6 +31,7 @@ import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
 import {
   getUserMenuIndicatorColor,
 } from '@/lib/user-menu-indicator';
+import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { CURRENT_VERSION } from '@/lib/version';
 import { UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord, Favorite } from '@/lib/types';
@@ -341,7 +342,10 @@ export const UserMenu: React.FC = () => {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
+    const separator = key.indexOf('+');
+    if (separator <= 0) return { source: key, id: '' };
+    const source = key.slice(0, separator);
+    const id = key.slice(separator + 1);
     return { source, id };
   };
 
@@ -383,7 +387,7 @@ export const UserMenu: React.FC = () => {
         type:
           detail.type_name ||
           record.type ||
-          (latestEpisodes > 1 ? 'tv' : undefined),
+          (latestEpisodes > 1 ? 'tv' : ''),
         originalEpisodes: latestEpisodes,
         enabled: true,
       });
@@ -1336,7 +1340,7 @@ export const UserMenu: React.FC = () => {
 
               return (
                 <VideoCard
-                  key={`${follow.source}+${follow.id}`}
+                  key={watchingFollowKey(follow.source, follow.id)}
                   id={follow.id}
                   title={follow.title}
                   poster={follow.cover}

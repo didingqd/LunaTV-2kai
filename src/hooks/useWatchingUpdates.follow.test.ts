@@ -1,4 +1,9 @@
 import type { PlayRecord, WatchingFollow } from '@/lib/types';
+import { watchingFollowKey } from '@/lib/api/watching-follow';
+import {
+  calculateWatchingUpdate,
+  watchedEpisodesForRecord,
+} from '@/lib/watching-update-calculation';
 
 import {
   buildWatchingFollowCandidates,
@@ -9,7 +14,7 @@ describe('WatchingFollow update detection candidates', () => {
   it('detects an update when both WatchingFollow and PlayRecord exist', () => {
     const follow = createFollow({ originalEpisodes: 10 });
     const candidates = buildWatchingFollowCandidates(
-      { 'source-a+video-1': follow },
+      { [watchingFollowKey('source-a', 'video-1')]: follow },
       [createRecord()],
     );
 
@@ -18,7 +23,7 @@ describe('WatchingFollow update detection candidates', () => {
       calculateWatchingFollowEpisodeState(
         12,
         candidates[0].follow.originalEpisodes,
-        candidates[0].record.index,
+        8,
         candidates[0].record.total_episodes,
       ),
     ).toMatchObject({ hasUpdate: true, newEpisodes: 2 });
@@ -28,7 +33,10 @@ describe('WatchingFollow update detection candidates', () => {
     const follow = createFollow();
 
     expect(
-      buildWatchingFollowCandidates({ 'source-a+video-1': follow }, []),
+      buildWatchingFollowCandidates(
+        { [watchingFollowKey('source-a', 'video-1')]: follow },
+        [],
+      ),
     ).toEqual([]);
   });
 
@@ -40,14 +48,14 @@ describe('WatchingFollow update detection candidates', () => {
     const follow = createFollow({ originalEpisodes: 10 });
     const record = createRecord({ original_episodes: 2 });
     const [candidate] = buildWatchingFollowCandidates(
-      { 'source-a+video-1': follow },
+      { [watchingFollowKey('source-a', 'video-1')]: follow },
       [record],
     );
 
     const state = calculateWatchingFollowEpisodeState(
       12,
       candidate.follow.originalEpisodes,
-      candidate.record.index,
+      8,
       candidate.record.total_episodes,
     );
 
@@ -61,13 +69,13 @@ describe('WatchingFollow update detection candidates', () => {
 
     const calculate = (record: PlayRecord & { key: string }) => {
       const [candidate] = buildWatchingFollowCandidates(
-        { 'source-a+video-1': follow },
+        { [watchingFollowKey('source-a', 'video-1')]: follow },
         [record],
       );
       return calculateWatchingFollowEpisodeState(
         12,
         candidate.follow.originalEpisodes,
-        candidate.record.index,
+        8,
         candidate.record.total_episodes,
       );
     };
@@ -80,26 +88,85 @@ describe('WatchingFollow update detection candidates', () => {
     const records = [createRecord()];
 
     expect(
-      buildWatchingFollowCandidates({ 'source-a+video-1': follow }, records),
+      buildWatchingFollowCandidates(
+        { [watchingFollowKey('source-a', 'video-1')]: follow },
+        records,
+      ),
     ).toHaveLength(1);
     expect(buildWatchingFollowCandidates({}, records)).toEqual([]);
     expect(
       buildWatchingFollowCandidates(
         {
-          'source-a+video-1': createFollow({ enabled: false }),
+          [watchingFollowKey('source-a', 'video-1')]: createFollow({
+            enabled: false,
+          }),
         },
         records,
       ),
     ).toEqual([]);
   });
 
-  it('keeps the maximum episode count when detail temporarily regresses', () => {
+  it('uses record total as latest protection when detail temporarily regresses', () => {
     expect(calculateWatchingFollowEpisodeState(8, 10, 6, 12)).toMatchObject({
-      hasUpdate: false,
-      newEpisodes: 0,
+      hasUpdate: true,
+      newEpisodes: 2,
       protectedTotalEpisodes: 12,
       remainingEpisodes: 6,
     });
+  });
+
+  it('does not report an update when watched episodes catch up to latest', () => {
+    expect(calculateWatchingFollowEpisodeState(12, 10, 12, 12)).toMatchObject({
+      hasUpdate: false,
+      newEpisodes: 0,
+      remainingEpisodes: 0,
+      baselineEpisodes: 12,
+    });
+  });
+
+  it('calculates final episode fields from normalized inputs', () => {
+    expect(
+      calculateWatchingUpdate({
+        detailEpisodes: '12',
+        originalEpisodes: 10,
+        recordTotalEpisodes: Number.NaN,
+        watchedEpisodes: 11,
+      }),
+    ).toEqual({
+      latestEpisodes: 12,
+      watchedEpisodes: 11,
+      baselineEpisodes: 11,
+      newEpisodes: 1,
+      remainingEpisodes: 1,
+      hasUpdate: true,
+    });
+  });
+
+  it('applies the completion threshold before deriving watched episodes', () => {
+    const record = createRecord({ index: 8, play_time: 400, total_time: 1000 });
+
+    expect(watchedEpisodesForRecord(record, 0)).toBe(8);
+    expect(watchedEpisodesForRecord(record, 50)).toBe(7);
+    expect(watchedEpisodesForRecord(record, 80)).toBe(7);
+    expect(watchedEpisodesForRecord(record, 100)).toBe(7);
+    expect(
+      watchedEpisodesForRecord(
+        createRecord({ index: 8, play_time: 500, total_time: 1000 }),
+        50,
+      ),
+    ).toBe(8);
+    expect(
+      watchedEpisodesForRecord(
+        createRecord({ index: 8, play_time: 1000, total_time: 1000 }),
+        100,
+      ),
+    ).toBe(8);
+    expect(
+      watchedEpisodesForRecord(
+        createRecord({ index: 9, play_time: 1, total_time: 1000 }),
+        100,
+      ),
+    ).toBe(8);
   });
 
   it('maps a legacy source name to the Follow source key', () => {
@@ -108,9 +175,21 @@ describe('WatchingFollow update detection candidates', () => {
 
     expect(
       buildWatchingFollowCandidates(
-        { 'source-a+video-1': follow },
+        { [watchingFollowKey('source-a', 'video-1')]: follow },
         [record],
         new Map([['Source A', 'source-a']]),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('preserves plus signs in PlayRecord ids when joining candidates', () => {
+    const follow = createFollow({ id: 'video+1' });
+    const record = createRecord({ key: 'source-a+video+1' });
+
+    expect(
+      buildWatchingFollowCandidates(
+        { [watchingFollowKey('source-a', 'video+1')]: follow },
+        [record],
       ),
     ).toHaveLength(1);
   });
