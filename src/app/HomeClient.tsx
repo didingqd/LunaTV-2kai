@@ -40,6 +40,7 @@ import { usePlayRecordsQuery } from '@/hooks/usePlayRecordsQuery';
 import { useRemindersQuery } from '@/hooks/useRemindersQuery';
 import { useWatchingUpdatesQuery } from '@/hooks/useWatchingUpdates';
 import { playRecordStorageKey } from '@/lib/play-record';
+import { mapFavoriteReminderIdentityItem } from '@/lib/favorite-reminder-identity';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -536,6 +537,9 @@ function HomeClient({
   type FavoriteItem = {
     id: string;
     source: string;
+    identityKey: string;
+    sourceKey: string;
+    videoId: string;
     title: string;
     poster: string;
     episodes: number;
@@ -554,9 +558,9 @@ function HomeClient({
     return Object.entries(allFavorites)
       .sort(([, a], [, b]) => b.save_time - a.save_time)
       .map(([key, fav]) => {
-        const plusIndex = key.indexOf('+');
-        const source = key.slice(0, plusIndex);
-        const id = key.slice(plusIndex + 1);
+        const identityItem = mapFavoriteReminderIdentityItem(key, fav);
+        if (!identityItem) return null;
+        const { source, id, identityKey, sourceKey, videoId } = identityItem;
 
         // 查找对应的播放记录，获取当前集数
         const playRecord = allPlayRecords[playRecordStorageKey(source, id)];
@@ -565,6 +569,9 @@ function HomeClient({
         return {
           id,
           source,
+          identityKey,
+          sourceKey,
+          videoId,
           title: fav.title,
           year: fav.year,
           poster: fav.cover,
@@ -577,7 +584,8 @@ function HomeClient({
           releaseDate: fav?.releaseDate,
           remarks: fav?.remarks,
         } as FavoriteItem;
-      });
+      })
+      .filter((item): item is FavoriteItem => item !== null);
   }, [allFavorites, allPlayRecords]);
 
   // 🚀 TanStack Query - 使用 useMemo 计算提醒列表（自动响应数据变化）
@@ -586,13 +594,16 @@ function HomeClient({
     return Object.entries(allReminders)
       .sort(([, a], [, b]) => b.save_time - a.save_time)
       .map(([key, reminder]) => {
-        const plusIndex = key.indexOf('+');
-        const source = key.slice(0, plusIndex);
-        const id = key.slice(plusIndex + 1);
+        const identityItem = mapFavoriteReminderIdentityItem(key, reminder);
+        if (!identityItem) return null;
+        const { source, id, identityKey, sourceKey, videoId } = identityItem;
 
         return {
           id,
           source,
+          identityKey,
+          sourceKey,
+          videoId,
           title: reminder.title,
           year: reminder.year,
           poster: reminder.cover,
@@ -604,7 +615,8 @@ function HomeClient({
           releaseDate: reminder.releaseDate,
           remarks: reminder?.remarks,
         };
-      });
+      })
+      .filter((item) => item !== null);
   }, [allReminders]);
 
   // 🎯 优化：缓存收藏夹统计信息计算
@@ -1078,7 +1090,7 @@ function HomeClient({
                     }
 
                     return (
-                      <div key={item.id + item.source} className='w-full'>
+                      <div key={item.identityKey} className='w-full'>
                         <VideoCard
                           query={item.search_title}
                           {...item}
@@ -1397,7 +1409,7 @@ function HomeClient({
                     }
 
                     return (
-                      <div key={item.id + item.source} className='w-full'>
+                      <div key={item.identityKey} className='w-full'>
                         <VideoCard
                           query={item.search_title}
                           {...item}

@@ -6,7 +6,10 @@ import { useEffect, useState, memo } from 'react';
 import { toast } from 'sonner';
 
 import type { PlayRecord } from '@/lib/db.client';
-import { parsePlayRecordStorageKey } from '@/lib/play-record';
+import {
+  compareContentIdentity,
+  resolveContentIdentity,
+} from '@/lib/content-identity';
 // 🚀 TanStack Query Mutations
 import { useClearPlayRecordsMutation } from '@/hooks/usePlayRecordsMutations';
 // 🚀 TanStack Query Queries
@@ -72,7 +75,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    return parsePlayRecordStorageKey(key) ?? { source: key, id: '' };
+    return resolveContentIdentity(key) ?? { source: key, id: '' };
   };
 
   // 检查播放记录是否有新集数更新
@@ -82,10 +85,9 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
     const { source, id } = parseKey(record.key);
 
     // 在watchingUpdates中查找匹配的剧集
-    const matchedSeries = watchingUpdates.updatedSeries.find(series =>
-      series.sourceKey === source &&
-      series.videoId === id &&
-      series.hasNewEpisode
+    const matchedSeries = watchingUpdates.updatedSeries.find(
+      (series) =>
+        series.hasNewEpisode && compareContentIdentity(series, { source, id }),
     );
 
     return matchedSeries ? (matchedSeries.newEpisodes || 0) : 0;
@@ -98,9 +100,8 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
     const { source, id } = parseKey(record.key);
 
     // 在watchingUpdates中查找匹配的剧集
-    const matchedSeries = watchingUpdates.updatedSeries.find(series =>
-      series.sourceKey === source &&
-      series.videoId === id
+    const matchedSeries = watchingUpdates.updatedSeries.find((series) =>
+      compareContentIdentity(series, { source, id }),
     );
 
     // 如果找到匹配的剧集且有最新集数信息，返回最新集数（使用 latestEpisodes，包含了 protectedTotalEpisodes）

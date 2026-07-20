@@ -43,11 +43,11 @@ import {
   deleteFavorite,
   deletePlayRecord,
   deleteReminder,
-  generateStorageKey,
   saveFavorite,
   saveReminder,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { hasFavoriteReminderIdentity } from '@/lib/favorite-reminder-identity';
 import { processImageUrl, isSeriesCompleted } from '@/lib/utils';
 import {
   getLocalVideoRemark,
@@ -382,13 +382,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     // 监听状态更新事件
     useEffect(() => {
       if (!favoriteSource || !favoriteId) return;
-
-      const storageKey = generateStorageKey(favoriteSource, favoriteId);
+      const identity = { source: favoriteSource, id: favoriteId };
 
       const unsubscribeFavorites = subscribeToDataUpdates(
         'favoritesUpdated',
         (newFavorites: Record<string, any>) => {
-          const isNowFavorited = !!newFavorites[storageKey];
+          const isNowFavorited = hasFavoriteReminderIdentity(
+            newFavorites,
+            identity,
+          );
           if (from === 'search') {
             setSearchFavorited(isNowFavorited);
           } else {
@@ -400,7 +402,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       const unsubscribeReminders = subscribeToDataUpdates(
         'remindersUpdated',
         (newReminders: Record<string, any>) => {
-          const isNowReminded = !!newReminders[storageKey];
+          const isNowReminded = hasFavoriteReminderIdentity(
+            newReminders,
+            identity,
+          );
           setReminded(isNowReminded);
         },
       );

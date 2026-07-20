@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { resolveContentIdentity } from '@/lib/content-identity';
 import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/performance-monitor';
 import { Favorite } from '@/lib/types';
 
@@ -15,7 +16,7 @@ export const runtime = 'nodejs';
  *
  * 支持两种调用方式：
  * 1. 不带 query，返回全部收藏列表（Record<string, Favorite>）。
- * 2. 带 key=source+id，返回单条收藏（Favorite | null）。
+ * 2. 带 canonical 或 legacy key，返回单条收藏（Favorite | null）。
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -93,8 +94,8 @@ export async function GET(request: NextRequest) {
 
     // 查询单条收藏
     if (key) {
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const identity = resolveContentIdentity(key);
+      if (!identity) {
         const errorResponse = { error: 'Invalid key format' };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -112,7 +113,11 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(errorResponse, { status: 400 });
       }
-      const fav = await db.getFavorite(authInfo.username, source, id);
+      const fav = await db.getFavorite(
+        authInfo.username,
+        identity.source,
+        identity.id,
+      );
       const responseSize = Buffer.byteLength(JSON.stringify(fav), 'utf8');
 
       recordRequest({
@@ -330,8 +335,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse, { status: 400 });
     }
 
-    const [source, id] = key.split('+');
-    if (!source || !id) {
+    const identity = resolveContentIdentity(key);
+    if (!identity) {
       const errorResponse = { error: 'Invalid key format' };
       const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -355,7 +360,12 @@ export async function POST(request: NextRequest) {
       save_time: favorite.save_time ?? Date.now(),
     } as Favorite;
 
-    await db.saveFavorite(authInfo.username, source, id, finalFavorite);
+    await db.saveFavorite(
+      authInfo.username,
+      identity.source,
+      identity.id,
+      finalFavorite,
+    );
 
     const successResponse = { success: true };
     const responseSize = Buffer.byteLength(JSON.stringify(successResponse), 'utf8');
@@ -398,7 +408,7 @@ export async function POST(request: NextRequest) {
  * DELETE /api/favorites
  *
  * 1. 不带 query -> 清空全部收藏
- * 2. 带 key=source+id -> 删除单条收藏
+ * 2. 带 canonical 或 legacy key -> 删除单条收藏
  */
 export async function DELETE(request: NextRequest) {
   const startTime = Date.now();
@@ -477,8 +487,8 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 删除单条
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const identity = resolveContentIdentity(key);
+      if (!identity) {
         const errorResponse = { error: 'Invalid key format' };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -496,7 +506,7 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json(errorResponse, { status: 400 });
       }
-      await db.deleteFavorite(username, source, id);
+      await db.deleteFavorite(username, identity.source, identity.id);
     } else {
       // 清空全部
       const all = await db.getAllFavorites(username);
@@ -508,8 +518,10 @@ export async function DELETE(request: NextRequest) {
 
       await Promise.all(
         Object.keys(all).map(async (k) => {
-          const [s, i] = k.split('+');
-          if (s && i) await db.deleteFavorite(username, s, i);
+          const identity = resolveContentIdentity(k);
+          if (identity) {
+            await db.deleteFavorite(username, identity.source, identity.id);
+          }
         })
       );
     }

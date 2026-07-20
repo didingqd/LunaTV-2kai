@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+import {
+  buildContentIdentityKey,
+  compareContentIdentity,
+} from './content-identity';
 import type { WatchingFollow } from './types';
 
 const requiredText = z.string().trim().min(1).max(512);
@@ -42,7 +46,7 @@ export type WatchingFollowUpdateInput = z.infer<
 >;
 
 export function watchingFollowStorageKey(source: string, id: string): string {
-  return encodeURIComponent(JSON.stringify([source, id]));
+  return buildContentIdentityKey(source, id);
 }
 
 export function migrateStoredWatchingFollow(
@@ -73,7 +77,7 @@ export function assertWatchingFollowCanBeStored(
   id: string,
   follow: WatchingFollow,
 ): void {
-  if (follow.source !== source || follow.id !== id) {
+  if (!compareContentIdentity(follow, { source, id })) {
     throw new Error('WatchingFollow identity does not match its storage key');
   }
 

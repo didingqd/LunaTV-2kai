@@ -72,6 +72,11 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  buildContentIdentityKey,
+  resolveContentIdentity,
+} from '@/lib/content-identity';
+import { findFavoriteReminderIdentityEntry } from '@/lib/favorite-reminder-identity';
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl, VideoSourceTestResult } from '@/lib/utils';
@@ -4707,19 +4712,33 @@ function PlayPageClient() {
     favorites: Record<string, any>,
   ): string | null => {
     // 1. 精确匹配：当前源 key
-    const currentKey = currentSource && currentId ? `${currentSource}+${currentId}` : null;
-    if (currentKey && favorites[currentKey]) return currentKey;
+    if (currentSource && currentId) {
+      const current = findFavoriteReminderIdentityEntry(favorites, {
+        source: currentSource,
+        id: currentId,
+      });
+      if (current) return current.key;
+    }
 
     // 2. 精确匹配：豆瓣/Bangumi/短剧虚拟源
     if (videoDoubanId) {
-      const doubanKey = `douban+${videoDoubanId}`;
-      if (favorites[doubanKey]) return doubanKey;
-      const bangumiKey = `bangumi+${videoDoubanId}`;
-      if (favorites[bangumiKey]) return bangumiKey;
+      const douban = findFavoriteReminderIdentityEntry(favorites, {
+        source: 'douban',
+        id: String(videoDoubanId),
+      });
+      if (douban) return douban.key;
+      const bangumi = findFavoriteReminderIdentityEntry(favorites, {
+        source: 'bangumi',
+        id: String(videoDoubanId),
+      });
+      if (bangumi) return bangumi.key;
     }
     if (shortdramaId) {
-      const sdKey = `shortdrama+${shortdramaId}`;
-      if (favorites[sdKey]) return sdKey;
+      const shortDrama = findFavoriteReminderIdentityEntry(favorites, {
+        source: 'shortdrama',
+        id: shortdramaId,
+      });
+      if (shortDrama) return shortDrama.key;
     }
 
     // 3. 按 title 匹配：同一部片在不同源有不同 source+id，用标题兜底
@@ -4795,8 +4814,9 @@ function PlayPageClient() {
             新片源: detail.source_name,
           });
 
-          // 提取收藏key中的source和id
-          const [favSource, favId] = favoriteKey.split('+');
+          const favoriteIdentity = resolveContentIdentity(favoriteKey);
+          if (!favoriteIdentity) return;
+          const { source: favSource, id: favId } = favoriteIdentity;
 
           // 根据 type_name 推断内容类型
           const inferType = (typeName?: string): string | undefined => {
@@ -4857,13 +4877,18 @@ function PlayPageClient() {
 
     if (favorited) {
       // 如果已收藏，使用实际存储的key来删除（可能和当前源不同）
-      const keyToDelete = favoritedKeyRef.current || `${currentSourceRef.current}+${currentIdRef.current}`;
-      const [delSource, delId] = keyToDelete.split('+');
+      const identityToDelete = favoritedKeyRef.current
+        ? resolveContentIdentity(favoritedKeyRef.current)
+        : resolveContentIdentity({
+            source: currentSourceRef.current,
+            id: currentIdRef.current,
+          });
+      if (!identityToDelete) return;
 
       deleteFavoriteMutation.mutate(
         {
-          source: delSource,
-          id: delId,
+          source: identityToDelete.source,
+          id: identityToDelete.id,
         },
         {
           onSuccess: () => {
@@ -4896,7 +4921,10 @@ function PlayPageClient() {
         contentType = 'shortdrama';
       }
 
-      const newKey = `${currentSourceRef.current}+${currentIdRef.current}`;
+      const newKey = buildContentIdentityKey(
+        currentSourceRef.current,
+        currentIdRef.current,
+      );
 
       // 如果未收藏，添加收藏
       saveFavoriteMutation.mutate(

@@ -18,6 +18,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { playRecordStorageKey } from '@/lib/play-record';
+import { buildContentIdentityKey } from '@/lib/content-identity';
 import {
   savePlayRecord,
   saveFavorite,
@@ -172,7 +173,7 @@ export function useSaveFavoriteMutation(): UseMutationResult<
       const previousFavorites = queryClient.getQueryData<Record<string, Favorite>>(['favorites']);
 
       queryClient.setQueryData<Record<string, Favorite>>(['favorites'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         return {
           ...old,
           [key]: favorite,
@@ -232,7 +233,7 @@ export function useDeleteFavoriteMutation(): UseMutationResult<
       const previousFavorites = queryClient.getQueryData<Record<string, Favorite>>(['favorites']);
 
       queryClient.setQueryData<Record<string, Favorite>>(['favorites'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         const newFavorites = { ...old };
         delete newFavorites[key];
         return newFavorites;

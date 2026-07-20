@@ -11,6 +11,11 @@
 
 import { useQuery, queryOptions } from '@tanstack/react-query';
 import type { Favorite } from '@/lib/types';
+import {
+  hasFavoriteReminderIdentity,
+  mapFavoriteReminderIdentityItem,
+  normalizeFavoriteReminderRecord,
+} from '@/lib/favorite-reminder-identity';
 
 // ============================================================================
 // Query Options
@@ -29,7 +34,9 @@ export const favoritesQueryOptions = queryOptions({
     }
 
     const data = await response.json();
-    return data as Record<string, Favorite>;
+    return normalizeFavoriteReminderRecord(
+      data as Record<string, Favorite>,
+    ).values;
   },
   staleTime: 5 * 60 * 1000, // 5分钟
   gcTime: 10 * 60 * 1000,   // 10分钟
@@ -93,13 +100,16 @@ export function useFavoritesArrayQuery(options?: { enabled?: boolean }) {
         throw new Error(`Failed to fetch favorites: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, Favorite>;
+      const data = normalizeFavoriteReminderRecord(
+        (await response.json()) as Record<string, Favorite>,
+      ).values;
 
       // 转换为数组并排序
-      const favoritesArray = Object.entries(data).map(([key, favorite]) => ({
-        ...favorite,
-        key,
-      }));
+      const favoritesArray = Object.entries(data)
+        .map(([key, favorite]) =>
+          mapFavoriteReminderIdentityItem(key, favorite),
+        )
+        .filter((favorite) => favorite !== null);
 
       // 按保存时间降序排序
       return favoritesArray.sort((a, b) => b.save_time - a.save_time);
@@ -145,10 +155,9 @@ export function useIsFavoritedQuery(
         throw new Error(`Failed to fetch favorites: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, Favorite>;
-      const key = `${source}+${id}`;
+      const data = (await response.json()) as Record<string, Favorite>;
 
-      return !!data[key];
+      return hasFavoriteReminderIdentity(data, { source, id });
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,

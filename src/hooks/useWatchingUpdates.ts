@@ -16,53 +16,42 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef } from 'react';
 import { watchingFollowsQueryOptions } from './useWatchingFollows';
-import { watchingFollowKey } from '@/lib/api/watching-follow';
+import { isLocalWatchingFollowMode } from '@/lib/api/watching-follow';
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import {
+  normalizeContentIdentity,
+  resolveContentIdentity,
+} from '@/lib/content-identity';
 import { getAllPlayRecords } from '@/lib/db.client';
-import { parsePlayRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
   loadWatchCompletionThreshold,
   resolveEffectiveOriginalEpisodes,
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
+import {
+  mapWatchingUpdateItem,
+  type WatchingUpdate,
+  type WatchingUpdateDetail,
+} from '@/lib/watching-update-result';
+import {
+  readScopedWatchingUpdatesCache,
+  resolveWatchingUpdatesCacheScope,
+  sameWatchingUpdatesCacheScope,
+  WATCHING_UPDATES_QUERY_ROOT,
+  WATCHING_UPDATES_STALE_TIME,
+  watchingUpdatesQueryKey,
+  writeScopedWatchingUpdatesCache,
+  type WatchingUpdatesCacheScope,
+} from '@/lib/watching-updates-cache';
 import type { PlayRecord, WatchingFollow } from '@/lib/types';
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-const WATCHING_UPDATES_CACHE_KEY = 'moontv_watching_updates_follow_v1';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface WatchingUpdate {
-  hasUpdates: boolean;
-  timestamp: number;
-  updatedCount: number;
-  continueWatchingCount: number;
-  newReleasesCount: number;
-  updatedSeries: {
-    title: string;
-    source_name: string;
-    year: string;
-    cover: string;
-    sourceKey: string;
-    videoId: string;
-    currentEpisode: number;
-    totalEpisodes: number;
-    hasNewEpisode: boolean;
-    hasContinueWatching: boolean;
-    hasNewRelease: boolean;
-    newEpisodes?: number;
-    remainingEpisodes?: number;
-    latestEpisodes?: number;
-    remarks?: string;
-    releaseDate?: string;
-  }[];
-}
+export type {
+  WatchingUpdate,
+  WatchingUpdateItem,
+} from '@/lib/watching-update-result';
 
 // ============================================================================
 // Helper Functions
@@ -82,23 +71,25 @@ export function buildWatchingFollowCandidates(
   const recordsByIdentity = new Map<string, PlayRecord & { key: string }>();
 
   for (const record of records) {
-    const parsed = parsePlayRecordStorageKey(record.key);
+    const parsed = resolveContentIdentity(record.key);
     if (!parsed) continue;
 
     const rawSource = parsed.source;
     const id = parsed.id;
     const source = sourceMap.get(rawSource) ?? rawSource;
-    const identity = watchingFollowKey(source, id);
-    if (!recordsByIdentity.has(identity))
-      recordsByIdentity.set(identity, record);
+    const identity = normalizeContentIdentity(source, id);
+    if (identity && !recordsByIdentity.has(identity.identityKey)) {
+      recordsByIdentity.set(identity.identityKey, record);
+    }
   }
 
   return Object.values(follows)
     .filter((follow) => follow.enabled)
     .flatMap((follow) => {
-      const record = recordsByIdentity.get(
-        watchingFollowKey(follow.source, follow.id),
-      );
+      const identity = resolveContentIdentity(follow);
+      const record = identity
+        ? recordsByIdentity.get(identity.identityKey)
+        : undefined;
       return record ? [{ follow, record }] : [];
     });
 }
@@ -117,6 +108,7 @@ export function calculateWatchingFollowEpisodeState(
   });
 
   return {
+    calculation: result,
     hasUpdate: result.hasUpdate,
     hasNewEpisode: result.hasUpdate,
     hasContinueWatching: false,
@@ -144,16 +136,18 @@ async function checkSingleRecordUpdate(
   newEpisodes: number;
   remainingEpisodes: number;
   latestEpisodes: number;
+  calculation?: ReturnType<typeof calculateWatchingUpdate>;
+  detail?: WatchingUpdateDetail;
 }> {
   const { follow, record } = candidate;
-  const videoId = follow.id;
-  const sourceKey = follow.source;
+  const identity = resolveContentIdentity(follow);
+  if (!identity) throw new Error('WatchingFollow identity is invalid');
   try {
     // 调用 API 获取最新详情（使用10分钟时间戳分片缓存）
     // 将时间戳向下取整到10分钟，同一个10分钟内的请求会命中CDN缓存
     // 这样既能获取较新的数据，又能减少对视频源的请求压力
     const cacheKey = Math.floor(Date.now() / 600000) * 600000; // 600000ms = 10分钟
-    const apiUrl = `/api/detail?source=${encodeURIComponent(sourceKey)}&id=${encodeURIComponent(videoId)}&_t=${cacheKey}`;
+    const apiUrl = `/api/detail?source=${encodeURIComponent(identity.source)}&id=${encodeURIComponent(identity.id)}&_t=${cacheKey}`;
     console.log(`🔍 [追番更新] ${record.title} 调用API:`, apiUrl);
     const response = await fetch(apiUrl, {
       cache: 'no-store',
@@ -182,7 +176,9 @@ async function checkSingleRecordUpdate(
       };
     }
 
-    const detailData = await response.json();
+    const detailData = (await response.json()) as WatchingUpdateDetail & {
+      episodes?: unknown;
+    };
     // 从 episodes 数组长度获取最新集数（API 返回的是 episodes 数组，不是 total 字段）
     const latestEpisodes = Array.isArray(detailData.episodes)
       ? detailData.episodes.length
@@ -271,6 +267,8 @@ async function checkSingleRecordUpdate(
       newEpisodes: state.newEpisodes,
       remainingEpisodes: state.remainingEpisodes,
       latestEpisodes: state.protectedTotalEpisodes,
+      calculation: state.calculation,
+      detail: detailData,
     };
   } catch (error) {
     console.error(`❌ [追番更新] 检查${record.title}更新失败:`, error);
@@ -318,12 +316,37 @@ export function useWatchingUpdatesQuery(options?: {
   forceRefresh?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const isLocal = isLocalWatchingFollowMode();
+  const username = getAuthInfoFromBrowserCookie()?.username;
+  const scope = useMemo(
+    () => resolveWatchingUpdatesCacheScope({ isLocal, username }),
+    [isLocal, username],
+  );
+  const queryScope: WatchingUpdatesCacheScope = scope ?? {
+    mode: 'online',
+    principal: '__anonymous__',
+  };
+  const previousScopeRef = useRef<WatchingUpdatesCacheScope | null>(scope);
+  const initialCache = scope
+    ? readScopedWatchingUpdatesCache(scope)
+    : undefined;
+
+  useEffect(() => {
+    const previousScope = previousScopeRef.current;
+    if (
+      previousScope &&
+      (!scope || !sameWatchingUpdatesCacheScope(previousScope, scope))
+    ) {
+      queryClient.removeQueries({
+        queryKey: watchingUpdatesQueryKey(previousScope),
+        exact: true,
+      });
+    }
+    previousScopeRef.current = scope;
+  }, [queryClient, scope]);
 
   return useQuery({
-    queryKey: [
-      'watchingUpdates',
-      options?.forceRefresh ? Date.now() : 'cached',
-    ] as const,
+    queryKey: watchingUpdatesQueryKey(queryScope),
     queryFn: async (): Promise<WatchingUpdate> => {
       console.log('🔄 [追番更新] 开始检查追番更新...');
 
@@ -383,27 +406,19 @@ export function useWatchingUpdatesQuery(options?: {
             { follow, record },
             completionThreshold,
           );
-          if (!updateInfo.hasNewEpisode) return null;
-          const seriesInfo = {
-            title: follow.title,
-            source_name: record.source_name || follow.source,
-            year: follow.year,
-            cover: follow.cover,
-            sourceKey: follow.source,
-            videoId: follow.id,
-            currentEpisode: watchedEpisodesForRecord(
-              record,
-              completionThreshold,
-            ),
-            totalEpisodes: updateInfo.latestEpisodes,
-            hasNewEpisode: updateInfo.hasNewEpisode,
-            hasContinueWatching: false,
-            hasNewRelease: false,
-            newEpisodes: updateInfo.newEpisodes,
-            remainingEpisodes: updateInfo.remainingEpisodes,
-            latestEpisodes: updateInfo.latestEpisodes,
-            remarks: record.remarks,
-          };
+          if (
+            !updateInfo.hasNewEpisode ||
+            !updateInfo.calculation ||
+            !updateInfo.detail
+          ) {
+            return null;
+          }
+          const seriesInfo = mapWatchingUpdateItem({
+            follow,
+            record,
+            detail: updateInfo.detail,
+            calculation: updateInfo.calculation,
+          });
 
           updatedSeries.push(seriesInfo);
           if (updateInfo.hasNewEpisode) updatedCount++;
@@ -456,11 +471,8 @@ export function useWatchingUpdatesQuery(options?: {
 
       // 持久化到 localStorage（兼容旧实现的缓存机制）
       try {
-        if (typeof window !== 'undefined' && localStorage) {
-          localStorage.setItem(
-            WATCHING_UPDATES_CACHE_KEY,
-            JSON.stringify(result),
-          );
+        if (scope) {
+          writeScopedWatchingUpdatesCache(scope, result);
           console.log('[追番更新] 结果已保存到 localStorage');
         }
       } catch (error) {
@@ -470,30 +482,17 @@ export function useWatchingUpdatesQuery(options?: {
       return result;
     },
     // 30分钟缓存，避免频繁检查
-    staleTime: 30 * 60 * 1000,
+    staleTime: options?.forceRefresh ? 0 : WATCHING_UPDATES_STALE_TIME,
     gcTime: 60 * 60 * 1000,
     // 30分钟自动刷新（后台定时检查）
     refetchInterval: 30 * 60 * 1000,
     // 只在窗口获得焦点时才自动刷新
     refetchIntervalInBackground: false,
     // 从 localStorage 读取初始数据（页面刷新后仍能显示）
-    initialData: () => {
-      try {
-        if (typeof window !== 'undefined' && localStorage) {
-          const cached = localStorage.getItem(WATCHING_UPDATES_CACHE_KEY);
-          if (cached) {
-            const data = JSON.parse(cached) as WatchingUpdate;
-            console.log('[追番更新] 从 localStorage 加载缓存数据');
-            return data;
-          }
-        }
-      } catch (error) {
-        console.warn('[追番更新] 从 localStorage 读取失败:', error);
-      }
-      return undefined;
-    },
+    initialData: initialCache?.data,
+    initialDataUpdatedAt: initialCache?.timestamp,
     // 只在启用时执行
-    enabled: options?.enabled !== false,
+    enabled: options?.enabled !== false && scope !== null,
     // 不自动重试，避免过多请求
     retry: false,
   });
@@ -518,7 +517,7 @@ export function useRefreshWatchingUpdates() {
     });
     // 强制刷新追番更新（type: 'all' 确保即使 inactive 也会刷新）
     queryClient.invalidateQueries({
-      queryKey: ['watchingUpdates'],
+      queryKey: WATCHING_UPDATES_QUERY_ROOT,
       refetchType: 'all',
     });
   };

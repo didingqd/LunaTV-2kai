@@ -20,11 +20,11 @@ import {
 } from '@/lib/utils';
 import {
   deleteFavorite,
-  generateStorageKey,
   isFavorited as checkIsFavorited,
   saveFavorite,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { hasFavoriteReminderIdentity } from '@/lib/favorite-reminder-identity';
 import { parseCustomTimeFormat } from '@/lib/time';
 
 import EpgScrollableRow from '@/components/EpgScrollableRow';
@@ -1589,8 +1589,10 @@ function LivePageClient() {
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
       (favorites: Record<string, any>) => {
-        const key = generateStorageKey(`live_${currentSource.key}`, `live_${currentChannel.id}`);
-        const isFav = !!favorites[key];
+        const isFav = hasFavoriteReminderIdentity(favorites, {
+          source: `live_${currentSource.key}`,
+          id: `live_${currentChannel.id}`,
+        });
         setFavorited(isFav);
         favoritedRef.current = isFav;
       }

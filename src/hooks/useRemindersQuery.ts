@@ -11,6 +11,11 @@
 
 import { useQuery, queryOptions } from '@tanstack/react-query';
 import type { Reminder } from '@/lib/db.client';
+import {
+  hasFavoriteReminderIdentity,
+  mapFavoriteReminderIdentityItem,
+  normalizeFavoriteReminderRecord,
+} from '@/lib/favorite-reminder-identity';
 
 // ============================================================================
 // Query Options
@@ -29,7 +34,9 @@ export const remindersQueryOptions = queryOptions({
     }
 
     const data = await response.json();
-    return data as Record<string, Reminder>;
+    return normalizeFavoriteReminderRecord(
+      data as Record<string, Reminder>,
+    ).values;
   },
   staleTime: 5 * 60 * 1000, // 5分钟
   gcTime: 10 * 60 * 1000,   // 10分钟
@@ -93,13 +100,16 @@ export function useRemindersArrayQuery(options?: { enabled?: boolean }) {
         throw new Error(`Failed to fetch reminders: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, Reminder>;
+      const data = normalizeFavoriteReminderRecord(
+        (await response.json()) as Record<string, Reminder>,
+      ).values;
 
       // 转换为数组并排序
-      const remindersArray = Object.entries(data).map(([key, reminder]) => ({
-        ...reminder,
-        key,
-      }));
+      const remindersArray = Object.entries(data)
+        .map(([key, reminder]) =>
+          mapFavoriteReminderIdentityItem(key, reminder),
+        )
+        .filter((reminder) => reminder !== null);
 
       // 按上映日期排序（最近的在前）
       return remindersArray.sort((a, b) => {
@@ -149,10 +159,9 @@ export function useIsRemindedQuery(
         throw new Error(`Failed to fetch reminders: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, Reminder>;
-      const key = `${source}+${id}`;
+      const data = (await response.json()) as Record<string, Reminder>;
 
-      return !!data[key];
+      return hasFavoriteReminderIdentity(data, { source, id });
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,

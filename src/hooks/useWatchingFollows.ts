@@ -17,6 +17,7 @@ import {
   type CreateWatchingFollowInput,
   watchingFollowKey,
 } from '@/lib/api/watching-follow';
+import { compareContentIdentity } from '@/lib/content-identity';
 import { getAllPlayRecords } from '@/lib/db.client';
 import type { WatchingFollow } from '@/lib/types';
 
@@ -60,7 +61,7 @@ export function useIsWatchingFollowQuery(
     select: (follows) =>
       Object.values(follows).some(
         (follow) =>
-          follow.source === source && follow.id === id && follow.enabled,
+          follow.enabled && compareContentIdentity(follow, { source, id }),
       ),
     enabled: (options?.enabled ?? true) && !!source && !!id,
   });
@@ -149,7 +150,8 @@ export function useDeleteWatchingFollowMutation() {
         (current = {}) => {
           const next = { ...current };
           for (const [key, follow] of Object.entries(next)) {
-            if (follow.source === source && follow.id === id) delete next[key];
+            if (compareContentIdentity(follow, { source, id }))
+              delete next[key];
           }
           return next;
         },

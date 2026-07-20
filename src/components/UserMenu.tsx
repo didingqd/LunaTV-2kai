@@ -32,10 +32,14 @@ import {
   getUserMenuIndicatorColor,
 } from '@/lib/user-menu-indicator';
 import { watchingFollowKey } from '@/lib/api/watching-follow';
+import {
+  compareContentIdentity,
+  resolveContentIdentity,
+} from '@/lib/content-identity';
+import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
 import { CURRENT_VERSION } from '@/lib/version';
 import { UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord, Favorite } from '@/lib/types';
-import { parsePlayRecordStorageKey } from '@/lib/play-record';
 
 import { useDownload } from '@/contexts/DownloadContext';
 
@@ -246,6 +250,7 @@ export const UserMenu: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    queryClient.removeQueries({ queryKey: WATCHING_UPDATES_QUERY_ROOT });
     try {
       await fetch('/api/logout', {
         method: 'POST',
@@ -344,7 +349,7 @@ export const UserMenu: React.FC = () => {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    return parsePlayRecordStorageKey(key) ?? { source: key, id: '' };
+    return resolveContentIdentity(key) ?? { source: key, id: '' };
   };
 
   const resolveSourceKey = (source: string) =>
@@ -408,10 +413,9 @@ export const UserMenu: React.FC = () => {
     const { source, id } = parseKey(record.key);
 
     // 在watchingUpdates中查找匹配的剧集
-    const matchedSeries = watchingUpdates.updatedSeries.find(series =>
-      series.sourceKey === source &&
-      series.videoId === id &&
-      series.hasNewEpisode
+    const matchedSeries = watchingUpdates.updatedSeries.find(
+      (series) =>
+        series.hasNewEpisode && compareContentIdentity(series, { source, id }),
     );
 
     return matchedSeries ? (matchedSeries.newEpisodes || 0) : 0;
@@ -1340,10 +1344,8 @@ export const UserMenu: React.FC = () => {
 
           <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
             {watchingFollows.map((follow) => {
-              const update = watchingUpdates?.updatedSeries.find(
-                (series) =>
-                  series.sourceKey === follow.source &&
-                  series.videoId === follow.id,
+              const update = watchingUpdates?.updatedSeries.find((series) =>
+                compareContentIdentity(series, follow),
               );
 
               return (

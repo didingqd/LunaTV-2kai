@@ -22,16 +22,16 @@ const record: PlayRecord = {
 };
 
 describe('PlayRecord identity protocol', () => {
-  it('round-trips ids containing plus signs', () => {
-    const key = playRecordStorageKey('bangumi', '123+456');
+  it('round-trips canonical source and id values containing special characters', () => {
+    const key = playRecordStorageKey('bangumi+archive', '123+456 / 中文');
     expect(parsePlayRecordStorageKey(key)).toEqual({
-      source: 'bangumi',
-      id: '123+456',
+      source: 'bangumi+archive',
+      id: '123+456 / 中文',
       isLegacy: false,
     });
   });
 
-  it('normalizes legacy keys and preserves an existing safe value', () => {
+  it('falls back to the legacy source+id key parser', () => {
     const safeKey = playRecordStorageKey('bangumi', '123+456');
     const legacyKey = legacyPlayRecordStorageKey('bangumi', '123+456');
     const migrated = normalizePlayRecordKeys({
@@ -39,6 +39,21 @@ describe('PlayRecord identity protocol', () => {
     });
     expect(migrated.changed).toBe(true);
     expect(migrated.records[safeKey]).toBe(record);
+  });
+
+  it('keeps the canonical entry when matching legacy and canonical keys coexist', () => {
+    const safeKey = playRecordStorageKey('bangumi', '123+456');
+    const legacyKey = legacyPlayRecordStorageKey('bangumi', '123+456');
+    const canonicalRecord = { ...record, title: 'Canonical' };
+    const legacyRecord = { ...record, title: 'Legacy' };
+
+    const migrated = normalizePlayRecordKeys({
+      [legacyKey]: legacyRecord,
+      [safeKey]: canonicalRecord,
+    });
+
+    expect(migrated.changed).toBe(true);
+    expect(migrated.records).toEqual({ [safeKey]: canonicalRecord });
   });
 
   it('does not let playback writes modify original_episodes', () => {

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { resolveContentIdentity } from '@/lib/content-identity';
 import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/performance-monitor';
 import { Reminder } from '@/lib/types';
 
@@ -15,7 +16,7 @@ export const runtime = 'nodejs';
  *
  * 支持两种调用方式：
  * 1. 不带 query，返回全部提醒列表（Record<string, Reminder>）。
- * 2. 带 key=source+id，返回单条提醒（Reminder | null）。
+ * 2. 带 canonical 或 legacy key，返回单条提醒（Reminder | null）。
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -93,8 +94,8 @@ export async function GET(request: NextRequest) {
 
     // 查询单条提醒
     if (key) {
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const identity = resolveContentIdentity(key);
+      if (!identity) {
         const errorResponse = { error: 'Invalid key format' };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -112,7 +113,11 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(errorResponse, { status: 400 });
       }
-      const reminder = await db.getReminder(authInfo.username, source, id);
+      const reminder = await db.getReminder(
+        authInfo.username,
+        identity.source,
+        identity.id,
+      );
       const responseSize = Buffer.byteLength(JSON.stringify(reminder), 'utf8');
 
       recordRequest({
@@ -307,8 +312,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse, { status: 400 });
     }
 
-    const [source, id] = key.split('+');
-    if (!source || !id) {
+    const identity = resolveContentIdentity(key);
+    if (!identity) {
       const errorResponse = { error: 'Invalid key format' };
       const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -332,7 +337,12 @@ export async function POST(request: NextRequest) {
       save_time: reminder.save_time ?? Date.now(),
     } as Reminder;
 
-    await db.saveReminder(authInfo.username, source, id, finalReminder);
+    await db.saveReminder(
+      authInfo.username,
+      identity.source,
+      identity.id,
+      finalReminder,
+    );
 
     const successResponse = { success: true };
     const responseSize = Buffer.byteLength(JSON.stringify(successResponse), 'utf8');
@@ -375,7 +385,7 @@ export async function POST(request: NextRequest) {
  * DELETE /api/reminders
  *
  * 1. 不带 query -> 清空全部提醒
- * 2. 带 key=source+id -> 删除单条提醒
+ * 2. 带 canonical 或 legacy key -> 删除单条提醒
  */
 export async function DELETE(request: NextRequest) {
   const startTime = Date.now();
@@ -452,8 +462,8 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 删除单条
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const identity = resolveContentIdentity(key);
+      if (!identity) {
         const errorResponse = { error: 'Invalid key format' };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
@@ -471,7 +481,7 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json(errorResponse, { status: 400 });
       }
-      await db.deleteReminder(username, source, id);
+      await db.deleteReminder(username, identity.source, identity.id);
     } else {
       // 清空全部
       const all = await db.getAllReminders(username);
@@ -483,8 +493,10 @@ export async function DELETE(request: NextRequest) {
 
       await Promise.all(
         Object.keys(all).map(async (k) => {
-          const [s, i] = k.split('+');
-          if (s && i) await db.deleteReminder(username, s, i);
+          const identity = resolveContentIdentity(k);
+          if (identity) {
+            await db.deleteReminder(username, identity.source, identity.id);
+          }
         })
       );
     }

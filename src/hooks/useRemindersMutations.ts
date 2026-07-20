@@ -12,6 +12,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { buildContentIdentityKey } from '@/lib/content-identity';
 import {
   saveReminder,
   deleteReminder,
@@ -70,7 +71,7 @@ export function useAddReminderMutation(): UseMutationResult<
       const previousReminders = queryClient.getQueryData<Record<string, Reminder>>(['reminders']);
 
       queryClient.setQueryData<Record<string, Reminder>>(['reminders'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         return {
           ...old,
           [key]: reminder,
@@ -117,7 +118,7 @@ export function useRemoveReminderMutation(): UseMutationResult<
       const previousReminders = queryClient.getQueryData<Record<string, Reminder>>(['reminders']);
 
       queryClient.setQueryData<Record<string, Reminder>>(['reminders'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         const newReminders = { ...old };
         delete newReminders[key];
         return newReminders;
@@ -208,7 +209,7 @@ export function useToggleReminderMutation(): UseMutationResult<
       const previousReminders = queryClient.getQueryData<Record<string, Reminder>>(['reminders']);
 
       queryClient.setQueryData<Record<string, Reminder>>(['reminders'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         const newReminders = { ...old };
 
         if (isReminded) {

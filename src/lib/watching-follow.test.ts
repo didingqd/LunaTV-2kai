@@ -7,6 +7,7 @@ import {
   watchingFollowCreateSchema,
   watchingFollowUpdateSchema,
 } from '@/lib/watching-follow';
+import { buildContentIdentityKey } from '@/lib/content-identity';
 
 const createInput = {
   source: 'source-a',
@@ -103,6 +104,20 @@ describe('WatchingFollow domain', () => {
     ).toThrow('WatchingFollow identity does not match its storage key');
   });
 
+  it('存储守卫接受包含特殊字符的相同 canonical identity', () => {
+    const follow = createWatchingFollow(
+      watchingFollowCreateSchema.parse({
+        ...createInput,
+        source: 'source+a / 中文',
+        id: 'video+123 / 空 格',
+      }),
+    );
+
+    expect(() =>
+      assertWatchingFollowCanBeStored(null, follow.source, follow.id, follow),
+    ).not.toThrow();
+  });
+
   it('迁移旧存储字段到 camelCase，并使用安全存储 key', () => {
     const migrated = migrateStoredWatchingFollow({
       source: 'source+a',
@@ -123,7 +138,7 @@ describe('WatchingFollow domain', () => {
       updatedAt: 1000,
     });
     expect(watchingFollowStorageKey('source+a', 'video+123')).toBe(
-      encodeURIComponent(JSON.stringify(['source+a', 'video+123'])),
+      buildContentIdentityKey('source+a', 'video+123'),
     );
   });
 });

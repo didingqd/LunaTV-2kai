@@ -14,9 +14,9 @@ import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 import {
   saveFavorite,
   deleteFavorite,
-  generateStorageKey,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { hasFavoriteReminderIdentity } from '@/lib/favorite-reminder-identity';
 import {
   SHORTDRAMA_CACHE_EXPIRE,
   getCacheKey,
@@ -80,11 +80,13 @@ function ShortDramaCard({
 
   // 监听收藏状态更新事件
   useEffect(() => {
-    const storageKey = generateStorageKey(source, id);
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
       (newFavorites: Record<string, any>) => {
-        const isNowFavorited = !!newFavorites[storageKey];
+        const isNowFavorited = hasFavoriteReminderIdentity(newFavorites, {
+          source,
+          id,
+        });
         setFavorited(isNowFavorited);
       }
     );

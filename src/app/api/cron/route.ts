@@ -5,6 +5,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSpiderJarFromBlob, uploadSpiderJarToBlob } from '@/lib/blobStorage';
 import { getConfig, refineConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import {
+  buildContentIdentityKey,
+  resolveContentIdentity,
+} from '@/lib/content-identity';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
 import { getSpiderJar } from '@/lib/spiderJar';
@@ -577,7 +581,7 @@ async function refreshRecordAndFavorites() {
     }
 
     console.log('📋 最终处理用户列表:', users);
-    // 函数级缓存：key 为 `${source}+${id}`，值为 Promise<VideoDetail | null>
+    // 函数级缓存：key 为 canonical identity，值为 Promise<VideoDetail | null>
     const detailCache = new Map<string, Promise<SearchResult | null>>();
 
     // 获取详情 Promise（带缓存、超时、重试和错误处理）
@@ -586,7 +590,7 @@ async function refreshRecordAndFavorites() {
       id: string,
       fallbackTitle: string
     ): Promise<SearchResult | null> => {
-      const key = `${source}+${id}`;
+      const key = buildContentIdentityKey(source, id);
       let promise = detailCache.get(key);
       if (!promise) {
         // 🚀 阶段3优化：添加重试机制（最多重试2次）
@@ -779,11 +783,12 @@ async function refreshRecordAndFavorites() {
         const { results: favResults, errors: favErrors } = await processBatch(
           favoritesToProcess,
           async ([key, fav]) => {
-            const [source, id] = key.split('+');
-            if (!source || !id) {
+            const identity = resolveContentIdentity(key);
+            if (!identity) {
               console.warn(`跳过无效的收藏键: ${key}`);
               return null;
             }
+            const { source, id } = identity;
 
             const favDetail = await getDetail(source, id, fav.title);
             if (!favDetail) {

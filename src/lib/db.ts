@@ -28,6 +28,11 @@ import {
   migrateStoredWatchingFollow,
   watchingFollowStorageKey,
 } from './watching-follow';
+import { buildContentIdentityKey, compareContentIdentity } from './content-identity';
+import {
+  findFavoriteReminderIdentityEntry,
+  normalizeFavoriteReminderRecord,
+} from './favorite-reminder-identity';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -220,8 +225,18 @@ export class DbManager {
     id: string,
   ): Promise<Favorite | null> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
-    return this.storage.getFavorite(userName, key);
+    const key = buildContentIdentityKey(source, id);
+    const current = await this.storage.getFavorite(userName, key);
+    if (current) return current;
+
+    const stored = await this.storage.getAllFavorites(userName);
+    const legacy = findFavoriteReminderIdentityEntry(stored, { source, id });
+    if (!legacy) return null;
+    if (legacy.key !== key) {
+      await this.storage.setFavorite(userName, key, legacy.value);
+      await this.storage.deleteFavorite(userName, legacy.key);
+    }
+    return legacy.value;
   }
 
   async saveFavorite(
@@ -231,7 +246,7 @@ export class DbManager {
     favorite: Favorite,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = buildContentIdentityKey(source, id);
     await this.storage.setFavorite(userName, key, favorite);
   }
 
@@ -239,7 +254,19 @@ export class DbManager {
     userName: string,
   ): Promise<{ [key: string]: Favorite }> {
     incrementDbQuery();
-    return this.storage.getAllFavorites(userName);
+    const stored = await this.storage.getAllFavorites(userName);
+    const normalized = normalizeFavoriteReminderRecord(stored);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await this.storage.setFavorite(
+          userName,
+          migration.identityKey,
+          migration.value,
+        );
+      }
+      await this.storage.deleteFavorite(userName, migration.storedKey);
+    }
+    return normalized.values;
   }
 
   async deleteFavorite(
@@ -248,8 +275,18 @@ export class DbManager {
     id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = buildContentIdentityKey(source, id);
     await this.storage.deleteFavorite(userName, key);
+    const stored = await this.storage.getAllFavorites(userName);
+    await Promise.all(
+      Object.keys(stored)
+        .filter((storedKey) =>
+          compareContentIdentity({ key: storedKey }, { source, id }),
+        )
+        .map((storedKey) =>
+          this.storage.deleteFavorite(userName, storedKey),
+        ),
+    );
   }
 
   // ==================== 提醒相关方法 ====================
@@ -260,8 +297,18 @@ export class DbManager {
     id: string,
   ): Promise<Reminder | null> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
-    return this.storage.getReminder(userName, key);
+    const key = buildContentIdentityKey(source, id);
+    const current = await this.storage.getReminder(userName, key);
+    if (current) return current;
+
+    const stored = await this.storage.getAllReminders(userName);
+    const legacy = findFavoriteReminderIdentityEntry(stored, { source, id });
+    if (!legacy) return null;
+    if (legacy.key !== key) {
+      await this.storage.setReminder(userName, key, legacy.value);
+      await this.storage.deleteReminder(userName, legacy.key);
+    }
+    return legacy.value;
   }
 
   async saveReminder(
@@ -271,7 +318,7 @@ export class DbManager {
     reminder: Reminder,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = buildContentIdentityKey(source, id);
     await this.storage.setReminder(userName, key, reminder);
   }
 
@@ -279,7 +326,19 @@ export class DbManager {
     userName: string,
   ): Promise<{ [key: string]: Reminder }> {
     incrementDbQuery();
-    return this.storage.getAllReminders(userName);
+    const stored = await this.storage.getAllReminders(userName);
+    const normalized = normalizeFavoriteReminderRecord(stored);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await this.storage.setReminder(
+          userName,
+          migration.identityKey,
+          migration.value,
+        );
+      }
+      await this.storage.deleteReminder(userName, migration.storedKey);
+    }
+    return normalized.values;
   }
 
   async deleteReminder(
@@ -288,8 +347,18 @@ export class DbManager {
     id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = generateStorageKey(source, id);
+    const key = buildContentIdentityKey(source, id);
     await this.storage.deleteReminder(userName, key);
+    const stored = await this.storage.getAllReminders(userName);
+    await Promise.all(
+      Object.keys(stored)
+        .filter((storedKey) =>
+          compareContentIdentity({ key: storedKey }, { source, id }),
+        )
+        .map((storedKey) =>
+          this.storage.deleteReminder(userName, storedKey),
+        ),
+    );
   }
 
   // ==================== 追更关注相关方法 ====================
@@ -401,7 +470,7 @@ export class DbManager {
       incrementDbQuery();
       const batchData: { [key: string]: Favorite } = {};
       for (const { source, id, favorite } of favorites) {
-        const key = generateStorageKey(source, id);
+        const key = buildContentIdentityKey(source, id);
         batchData[key] = favorite;
       }
       await this.storage.setFavoritesBatch(userName, batchData);

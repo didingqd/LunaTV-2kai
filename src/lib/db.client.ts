@@ -27,6 +27,11 @@ import {
   deleteWatchingFollow,
   getWatchingFollows,
 } from './api/watching-follow';
+import { buildContentIdentityKey } from './content-identity';
+import {
+  hasFavoriteReminderIdentity,
+  normalizeFavoriteReminderRecord,
+} from './favorite-reminder-identity';
 
 // 重新导出类型以保持API兼容性
 export type { PlayRecord, SkipConfig, SkipSegment, EpisodeSkipConfig } from './types';
@@ -1330,21 +1335,26 @@ export async function getAllFavorites(): Promise<Record<string, Favorite>> {
     const cachedData = cacheManager.getCachedFavorites();
 
     if (cachedData) {
+      const normalizedCached = normalizeFavoriteReminderRecord(cachedData);
+      if (normalizedCached.changed) {
+        cacheManager.cacheFavorites(normalizedCached.values);
+      }
       // 检查是否需要后台同步（60秒内不重复同步）
       if (!shouldRunBackgroundSync('favorites')) {
-        return cachedData;
+        return normalizedCached.values;
       }
 
       // 返回缓存数据，同时后台异步更新
       fetchFromApi<Record<string, Favorite>>(`/api/favorites`)
         .then((freshData) => {
+          const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
           // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cacheFavorites(freshData);
+          if (JSON.stringify(normalizedCached.values) !== JSON.stringify(normalizedFresh)) {
+            cacheManager.cacheFavorites(normalizedFresh);
             // 触发数据更新事件
             window.dispatchEvent(
               new CustomEvent('favoritesUpdated', {
-                detail: freshData,
+                detail: normalizedFresh,
               })
             );
           }
@@ -1354,13 +1364,14 @@ export async function getAllFavorites(): Promise<Record<string, Favorite>> {
           console.warn('[后台同步] 收藏数据同步失败（不影响使用，已使用缓存数据）:', err);
         });
 
-      return cachedData;
+      return normalizedCached.values;
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
         const freshData = await fetchFromApi<Record<string, Favorite>>(`/api/favorites`);
-        cacheManager.cacheFavorites(freshData);
-        return freshData;
+        const normalized = normalizeFavoriteReminderRecord(freshData).values;
+        cacheManager.cacheFavorites(normalized);
+        return normalized;
       } catch (err) {
         console.error('获取收藏失败:', err);
         return {};
@@ -1372,7 +1383,12 @@ export async function getAllFavorites(): Promise<Record<string, Favorite>> {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, Favorite>;
+    const parsed = JSON.parse(raw) as Record<string, Favorite>;
+    const normalized = normalizeFavoriteReminderRecord(parsed);
+    if (normalized.changed) {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized.values));
+    }
+    return normalized.values;
   } catch (err) {
     console.error('读取收藏失败:', err);
     return {};
@@ -1388,7 +1404,7 @@ export async function saveFavorite(
   id: string,
   favorite: Favorite
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
+  const key = buildContentIdentityKey(source, id);
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -1449,7 +1465,7 @@ export async function deleteFavorite(
   source: string,
   id: string
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
+  const key = buildContentIdentityKey(source, id);
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -1506,7 +1522,7 @@ export async function isFavorited(
   source: string,
   id: string
 ): Promise<boolean> {
-  const key = generateStorageKey(source, id);
+  const identity = { source, id };
 
   // 数据库存储模式：使用混合缓存策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -1515,19 +1531,20 @@ export async function isFavorited(
     if (cachedFavorites) {
       // 检查是否需要后台同步（60秒内不重复同步）
       if (!shouldRunBackgroundSync('favorites')) {
-        return !!cachedFavorites[key];
+        return hasFavoriteReminderIdentity(cachedFavorites, identity);
       }
 
       // 返回缓存数据，同时后台异步更新
       fetchFromApi<Record<string, Favorite>>(`/api/favorites`)
         .then((freshData) => {
+          const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
           // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedFavorites) !== JSON.stringify(freshData)) {
-            cacheManager.cacheFavorites(freshData);
+          if (JSON.stringify(cachedFavorites) !== JSON.stringify(normalizedFresh)) {
+            cacheManager.cacheFavorites(normalizedFresh);
             // 触发数据更新事件
             window.dispatchEvent(
               new CustomEvent('favoritesUpdated', {
-                detail: freshData,
+                detail: normalizedFresh,
               })
             );
           }
@@ -1537,15 +1554,16 @@ export async function isFavorited(
           console.warn('[后台同步] 收藏数据同步失败（不影响使用，已使用缓存数据）:', err);
         });
 
-      return !!cachedFavorites[key];
+      return hasFavoriteReminderIdentity(cachedFavorites, identity);
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
         const freshData = await fetchFromApi<Record<string, Favorite>>(
           `/api/favorites`
         );
-        cacheManager.cacheFavorites(freshData);
-        return !!freshData[key];
+        const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
+        cacheManager.cacheFavorites(normalizedFresh);
+        return hasFavoriteReminderIdentity(normalizedFresh, identity);
       } catch (err) {
         console.error('检查收藏状态失败:', err);
         return false;
@@ -1555,7 +1573,7 @@ export async function isFavorited(
 
   // localStorage 模式
   const allFavorites = await getAllFavorites();
-  return !!allFavorites[key];
+  return hasFavoriteReminderIdentity(allFavorites, identity);
 }
 
 /**
@@ -2575,21 +2593,26 @@ export async function getAllReminders(): Promise<Record<string, Reminder>> {
     const cachedData = cacheManager.getCachedReminders();
 
     if (cachedData) {
+      const normalizedCached = normalizeFavoriteReminderRecord(cachedData);
+      if (normalizedCached.changed) {
+        cacheManager.cacheReminders(normalizedCached.values);
+      }
       // 检查是否需要后台同步（60秒内不重复同步）
       if (!shouldRunBackgroundSync('reminders')) {
-        return cachedData;
+        return normalizedCached.values;
       }
 
       // 返回缓存数据，同时后台异步更新
       fetchFromApi<Record<string, Reminder>>(`/api/reminders`)
         .then((freshData) => {
+          const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
           // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cacheReminders(freshData);
+          if (JSON.stringify(normalizedCached.values) !== JSON.stringify(normalizedFresh)) {
+            cacheManager.cacheReminders(normalizedFresh);
             // 触发数据更新事件
             window.dispatchEvent(
               new CustomEvent('remindersUpdated', {
-                detail: freshData,
+                detail: normalizedFresh,
               })
             );
           }
@@ -2599,13 +2622,14 @@ export async function getAllReminders(): Promise<Record<string, Reminder>> {
           console.warn('[后台同步] 提醒数据同步失败（不影响使用，已使用缓存数据）:', err);
         });
 
-      return cachedData;
+      return normalizedCached.values;
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
         const freshData = await fetchFromApi<Record<string, Reminder>>(`/api/reminders`);
-        cacheManager.cacheReminders(freshData);
-        return freshData;
+        const normalized = normalizeFavoriteReminderRecord(freshData).values;
+        cacheManager.cacheReminders(normalized);
+        return normalized;
       } catch (err) {
         console.error('获取提醒失败:', err);
         return {};
@@ -2617,7 +2641,12 @@ export async function getAllReminders(): Promise<Record<string, Reminder>> {
   try {
     const raw = localStorage.getItem(REMINDERS_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, Reminder>;
+    const parsed = JSON.parse(raw) as Record<string, Reminder>;
+    const normalized = normalizeFavoriteReminderRecord(parsed);
+    if (normalized.changed) {
+      localStorage.setItem(REMINDERS_KEY, JSON.stringify(normalized.values));
+    }
+    return normalized.values;
   } catch (err) {
     console.error('读取提醒失败:', err);
     return {};
@@ -2633,7 +2662,7 @@ export async function saveReminder(
   id: string,
   reminder: Reminder
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
+  const key = buildContentIdentityKey(source, id);
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -2695,7 +2724,7 @@ export async function deleteReminder(
   source: string,
   id: string
 ): Promise<void> {
-  const key = generateStorageKey(source, id);
+  const key = buildContentIdentityKey(source, id);
 
   // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -2755,7 +2784,7 @@ export async function isReminded(
   source: string,
   id: string
 ): Promise<boolean> {
-  const key = generateStorageKey(source, id);
+  const identity = { source, id };
 
   // 数据库存储模式：使用混合缓存策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
@@ -2764,19 +2793,20 @@ export async function isReminded(
     if (cachedReminders) {
       // 检查是否需要后台同步（60秒内不重复同步）
       if (!shouldRunBackgroundSync('reminders')) {
-        return !!cachedReminders[key];
+        return hasFavoriteReminderIdentity(cachedReminders, identity);
       }
 
       // 返回缓存数据，同时后台异步更新
       fetchFromApi<Record<string, Reminder>>(`/api/reminders`)
         .then((freshData) => {
+          const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
           // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedReminders) !== JSON.stringify(freshData)) {
-            cacheManager.cacheReminders(freshData);
+          if (JSON.stringify(cachedReminders) !== JSON.stringify(normalizedFresh)) {
+            cacheManager.cacheReminders(normalizedFresh);
             // 触发数据更新事件
             window.dispatchEvent(
               new CustomEvent('remindersUpdated', {
-                detail: freshData,
+                detail: normalizedFresh,
               })
             );
           }
@@ -2786,15 +2816,16 @@ export async function isReminded(
           console.warn('[后台同步] 提醒数据同步失败（不影响使用，已使用缓存数据）:', err);
         });
 
-      return !!cachedReminders[key];
+      return hasFavoriteReminderIdentity(cachedReminders, identity);
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
         const freshData = await fetchFromApi<Record<string, Reminder>>(
           `/api/reminders`
         );
-        cacheManager.cacheReminders(freshData);
-        return !!freshData[key];
+        const normalizedFresh = normalizeFavoriteReminderRecord(freshData).values;
+        cacheManager.cacheReminders(normalizedFresh);
+        return hasFavoriteReminderIdentity(normalizedFresh, identity);
       } catch (err) {
         console.error('检查提醒状态失败:', err);
         return false;
@@ -2805,7 +2836,7 @@ export async function isReminded(
   // localStorage 模式
   try {
     const allReminders = await getAllReminders();
-    return !!allReminders[key];
+    return hasFavoriteReminderIdentity(allReminders, identity);
   } catch (err) {
     console.error('检查提醒状态失败:', err);
     return false;

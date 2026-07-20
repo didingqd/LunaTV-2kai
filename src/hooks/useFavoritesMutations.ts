@@ -17,6 +17,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { buildContentIdentityKey } from '@/lib/content-identity';
 import {
   saveFavorite,
   deleteFavorite,
@@ -108,7 +109,7 @@ export function useAddFavoriteMutation(): UseMutationResult<
 
       // 3. 立即更新缓存（乐观更新）
       queryClient.setQueryData<Record<string, Favorite>>(['favorites'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         return {
           ...old,
           [key]: favorite,
@@ -183,7 +184,7 @@ export function useRemoveFavoriteMutation(): UseMutationResult<
 
       // 3. 立即从缓存中删除
       queryClient.setQueryData<Record<string, Favorite>>(['favorites'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         const newFavorites = { ...old };
         delete newFavorites[key];
         return newFavorites;
@@ -315,7 +316,7 @@ export function useToggleFavoriteMutation(): UseMutationResult<
       const previousFavorites = queryClient.getQueryData<Record<string, Favorite>>(['favorites']);
 
       queryClient.setQueryData<Record<string, Favorite>>(['favorites'], (old = {}) => {
-        const key = `${source}+${id}`;
+        const key = buildContentIdentityKey(source, id);
         const newFavorites = { ...old };
 
         if (isFavorited) {

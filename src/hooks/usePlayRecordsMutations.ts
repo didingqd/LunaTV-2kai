@@ -20,6 +20,7 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import { watchingFollowsQueryKey } from '@/hooks/useWatchingFollows';
 import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { playRecordStorageKey } from '@/lib/play-record';
+import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
 import {
   savePlayRecord,
   deletePlayRecord,
@@ -40,7 +41,6 @@ export interface SavePlayRecordParams {
   id: string;
   record: PlayRecord;
 }
-
 /**
  * 删除播放记录的参数
  */
@@ -132,6 +132,12 @@ export function useSavePlayRecordMutation(): UseMutationResult<
       if (context?.previousPlayRecords) {
         queryClient.setQueryData(['playRecords'], context.previousPlayRecords);
       }
+    },
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: WATCHING_UPDATES_QUERY_ROOT,
+      });
     },
 
     // ========== onSettled: 无论成功还是失败都执行 ==========

@@ -1,3 +1,8 @@
+import {
+  buildContentIdentityKey,
+  resolveContentIdentity,
+} from './content-identity';
+
 export interface PlayRecordIdentity {
   source: string;
   id: string;
@@ -5,7 +10,7 @@ export interface PlayRecordIdentity {
 }
 
 export function playRecordStorageKey(source: string, id: string): string {
-  return encodeURIComponent(JSON.stringify([source, id]));
+  return buildContentIdentityKey(source, id);
 }
 
 export function legacyPlayRecordStorageKey(source: string, id: string): string {
@@ -15,28 +20,13 @@ export function legacyPlayRecordStorageKey(source: string, id: string): string {
 export function parsePlayRecordStorageKey(
   key: string,
 ): PlayRecordIdentity | null {
-  try {
-    const decoded = JSON.parse(decodeURIComponent(key)) as unknown;
-    if (
-      Array.isArray(decoded) &&
-      decoded.length === 2 &&
-      typeof decoded[0] === 'string' &&
-      decoded[0].length > 0 &&
-      typeof decoded[1] === 'string' &&
-      decoded[1].length > 0
-    ) {
-      return { source: decoded[0], id: decoded[1], isLegacy: false };
-    }
-  } catch {
-    // Fall through to the legacy source+id parser.
-  }
+  const identity = resolveContentIdentity(key);
+  if (!identity) return null;
 
-  const separator = key.indexOf('+');
-  if (separator <= 0 || separator === key.length - 1) return null;
   return {
-    source: key.slice(0, separator),
-    id: key.slice(separator + 1),
-    isLegacy: true,
+    source: identity.source,
+    id: identity.id,
+    isLegacy: key !== identity.identityKey,
   };
 }
 

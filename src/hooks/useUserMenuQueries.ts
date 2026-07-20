@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient, queryOptions } from '@tanstack/r
 import { checkForUpdates, type UpdateStatus } from '@/lib/version_check';
 import type { PlayRecord } from '@/lib/types';
 import { normalizePlayRecordKeys } from '@/lib/play-record';
+import { mapFavoriteReminderIdentityItem } from '@/lib/favorite-reminder-identity';
 
 // ─── Emby Config Types ──────────────────────────────────────────────────────
 
@@ -226,10 +227,11 @@ const favoritesOptions = () => queryOptions({
     const response = await fetch('/api/favorites');
     if (response.ok) {
       const favoritesData = await response.json() as Record<string, any>;
-      const favoritesArray = Object.entries(favoritesData).map(([key, favorite]) => ({
-        ...favorite,
-        key,
-      }));
+      const favoritesArray = Object.entries(favoritesData)
+        .map(([key, favorite]) =>
+          mapFavoriteReminderIdentityItem(key, favorite),
+        )
+        .filter((favorite) => favorite !== null);
       // Sort by save time descending
       return favoritesArray.sort((a, b) => b.save_time - a.save_time);
     }

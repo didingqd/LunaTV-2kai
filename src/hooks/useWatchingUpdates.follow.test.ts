@@ -229,6 +229,20 @@ describe('WatchingFollow update detection candidates', () => {
       ),
     ).toHaveLength(1);
   });
+
+  it('preserves plus signs in PlayRecord sources when joining candidates', () => {
+    const follow = createFollow({ source: 'source+a' });
+    const record = createRecord({
+      key: playRecordStorageKey('source+a', 'video-1'),
+    });
+
+    expect(
+      buildWatchingFollowCandidates(
+        { [watchingFollowKey('source+a', 'video-1')]: follow },
+        [record],
+      ),
+    ).toHaveLength(1);
+  });
 });
 
 function createFollow(overrides: Partial<WatchingFollow> = {}): WatchingFollow {
