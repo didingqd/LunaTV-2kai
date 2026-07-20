@@ -3,6 +3,7 @@ import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { playRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
+  resolveEffectiveOriginalEpisodes,
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
 
@@ -140,6 +141,38 @@ describe('WatchingFollow update detection candidates', () => {
       newEpisodes: 1,
       remainingEpisodes: 1,
       hasUpdate: true,
+    });
+  });
+
+  it('resolves original episodes from the Follow baseline first', () => {
+    expect(resolveEffectiveOriginalEpisodes(12, 24, 5)).toBe(12);
+  });
+
+  it('falls back to detail episodes when the Follow baseline is invalid', () => {
+    expect(resolveEffectiveOriginalEpisodes(0, 24, 5)).toBe(24);
+  });
+
+  it('falls back to recorded total episodes when detail episodes are invalid', () => {
+    expect(resolveEffectiveOriginalEpisodes(0, 0, 5)).toBe(5);
+  });
+
+  it('uses one as the final original episode fallback', () => {
+    expect(resolveEffectiveOriginalEpisodes(0, 0, 0)).toBe(1);
+  });
+
+  it('uses the resolved baseline throughout update calculations', () => {
+    expect(
+      calculateWatchingUpdate({
+        detailEpisodes: 24,
+        originalEpisodes: 0,
+        recordTotalEpisodes: 5,
+        watchedEpisodes: 5,
+      }),
+    ).toMatchObject({
+      latestEpisodes: 24,
+      baselineEpisodes: 24,
+      newEpisodes: 0,
+      remainingEpisodes: 19,
     });
   });
 

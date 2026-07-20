@@ -23,6 +23,10 @@ import {
   playbackFactsOnly,
   playRecordStorageKey,
 } from './play-record';
+import {
+  deleteWatchingFollow,
+  getWatchingFollows,
+} from './api/watching-follow';
 
 // 重新导出类型以保持API兼容性
 export type { PlayRecord, SkipConfig, SkipSegment, EpisodeSkipConfig } from './types';
@@ -1078,6 +1082,7 @@ export async function deletePlayRecord(
     const allRecords = await getAllPlayRecords();
     delete allRecords[key];
     localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
+    await deleteWatchingFollow(source, id);
     window.dispatchEvent(
       new CustomEvent('playRecordsUpdated', {
         detail: allRecords,
@@ -1593,6 +1598,12 @@ export async function clearAllPlayRecords(): Promise<void> {
   // localStorage 模式
   if (typeof window === 'undefined') return;
   localStorage.removeItem(PLAY_RECORDS_KEY);
+  const follows = await getWatchingFollows();
+  await Promise.all(
+    Object.values(follows).map((follow) =>
+      deleteWatchingFollow(follow.source, follow.id),
+    ),
+  );
   window.dispatchEvent(
     new CustomEvent('playRecordsUpdated', {
       detail: {},

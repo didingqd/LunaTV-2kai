@@ -199,6 +199,7 @@ export const UserMenu: React.FC = () => {
     refresh: refreshWatchingFollows,
     isCreating: isCreatingFollow,
     isDeleting: isDeletingFollow,
+    isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
   const { data: sources = [] } = useSourcesQuery({
     enabled: isWatchingFollowsOpen || isContinueWatchingOpen,
@@ -1116,10 +1117,20 @@ export const UserMenu: React.FC = () => {
                       from='playrecord'
                       type={record.total_episodes > 1 ? 'tv' : ''}
                       remarks={record.remarks}
-                      following={isFollowing(followSource, id)}
-                      followLoading={isCreatingFollow || isDeletingFollow}
-                      onToggleFollow={() =>
-                        handleToggleContinueWatchingFollow(record)
+                      following={
+                        isFollowStateKnown
+                          ? isFollowing(followSource, id)
+                          : false
+                      }
+                      followLoading={
+                        !isFollowStateKnown ||
+                        isCreatingFollow ||
+                        isDeletingFollow
+                      }
+                      onToggleFollow={
+                        isFollowStateKnown
+                          ? () => handleToggleContinueWatchingFollow(record)
+                          : undefined
                       }
                     />
                   </div>

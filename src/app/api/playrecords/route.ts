@@ -433,6 +433,7 @@ export async function DELETE(request: NextRequest) {
       }
 
       await db.deletePlayRecord(username, identity.source, identity.id);
+      await db.deleteWatchingFollow(username, identity.source, identity.id);
     } else {
       // 未提供 key，则清空全部播放记录
       // 目前 DbManager 没有对应方法，这里直接遍历删除
@@ -448,6 +449,12 @@ export async function DELETE(request: NextRequest) {
             );
           }
         })
+      );
+      const follows = await db.getAllWatchingFollows(username);
+      await Promise.all(
+        Object.values(follows).map((follow) =>
+          db.deleteWatchingFollow(username, follow.source, follow.id),
+        ),
       );
     }
 

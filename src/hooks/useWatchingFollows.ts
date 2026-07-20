@@ -12,12 +12,17 @@ import {
   getWatchingFollows,
   isWatchingFollowActive,
   postWatchingFollow,
+  putWatchingFollow,
+  WatchingFollowApiError,
   type CreateWatchingFollowInput,
   watchingFollowKey,
 } from '@/lib/api/watching-follow';
+import { getAllPlayRecords } from '@/lib/db.client';
 import type { WatchingFollow } from '@/lib/types';
 
 export const watchingFollowsQueryKey = ['watchingFollows'] as const;
+
+const activeCreateOperations = new Map<string, Promise<WatchingFollow>>();
 
 export const watchingFollowsQueryOptions = queryOptions({
   queryKey: watchingFollowsQueryKey,
@@ -64,7 +69,54 @@ export function useIsWatchingFollowQuery(
 export function useCreateWatchingFollowMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: postWatchingFollow,
+    mutationFn: async (input: CreateWatchingFollowInput) => {
+      const key = watchingFollowKey(input.source, input.id);
+      const active = activeCreateOperations.get(key);
+      if (active) return active;
+
+      const operation = (async () => {
+        const currentFollows = await queryClient.fetchQuery({
+          ...watchingFollowsQueryOptions,
+          staleTime: 0,
+        });
+        const current = currentFollows[key];
+        if (current?.enabled) return current;
+
+        const playRecords = await getAllPlayRecords(true);
+        if (!playRecords[key]) {
+          throw new WatchingFollowApiError(
+            'A PlayRecord is required before creating a WatchingFollow',
+            409,
+          );
+        }
+        if (current) {
+          return putWatchingFollow(input.source, input.id, { enabled: true });
+        }
+
+        try {
+          return await postWatchingFollow(input);
+        } catch (error) {
+          if (error instanceof WatchingFollowApiError && error.status === 409) {
+            const fresh = await getWatchingFollows();
+            const existing = fresh[key];
+            if (existing?.enabled) return existing;
+            if (existing) {
+              return putWatchingFollow(input.source, input.id, {
+                enabled: true,
+              });
+            }
+          }
+          throw error;
+        }
+      })();
+
+      activeCreateOperations.set(key, operation);
+      try {
+        return await operation;
+      } finally {
+        activeCreateOperations.delete(key);
+      }
+    },
     onSuccess: (follow) => {
       queryClient.setQueryData<Record<string, WatchingFollow>>(
         watchingFollowsQueryKey,
@@ -139,6 +191,7 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
     list,
     follows: query.data ?? {},
     isLoading: query.isLoading,
+    isStateKnown: query.data !== undefined,
     error: query.error,
     isFollowing: (source: string, id: string) =>
       isWatchingFollowActive(query.data ?? {}, source, id),

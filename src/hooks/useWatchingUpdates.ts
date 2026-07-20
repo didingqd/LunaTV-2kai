@@ -23,6 +23,7 @@ import { parsePlayRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
   loadWatchCompletionThreshold,
+  resolveEffectiveOriginalEpisodes,
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
 import type { PlayRecord, WatchingFollow } from '@/lib/types';
@@ -172,7 +173,11 @@ async function checkSingleRecordUpdate(
         remainingEpisodes: 0,
         latestEpisodes: Math.max(
           record.total_episodes,
-          follow.originalEpisodes,
+          resolveEffectiveOriginalEpisodes(
+            follow.originalEpisodes,
+            0,
+            record.total_episodes,
+          ),
         ),
       };
     }
@@ -190,8 +195,11 @@ async function checkSingleRecordUpdate(
       播放记录集数: record.total_episodes,
     });
 
-    // WatchingFollow.originalEpisodes 是创建关注时的不可变基线。
-    const originalTotalEpisodes = follow.originalEpisodes;
+    const originalTotalEpisodes = resolveEffectiveOriginalEpisodes(
+      follow.originalEpisodes,
+      latestEpisodes,
+      record.total_episodes,
+    );
 
     console.log(`📊 [追番更新] ${record.title} 集数对比:`, {
       原始集数: originalTotalEpisodes,
@@ -273,7 +281,14 @@ async function checkSingleRecordUpdate(
       hasNewRelease: false,
       newEpisodes: 0,
       remainingEpisodes: 0,
-      latestEpisodes: Math.max(record.total_episodes, follow.originalEpisodes),
+      latestEpisodes: Math.max(
+        record.total_episodes,
+        resolveEffectiveOriginalEpisodes(
+          follow.originalEpisodes,
+          0,
+          record.total_episodes,
+        ),
+      ),
     };
   }
 }

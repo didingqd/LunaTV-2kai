@@ -28,6 +28,23 @@ export function normalizeEpisodeCount(value: unknown): number {
   return Math.floor(parsed);
 }
 
+export function resolveEffectiveOriginalEpisodes(
+  followOriginalEpisodes: unknown,
+  detailEpisodes: unknown,
+  recordTotalEpisodes: unknown,
+): number {
+  const followEpisodes = normalizeEpisodeCount(followOriginalEpisodes);
+  if (followEpisodes > 0) return followEpisodes;
+
+  const detailEpisodeCount = normalizeEpisodeCount(detailEpisodes);
+  if (detailEpisodeCount > 0) return detailEpisodeCount;
+
+  const recordEpisodes = normalizeEpisodeCount(recordTotalEpisodes);
+  if (recordEpisodes > 0) return recordEpisodes;
+
+  return 1;
+}
+
 export function sanitizeWatchCompletionThreshold(value: unknown): number {
   const parsed =
     typeof value === 'number'
@@ -80,8 +97,12 @@ export function calculateWatchingUpdate(
   input: WatchingUpdateCalculationInput,
 ): WatchingUpdateCalculationResult {
   const detailEpisodes = normalizeEpisodeCount(input.detailEpisodes);
-  const originalEpisodes = normalizeEpisodeCount(input.originalEpisodes);
   const recordTotalEpisodes = normalizeEpisodeCount(input.recordTotalEpisodes);
+  const originalEpisodes = resolveEffectiveOriginalEpisodes(
+    input.originalEpisodes,
+    detailEpisodes,
+    recordTotalEpisodes,
+  );
   const watchedEpisodes = normalizeEpisodeCount(input.watchedEpisodes);
   const latestEpisodes = Math.max(
     detailEpisodes,

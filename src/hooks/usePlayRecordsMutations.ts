@@ -17,6 +17,8 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { watchingFollowsQueryKey } from '@/hooks/useWatchingFollows';
+import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { playRecordStorageKey } from '@/lib/play-record';
 import {
   savePlayRecord,
@@ -24,6 +26,7 @@ import {
   clearAllPlayRecords,
   type PlayRecord,
 } from '@/lib/db.client';
+import type { WatchingFollow } from '@/lib/types';
 
 // ============================================================================
 // 类型定义
@@ -51,6 +54,7 @@ export interface DeletePlayRecordParams {
  */
 interface MutationContext {
   previousPlayRecords?: Record<string, PlayRecord>;
+  previousWatchingFollows?: Record<string, WatchingFollow>;
 }
 
 // ============================================================================
@@ -178,9 +182,13 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
     onMutate: async ({ source, id }: DeletePlayRecordParams) => {
       // 1. 取消进行中的查询
       await queryClient.cancelQueries({ queryKey: ['playRecords'] });
+      await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
 
       // 2. 保存旧数据
       const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
+      const previousWatchingFollows = queryClient.getQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+      );
 
       // 3. 立即从缓存中删除
       const key = playRecordStorageKey(source, id);
@@ -196,7 +204,16 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
         (old = []) => old.filter(record => record.key !== key)
       );
 
-      return { previousPlayRecords };
+      queryClient.setQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+        (old = {}) => {
+          const next = { ...old };
+          delete next[watchingFollowKey(source, id)];
+          return next;
+        },
+      );
+
+      return { previousPlayRecords, previousWatchingFollows };
     },
 
     // ========== onError: 失败时回滚 ==========
@@ -206,11 +223,19 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
       if (context?.previousPlayRecords) {
         queryClient.setQueryData(['playRecords'], context.previousPlayRecords);
       }
+      if (context?.previousWatchingFollows) {
+        queryClient.setQueryData(
+          watchingFollowsQueryKey,
+          context.previousWatchingFollows,
+        );
+      }
     },
 
     // ========== onSettled: 刷新数据 ==========
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['playRecords'] });
+      queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
     },
   });
 }
@@ -253,17 +278,22 @@ export function useClearPlayRecordsMutation(): UseMutationResult<
       // 1. 取消所有 playRecords 相关的进行中查询（前缀匹配）
       //    包括 ['playRecords'] 和 ['playRecords', 'continueWatching'] 等
       await queryClient.cancelQueries({ queryKey: ['playRecords'] });
+      await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
 
       // 2. 保存旧数据
       const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
+      const previousWatchingFollows = queryClient.getQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+      );
 
       // 3. 立即清空所有 playRecords 相关缓存（乐观更新）
       //    必须同时更新 ['playRecords'] 和 ['playRecords', 'continueWatching']
       //    否则 ContinueWatching 组件不会立即响应清空
       queryClient.setQueryData(['playRecords'], {});
       queryClient.setQueryData(['playRecords', 'continueWatching'], []);
+      queryClient.setQueryData(watchingFollowsQueryKey, {});
 
-      return { previousPlayRecords };
+      return { previousPlayRecords, previousWatchingFollows };
     },
 
     // ========== onError: 失败时回滚 ==========
@@ -282,11 +312,19 @@ export function useClearPlayRecordsMutation(): UseMutationResult<
           recordsArray.sort((a, b) => b.save_time - a.save_time)
         );
       }
+      if (context?.previousWatchingFollows) {
+        queryClient.setQueryData(
+          watchingFollowsQueryKey,
+          context.previousWatchingFollows,
+        );
+      }
     },
 
     // ========== onSettled: 刷新数据 ==========
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['playRecords'] });
+      queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
     },
   });
 }

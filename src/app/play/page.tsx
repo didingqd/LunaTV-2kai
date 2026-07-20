@@ -697,6 +697,7 @@ function PlayPageClient() {
     deleteFollow,
     isCreating: isCreatingFollow,
     isDeleting: isDeletingFollow,
+    isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
 
   // 解析 source 参数以获取 embyKey（仅用于 API 调用）
@@ -1187,6 +1188,7 @@ function PlayPageClient() {
       toast.error('当前资源身份无效，无法追更');
       return;
     }
+    if (!isFollowStateKnown) return;
 
     try {
       if (followingCurrentSource) {
@@ -1226,6 +1228,7 @@ function PlayPageClient() {
     deleteFollow,
     detail,
     followingCurrentSource,
+    isFollowStateKnown,
     searchType,
     videoCover,
     videoTitle,
@@ -7440,7 +7443,7 @@ function PlayPageClient() {
           favorited={favorited}
           onToggleFavorite={handleToggleFavorite}
           following={followingCurrentSource}
-          followLoading={isCreatingFollow || isDeletingFollow}
+          followLoading={!isFollowStateKnown || isCreatingFollow || isDeletingFollow}
           onToggleFollow={handleToggleWatchingFollow}
           detail={detail}
           movieDetails={movieDetails}

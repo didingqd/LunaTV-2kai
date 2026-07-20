@@ -66,6 +66,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const playRecord = await db.getPlayRecord(auth.username, source, id);
+    if (!playRecord) {
+      return noStoreJson(
+        { error: 'A PlayRecord is required before creating a WatchingFollow' },
+        { status: 409 },
+      );
+    }
+
     const follow = createWatchingFollow(parsed.data);
     await db.saveWatchingFollow(auth.username, source, id, follow);
 

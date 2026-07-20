@@ -3,6 +3,7 @@
 
 import { Clock, Trash2 } from 'lucide-react';
 import { useEffect, useState, memo } from 'react';
+import { toast } from 'sonner';
 
 import type { PlayRecord } from '@/lib/db.client';
 import { parsePlayRecordStorageKey } from '@/lib/play-record';
@@ -13,6 +14,7 @@ import {
   useContinueWatchingQuery,
   useWatchingUpdatesQuery,
 } from '@/hooks/useContinueWatchingQueries';
+import { useWatchingFollows } from '@/hooks/useWatchingFollows';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import SectionTitle from '@/components/SectionTitle';
@@ -35,6 +37,14 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
   const { data: watchingUpdates = null } = useWatchingUpdatesQuery({
     enabled: !loading && playRecords.length > 0
   });
+  const {
+    isFollowing,
+    createFollow,
+    deleteFollow,
+    isCreating: isCreatingFollow,
+    isDeleting: isDeletingFollow,
+    isStateKnown: isFollowStateKnown,
+  } = useWatchingFollows();
 
   // 🚀 TanStack Query - 使用 useMutation 管理清空播放记录操作
   const clearPlayRecordsMutation = useClearPlayRecordsMutation();
@@ -97,6 +107,41 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
     return matchedSeries && matchedSeries.latestEpisodes
       ? matchedSeries.latestEpisodes
       : record.total_episodes;
+  };
+
+  const handleToggleFollow = async (record: PlayRecord & { key: string }) => {
+    const { source, id } = parseKey(record.key);
+    if (!source || !id) return;
+
+    if (isFollowing(source, id)) {
+      await deleteFollow(source, id);
+      toast.success('已取消加追');
+      return;
+    }
+
+    const response = await fetch(
+      `/api/detail?source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}`,
+      { cache: 'no-store' },
+    );
+    if (!response.ok) throw new Error('详情获取失败，无法建立追更基线');
+    const detail = await response.json();
+    const originalEpisodes = Array.isArray(detail.episodes)
+      ? detail.episodes.length
+      : 0;
+    if (originalEpisodes <= 0) {
+      throw new Error('详情缺少有效剧集信息');
+    }
+
+    await createFollow({
+      source,
+      id,
+      title: detail.title || record.title,
+      cover: detail.poster || record.cover,
+      year: String(detail.year || record.year || ''),
+      type: detail.type_name || record.type || (originalEpisodes > 1 ? 'tv' : ''),
+      originalEpisodes,
+    });
+    toast.success('已加追');
   };
 
   // 处理清空所有记录
@@ -184,6 +229,27 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                       remarks={record.remarks}
                       priority={index < 4}
                       douban_id={record.douban_id}
+                      following={
+                        isFollowStateKnown ? isFollowing(source, id) : false
+                      }
+                      followLoading={
+                        !isFollowStateKnown ||
+                        isCreatingFollow ||
+                        isDeletingFollow
+                      }
+                      onToggleFollow={
+                        isFollowStateKnown
+                          ? () => {
+                              void handleToggleFollow(record).catch((error) =>
+                                toast.error(
+                                  error instanceof Error
+                                    ? error.message
+                                    : '追更操作失败',
+                                ),
+                              );
+                            }
+                          : undefined
+                      }
                     />
                   </div>
                   {/* 新集数徽章 - Netflix 统一风格 */}
