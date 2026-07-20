@@ -1,3 +1,10 @@
+import { getAuthInfoFromBrowserCookie } from './auth';
+import {
+  normalizeVideoRemarkIdentity,
+  resolveVideoRemarkIdentity,
+  type VideoRemarkIdentity,
+} from './video-remark-identity';
+
 export type VideoRemarkRecord = {
   remark: string;
   updatedAt: number;
@@ -7,17 +14,67 @@ export type VideoRemarkRecord = {
 type RemarksMap = Record<string, VideoRemarkRecord>;
 type VideoRemarkOrigin = 'manual' | 'bangumi_date';
 
+type PrincipalRemarks = {
+  principal: string;
+  data: RemarksMap;
+};
+
+type VideoRemarksStorageEnvelope = {
+  version: 2;
+  legacy: RemarksMap;
+  principals: Record<string, PrincipalRemarks>;
+};
+
+type ClientRemarkIdentity = {
+  resolved: VideoRemarkIdentity;
+  primaryKey: string;
+  isBangumiSemantic: boolean;
+};
+
+type UploadCandidate = {
+  source: string;
+  id: string;
+  record: VideoRemarkRecord;
+};
+
+type TrustedRemarksMap = {
+  data: RemarksMap;
+  promotedCanonicalKeys: Set<string>;
+};
+
 const STORAGE_KEY = 'moontv_video_card_remarks';
 const MANUAL_ORIGIN: VideoRemarkOrigin = 'manual';
 const BANGUMI_DATE_ORIGIN: VideoRemarkOrigin = 'bangumi_date';
+const STORAGE_VERSION = 2;
+const BANGUMI_PREFIX = 'bangumi__';
 
-let cache: RemarksMap | null = null;
-let syncPromise: Promise<RemarksMap> | null = null;
+let cache: VideoRemarksStorageEnvelope | null = null;
+const syncPromises = new Map<string, Promise<RemarksMap>>();
 let syncListenersInstalled = false;
 const listeners = new Set<() => void>();
 
+function resolvePrincipal(): string | null {
+  const username = getAuthInfoFromBrowserCookie()?.username?.trim();
+  return username || null;
+}
+
+function resolveClientRemarkIdentity(
+  source: string,
+  id: string,
+): ClientRemarkIdentity | null {
+  const resolved = normalizeVideoRemarkIdentity(source.trim(), id.trim());
+  if (!resolved) return null;
+
+  const isBangumiSemantic = resolved.identity.source === 'bangumi';
+  return {
+    resolved,
+    primaryKey: isBangumiSemantic ? resolved.legacyKey : resolved.canonicalKey,
+    isBangumiSemantic,
+  };
+}
+
 export function videoRemarkKey(source: string, id: string) {
-  return `${source.trim()}__${id.trim()}`;
+  return resolveClientRemarkIdentity(source, id)?.primaryKey || '';
 }
 
 function normalizeOrigin(value: unknown): VideoRemarkOrigin {
@@ -42,7 +99,7 @@ function normalizeRecord(value: unknown): VideoRemarkRecord | null {
 }
 
 function normalizeMap(value: unknown): RemarksMap {
-  if (!value || typeof value !== 'object') return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
@@ -53,21 +110,63 @@ function normalizeMap(value: unknown): RemarksMap {
   );
 }
 
-function readLocal(): RemarksMap {
-  if (typeof window === 'undefined') return {};
+function normalizeEnvelope(value: unknown): VideoRemarksStorageEnvelope {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { version: STORAGE_VERSION, legacy: {}, principals: {} };
+  }
+
+  const raw = value as Record<string, unknown>;
+  if (raw.version !== STORAGE_VERSION) {
+    return {
+      version: STORAGE_VERSION,
+      legacy: normalizeMap(value),
+      principals: {},
+    };
+  }
+
+  const principals: Record<string, PrincipalRemarks> = {};
+  if (
+    raw.principals &&
+    typeof raw.principals === 'object' &&
+    !Array.isArray(raw.principals)
+  ) {
+    for (const [key, value] of Object.entries(
+      raw.principals as Record<string, unknown>,
+    )) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const principal = value as Record<string, unknown>;
+      if (principal.principal !== key) continue;
+      principals[key] = {
+        principal: key,
+        data: normalizeMap(principal.data),
+      };
+    }
+  }
+
+  return {
+    version: STORAGE_VERSION,
+    legacy: normalizeMap(raw.legacy),
+    principals,
+  };
+}
+
+function readEnvelope(): VideoRemarksStorageEnvelope {
+  if (typeof window === 'undefined') {
+    return { version: STORAGE_VERSION, legacy: {}, principals: {} };
+  }
   if (cache) return cache;
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    cache = raw ? normalizeMap(JSON.parse(raw)) : {};
+    cache = raw ? normalizeEnvelope(JSON.parse(raw)) : normalizeEnvelope(null);
   } catch {
-    cache = {};
+    cache = normalizeEnvelope(null);
   }
 
   return cache;
 }
 
-function writeLocal(next: RemarksMap) {
+function persistEnvelope(next: VideoRemarksStorageEnvelope) {
   cache = next;
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -75,12 +174,91 @@ function writeLocal(next: RemarksMap) {
   listeners.forEach((listener) => listener());
 }
 
-function mergeRemarks(local: RemarksMap, remote: RemarksMap) {
+function readPrincipalRemarks(principal: string): RemarksMap {
+  return readEnvelope().principals[principal]?.data || {};
+}
+
+function writePrincipalRemarks(principal: string, data: RemarksMap) {
+  const current = readEnvelope();
+  persistEnvelope({
+    ...current,
+    principals: {
+      ...current.principals,
+      [principal]: { principal, data },
+    },
+  });
+}
+
+function lookupRemark(
+  remarks: RemarksMap,
+  identity: ClientRemarkIdentity,
+): { record: VideoRemarkRecord; legacyFallback: boolean } | null {
+  const primary = remarks[identity.primaryKey];
+  if (primary) return { record: primary, legacyFallback: false };
+
+  if (
+    !identity.isBangumiSemantic &&
+    identity.resolved.migratable &&
+    identity.resolved.legacyKey !== identity.primaryKey
+  ) {
+    const legacy = remarks[identity.resolved.legacyKey];
+    if (legacy) return { record: legacy, legacyFallback: true };
+  }
+
+  return null;
+}
+
+function resolveStoredIdentity(key: string): ClientRemarkIdentity | null {
+  const resolved = resolveVideoRemarkIdentity(key);
+  if (
+    resolved &&
+    (key === resolved.canonicalKey || key === resolved.legacyKey)
+  ) {
+    return {
+      resolved,
+      primaryKey: resolved.canonicalKey,
+      isBangumiSemantic: false,
+    };
+  }
+
+  if (key.startsWith(BANGUMI_PREFIX) && key.length > BANGUMI_PREFIX.length) {
+    return resolveClientRemarkIdentity(
+      'bangumi',
+      key.slice(BANGUMI_PREFIX.length),
+    );
+  }
+
+  return null;
+}
+
+function normalizeTrustedMap(remarks: RemarksMap): TrustedRemarksMap {
+  const normalized = { ...remarks };
+  const promotedCanonicalKeys = new Set<string>();
+  for (const [key, record] of Object.entries(remarks)) {
+    const identity = resolveStoredIdentity(key);
+    if (
+      identity &&
+      identity.primaryKey !== key &&
+      !normalized[identity.primaryKey]
+    ) {
+      normalized[identity.primaryKey] = record;
+      promotedCanonicalKeys.add(identity.primaryKey);
+    }
+  }
+  return { data: normalized, promotedCanonicalKeys };
+}
+
+function mergeRemarks(
+  local: RemarksMap,
+  remote: RemarksMap,
+  promotedLocalCanonicalKeys: Set<string>,
+) {
   const merged: RemarksMap = { ...remote };
-  const localWins: Array<[string, VideoRemarkRecord]> = [];
+  const localWins = new Map<string, UploadCandidate>();
 
   for (const [key, localRecord] of Object.entries(local)) {
     const remoteRecord = remote[key];
+    if (remoteRecord && promotedLocalCanonicalKeys.has(key)) continue;
     if (
       localRecord.origin === BANGUMI_DATE_ORIGIN &&
       remoteRecord &&
@@ -91,16 +269,65 @@ function mergeRemarks(local: RemarksMap, remote: RemarksMap) {
 
     if (!remoteRecord || localRecord.updatedAt > remoteRecord.updatedAt) {
       merged[key] = localRecord;
-      localWins.push([key, localRecord]);
+      const identity = resolveStoredIdentity(key);
+      if (identity && identity.primaryKey === key) {
+        localWins.set(identity.primaryKey, {
+          source: identity.resolved.identity.source,
+          id: identity.resolved.identity.id,
+          record: localRecord,
+        });
+      }
     }
   }
 
-  return { merged, localWins };
+  return { merged, localWins: Array.from(localWins.values()) };
 }
 
 export function getLocalVideoRemark(source: string, id: string) {
-  const record = readLocal()[videoRemarkKey(source, id)];
-  return record?.remark || '';
+  const identity = resolveClientRemarkIdentity(source, id);
+  if (!identity) return '';
+
+  const principal = resolvePrincipal();
+  if (principal) {
+    const principalRemarks = readPrincipalRemarks(principal);
+    const scoped = lookupRemark(principalRemarks, identity);
+    if (scoped) {
+      if (scoped.legacyFallback) {
+        writePrincipalRemarks(principal, {
+          ...principalRemarks,
+          [identity.primaryKey]: scoped.record,
+        });
+      }
+      return scoped.record.remark;
+    }
+  }
+
+  return lookupRemark(readEnvelope().legacy, identity)?.record.remark || '';
+}
+
+export function deleteLocalVideoRemark(source: string, id: string): boolean {
+  const principal = resolvePrincipal();
+  const identity = resolveClientRemarkIdentity(source, id);
+  if (!principal || !identity) return false;
+
+  const next = { ...readPrincipalRemarks(principal) };
+  let deleted = false;
+  if (Object.prototype.hasOwnProperty.call(next, identity.primaryKey)) {
+    delete next[identity.primaryKey];
+    deleted = true;
+  }
+
+  if (
+    !identity.isBangumiSemantic &&
+    identity.resolved.migratable &&
+    Object.prototype.hasOwnProperty.call(next, identity.resolved.legacyKey)
+  ) {
+    delete next[identity.resolved.legacyKey];
+    deleted = true;
+  }
+
+  if (deleted) writePrincipalRemarks(principal, next);
+  return deleted;
 }
 
 export function subscribeVideoRemarks(listener: () => void) {
@@ -112,44 +339,53 @@ export function subscribeVideoRemarks(listener: () => void) {
 
 export async function syncVideoRemarks() {
   installSyncListeners();
-  if (syncPromise) return syncPromise;
+  const principal = resolvePrincipal();
+  if (!principal) return readEnvelope().legacy;
 
-  syncPromise = (async () => {
-    const local = readLocal();
+  const active = syncPromises.get(principal);
+  if (active) return active;
+
+  const promise = (async () => {
+    const local = normalizeTrustedMap(readPrincipalRemarks(principal));
     const response = await fetch('/api/remarks', { cache: 'no-store' });
     if (!response.ok)
       throw new Error(`sync remarks failed: ${response.status}`);
+    if (resolvePrincipal() !== principal) return local.data;
 
-    const remote = normalizeMap(await response.json());
-    const { merged, localWins } = mergeRemarks(local, remote);
-    writeLocal(merged);
+    const remote = normalizeTrustedMap(normalizeMap(await response.json()));
+    const { merged, localWins } = mergeRemarks(
+      local.data,
+      remote.data,
+      local.promotedCanonicalKeys,
+    );
+    writePrincipalRemarks(principal, merged);
+
+    if (resolvePrincipal() !== principal) return merged;
 
     await Promise.allSettled(
-      localWins.map(([key, record]) => {
-        const separator = key.indexOf('__');
-        if (separator <= 0) return Promise.resolve();
-
-        return fetch('/api/remarks', {
+      localWins.map(({ source, id, record }) =>
+        fetch('/api/remarks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            source: key.slice(0, separator),
-            id: key.slice(separator + 2),
+            source,
+            id,
             remark: record.remark,
             updatedAt: record.updatedAt,
             origin: record.origin,
           }),
-        });
-      }),
+        }),
+      ),
     );
 
     return merged;
   })();
 
+  syncPromises.set(principal, promise);
   try {
-    return await syncPromise;
+    return await promise;
   } finally {
-    syncPromise = null;
+    syncPromises.delete(principal);
   }
 }
 
@@ -172,15 +408,19 @@ export async function saveVideoRemark(
   id: string,
   remark: string,
 ) {
-  const key = videoRemarkKey(source, id);
+  const principal = resolvePrincipal();
+  const identity = resolveClientRemarkIdentity(source, id);
+  if (!principal || !identity) return;
+
+  const key = identity.primaryKey;
   const record: VideoRemarkRecord = {
     remark: remark.trim(),
     updatedAt: Date.now(),
     origin: MANUAL_ORIGIN,
   };
 
-  writeLocal({
-    ...readLocal(),
+  writePrincipalRemarks(principal, {
+    ...readPrincipalRemarks(principal),
     [key]: record,
   });
 
@@ -201,14 +441,18 @@ export async function saveVideoRemark(
 
     const data = await response.json();
     const serverRecord = normalizeRecord(data?.record);
-    if (serverRecord && serverRecord.updatedAt > record.updatedAt) {
-      writeLocal({
-        ...readLocal(),
+    if (
+      resolvePrincipal() === principal &&
+      serverRecord &&
+      serverRecord.updatedAt > record.updatedAt
+    ) {
+      writePrincipalRemarks(principal, {
+        ...readPrincipalRemarks(principal),
         [key]: serverRecord,
       });
     }
   } catch {
-    // Offline edits remain in localStorage and will be reconciled on next sync.
+    // Offline edits remain in the current principal namespace for later sync.
   }
 }
 
@@ -218,11 +462,13 @@ export async function saveBangumiDateRemarkIfAllowed(
   date: string | null | undefined,
 ) {
   const remark = date?.trim() || '';
-  if (!remark) return;
+  const principal = resolvePrincipal();
+  const identity = resolveClientRemarkIdentity(source, id);
+  if (!remark || !principal || !identity) return;
 
-  const key = videoRemarkKey(source, id);
-  const existing = readLocal()[key];
-  if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) return;
+  const key = identity.primaryKey;
+  const existing = lookupRemark(readPrincipalRemarks(principal), identity);
+  if (existing && existing.record.origin !== BANGUMI_DATE_ORIGIN) return;
 
   const record: VideoRemarkRecord = {
     remark,
@@ -246,23 +492,25 @@ export async function saveBangumiDateRemarkIfAllowed(
     if (response.ok) {
       const data = await response.json();
       const serverRecord = normalizeRecord(data?.record);
-      if (serverRecord) {
-        writeLocal({
-          ...readLocal(),
+      if (resolvePrincipal() === principal && serverRecord) {
+        writePrincipalRemarks(principal, {
+          ...readPrincipalRemarks(principal),
           [key]: serverRecord,
         });
         return;
       }
     }
   } catch {
-    // Fall back to local-only auto remark below.
+    // Fall back to the current principal namespace below.
   }
 
-  const latest = readLocal();
-  const latestExisting = latest[key];
-  if (latestExisting && latestExisting.origin !== BANGUMI_DATE_ORIGIN) return;
+  const latest = readPrincipalRemarks(principal);
+  const latestExisting = lookupRemark(latest, identity);
+  if (latestExisting && latestExisting.record.origin !== BANGUMI_DATE_ORIGIN) {
+    return;
+  }
 
-  writeLocal({
+  writePrincipalRemarks(principal, {
     ...latest,
     [key]: record,
   });

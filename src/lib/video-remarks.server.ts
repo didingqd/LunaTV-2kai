@@ -1,5 +1,9 @@
 import { AdminConfig } from '@/lib/admin.types';
 import { db } from '@/lib/db';
+import {
+  normalizeVideoRemarkIdentity,
+  type VideoRemarkIdentity,
+} from '@/lib/video-remark-identity';
 
 export type RemarkOrigin = 'manual' | 'bangumi_date';
 
@@ -18,8 +22,99 @@ export function remarksCacheKey(username: string) {
   return `user:${username}:video_remarks`;
 }
 
-export function buildRemarkKey(source: string, id: string) {
-  return `${source.trim()}__${id.trim()}`;
+export type RemarkIdentityLookup = {
+  identity: VideoRemarkIdentity;
+  key: string;
+  record: RemarkRecord | undefined;
+  migrated: boolean;
+};
+
+function resolveServerRemarkIdentity(
+  source: string,
+  id: string,
+): VideoRemarkIdentity | null {
+  return normalizeVideoRemarkIdentity(source.trim(), id.trim());
+}
+
+function isBangumiSemanticIdentity(identity: VideoRemarkIdentity): boolean {
+  return identity.identity.source === 'bangumi';
+}
+
+export function resolveRemarkWriteKey(
+  source: string,
+  id: string,
+): string | null {
+  const identity = resolveServerRemarkIdentity(source, id);
+  if (!identity) return null;
+
+  return isBangumiSemanticIdentity(identity)
+    ? identity.legacyKey
+    : identity.canonicalKey;
+}
+
+export function resolveRemarkEntry(
+  remarks: RemarksMap,
+  source: string,
+  id: string,
+): RemarkIdentityLookup | null {
+  const identity = resolveServerRemarkIdentity(source, id);
+  if (!identity) return null;
+
+  const key = isBangumiSemanticIdentity(identity)
+    ? identity.legacyKey
+    : identity.canonicalKey;
+  const canonicalRecord = remarks[key];
+  if (canonicalRecord) {
+    return { identity, key, record: canonicalRecord, migrated: false };
+  }
+
+  if (
+    !isBangumiSemanticIdentity(identity) &&
+    identity.migratable &&
+    identity.legacyKey !== key
+  ) {
+    const legacyRecord = remarks[identity.legacyKey];
+    if (legacyRecord) {
+      remarks[key] = legacyRecord;
+      return { identity, key, record: legacyRecord, migrated: true };
+    }
+  }
+
+  return { identity, key, record: undefined, migrated: false };
+}
+
+export function deleteRemarkEntries(
+  remarks: RemarksMap,
+  source: string,
+  id: string,
+): boolean {
+  const identity = resolveServerRemarkIdentity(source, id);
+  if (!identity) return false;
+
+  const key = isBangumiSemanticIdentity(identity)
+    ? identity.legacyKey
+    : identity.canonicalKey;
+  let deleted = false;
+
+  if (Object.prototype.hasOwnProperty.call(remarks, key)) {
+    delete remarks[key];
+    deleted = true;
+  }
+
+  if (
+    !isBangumiSemanticIdentity(identity) &&
+    identity.migratable &&
+    identity.legacyKey !== key
+  ) {
+    if (
+      Object.prototype.hasOwnProperty.call(remarks, identity.legacyKey)
+    ) {
+      delete remarks[identity.legacyKey];
+      deleted = true;
+    }
+  }
+
+  return deleted;
 }
 
 export function normalizeOrigin(value: unknown): RemarkOrigin {

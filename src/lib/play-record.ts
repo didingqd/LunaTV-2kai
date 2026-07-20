@@ -1,7 +1,8 @@
 import {
-  buildContentIdentityKey,
-  resolveContentIdentity,
-} from './content-identity';
+  buildPlayRecordKey,
+  normalizePlayRecordIdentity,
+  resolvePlayRecordIdentity,
+} from './play-record-identity';
 
 export interface PlayRecordIdentity {
   source: string;
@@ -10,31 +11,36 @@ export interface PlayRecordIdentity {
 }
 
 export function playRecordStorageKey(source: string, id: string): string {
-  return buildContentIdentityKey(source, id);
+  return buildPlayRecordKey(source, id);
 }
 
-export function legacyPlayRecordStorageKey(source: string, id: string): string {
-  return `${source}+${id}`;
+export function legacyPlayRecordStorageKey(
+  source: string,
+  id: string,
+): string | null {
+  return normalizePlayRecordIdentity(source, id)?.legacyKey ?? null;
 }
 
 export function parsePlayRecordStorageKey(
   key: string,
 ): PlayRecordIdentity | null {
-  const identity = resolveContentIdentity(key);
+  const identity = resolvePlayRecordIdentity(key);
   if (!identity) return null;
 
   return {
     source: identity.source,
     id: identity.id,
-    isLegacy: key !== identity.identityKey,
+    isLegacy: identity.format === 'legacy',
   };
 }
 
 export function normalizePlayRecordKeys<T>(records: Record<string, T>): {
   records: Record<string, T>;
+  storageRecords: Record<string, T>;
   changed: boolean;
 } {
   const normalized: Record<string, T> = {};
+  const storageRecords: Record<string, T> = { ...records };
   const legacyEntries: Array<[PlayRecordIdentity, T]> = [];
 
   for (const [key, record] of Object.entries(records)) {
@@ -49,15 +55,16 @@ export function normalizePlayRecordKeys<T>(records: Record<string, T>): {
 
   for (const [identity, record] of legacyEntries) {
     const key = playRecordStorageKey(identity.source, identity.id);
-    if (!(key in normalized)) normalized[key] = record;
+    if (!(key in normalized)) {
+      normalized[key] = record;
+      storageRecords[key] = record;
+    }
   }
 
-  const originalKeys = Object.keys(records);
-  const normalizedKeys = Object.keys(normalized);
-  const changed =
-    originalKeys.length !== normalizedKeys.length ||
-    originalKeys.some((key) => !(key in normalized));
-  return { records: normalized, changed };
+  const changed = Object.keys(storageRecords).some(
+    (key) => !Object.prototype.hasOwnProperty.call(records, key),
+  );
+  return { records: normalized, storageRecords, changed };
 }
 
 export function playbackFactsOnly<T extends { original_episodes?: unknown }>(

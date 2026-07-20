@@ -11,8 +11,19 @@ import {
   parsePlayRecordStorageKey,
   playbackFactsOnly,
 } from '@/lib/play-record';
+import {
+  parseLegacyPlayRecordKey,
+  resolvePlayRecordIdentity,
+} from '@/lib/play-record-identity';
 
 export const runtime = 'nodejs';
+
+function playRecordIdentityError(key: string): string {
+  const legacy = parseLegacyPlayRecordKey(key);
+  return 'reason' in legacy && legacy.reason === 'ambiguous'
+    ? 'ambiguous legacy identity'
+    : 'Invalid key format';
+}
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -253,9 +264,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse, { status: 400 });
     }
 
-    const identity = parsePlayRecordStorageKey(key);
+    const identity = resolvePlayRecordIdentity(key);
     if (!identity) {
-      const errorResponse = { error: 'Invalid key format' };
+      const errorResponse = { error: playRecordIdentityError(key) };
       const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
       recordRequest({
@@ -412,9 +423,9 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 如果提供了 key，删除单条播放记录
-      const identity = parsePlayRecordStorageKey(key);
+      const identity = resolvePlayRecordIdentity(key);
       if (!identity) {
-        const errorResponse = { error: 'Invalid key format' };
+        const errorResponse = { error: playRecordIdentityError(key) };
         const errorSize = Buffer.byteLength(JSON.stringify(errorResponse), 'utf8');
 
         recordRequest({

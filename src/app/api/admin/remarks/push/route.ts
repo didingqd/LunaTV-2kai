@@ -8,10 +8,11 @@ import { getConfig } from '@/lib/config';
 import {
   MANUAL_ORIGIN,
   RemarksMap,
-  buildRemarkKey,
   getConfigUsernames,
   pushManualRemarksToUsers,
   readRemarks,
+  resolveRemarkEntry,
+  writeRemarks,
 } from '@/lib/video-remarks.server';
 
 export const runtime = 'nodejs';
@@ -43,15 +44,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const key = buildRemarkKey(source, id);
-      const record = allRemarks[key];
+      const lookup = resolveRemarkEntry(allRemarks, source, id);
+      if (lookup?.migrated) {
+        await writeRemarks(username, allRemarks);
+      }
+      const record = lookup?.record;
       if (!record || record.origin !== MANUAL_ORIGIN || !record.remark.trim()) {
         return NextResponse.json(
           { error: '当前条目没有可推送的手动备注' },
           { status: 400 },
         );
       }
-      sourceRemarks = { [key]: record };
+      sourceRemarks = { [lookup.key]: record };
     }
 
     const result = await pushManualRemarksToUsers(

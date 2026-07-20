@@ -960,7 +960,10 @@ export async function getAllPlayRecords(forceRefresh = false): Promise<Record<st
     const parsed = JSON.parse(raw) as Record<string, PlayRecord>;
     const normalized = normalizePlayRecordKeys(parsed);
     if (normalized.changed) {
-      localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(normalized.records));
+      localStorage.setItem(
+        PLAY_RECORDS_KEY,
+        JSON.stringify(normalized.storageRecords),
+      );
     }
     return normalized.records;
   } catch (err) {

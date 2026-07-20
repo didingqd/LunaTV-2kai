@@ -19,10 +19,14 @@ import {
 import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
 import {
-  legacyPlayRecordStorageKey,
   parsePlayRecordStorageKey,
   playRecordStorageKey,
 } from './play-record';
+import {
+  comparePlayRecordIdentity,
+  normalizePlayRecordIdentity,
+  resolvePlayRecordIdentity,
+} from './play-record-identity';
 import {
   assertWatchingFollowCanBeStored,
   migrateStoredWatchingFollow,
@@ -113,20 +117,19 @@ export class DbManager {
     id: string,
   ): Promise<PlayRecord | null> {
     incrementDbQuery();
-    const key = playRecordStorageKey(source, id);
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) return null;
+    const key = identity.canonicalKey;
     const current = await this.storage.getPlayRecord(userName, key);
-    const legacyKey = legacyPlayRecordStorageKey(source, id);
-    if (current) {
-      if (legacyKey !== key) {
-        await this.storage.deletePlayRecord(userName, legacyKey);
-      }
-      return current;
-    }
+    if (current) return current;
 
+    const legacyKey = identity.legacyKey;
+    if (!legacyKey) return null;
+    const legacyIdentity = resolvePlayRecordIdentity(legacyKey);
+    if (!comparePlayRecordIdentity(legacyIdentity, identity)) return null;
     const legacy = await this.storage.getPlayRecord(userName, legacyKey);
     if (!legacy) return null;
     await this.storage.setPlayRecord(userName, key, legacy);
-    await this.storage.deletePlayRecord(userName, legacyKey);
     return legacy;
   }
 
@@ -139,10 +142,6 @@ export class DbManager {
     incrementDbQuery();
     const key = playRecordStorageKey(source, id);
     await this.storage.setPlayRecord(userName, key, record);
-    const legacyKey = legacyPlayRecordStorageKey(source, id);
-    if (legacyKey !== key) {
-      await this.storage.deletePlayRecord(userName, legacyKey);
-    }
   }
 
   async getAllPlayRecords(userName: string): Promise<{
@@ -153,20 +152,19 @@ export class DbManager {
     const result: Record<string, PlayRecord> = {};
 
     for (const [storedKey, record] of Object.entries(stored)) {
-      const identity = parsePlayRecordStorageKey(storedKey);
-      if (!identity || identity.isLegacy) continue;
-      result[playRecordStorageKey(identity.source, identity.id)] = record;
+      const identity = resolvePlayRecordIdentity(storedKey);
+      if (!identity || identity.format !== 'canonical') continue;
+      result[identity.canonicalKey] = record;
     }
 
     for (const [storedKey, record] of Object.entries(stored)) {
-      const identity = parsePlayRecordStorageKey(storedKey);
-      if (!identity || !identity.isLegacy) continue;
-      const key = playRecordStorageKey(identity.source, identity.id);
+      const identity = resolvePlayRecordIdentity(storedKey);
+      if (!identity || identity.format !== 'legacy') continue;
+      const key = identity.canonicalKey;
       if (!(key in result)) {
         result[key] = record;
         await this.storage.setPlayRecord(userName, key, record);
       }
-      await this.storage.deletePlayRecord(userName, storedKey);
     }
 
     return result;
@@ -178,11 +176,14 @@ export class DbManager {
     id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = playRecordStorageKey(source, id);
-    await this.storage.deletePlayRecord(userName, key);
-    const legacyKey = legacyPlayRecordStorageKey(source, id);
-    if (legacyKey !== key) {
-      await this.storage.deletePlayRecord(userName, legacyKey);
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) return;
+    await this.storage.deletePlayRecord(userName, identity.canonicalKey);
+    if (
+      identity.legacyKey &&
+      comparePlayRecordIdentity(identity.legacyKey, identity)
+    ) {
+      await this.storage.deletePlayRecord(userName, identity.legacyKey);
     }
   }
 
@@ -202,14 +203,6 @@ export class DbManager {
         batchData[key] = record;
       }
       await this.storage.setPlayRecordsBatch(userName, batchData);
-      await Promise.all(
-        records.map(({ source, id }) =>
-          this.storage.deletePlayRecord(
-            userName,
-            legacyPlayRecordStorageKey(source, id),
-          ),
-        ),
-      );
     } else {
       // 回退：逐条保存
       for (const { source, id, record } of records) {
@@ -369,21 +362,23 @@ export class DbManager {
     id: string,
   ): Promise<WatchingFollow | null> {
     incrementDbQuery();
-    const key = watchingFollowStorageKey(source, id);
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) return null;
+    const key = identity.canonicalKey;
     const current = await this.storage.getWatchingFollow(userName, key);
     if (current) {
       return this.migrateWatchingFollowValue(userName, key, current);
     }
 
-    const legacyKey = generateStorageKey(source, id);
+    const legacyKey = identity.legacyKey;
+    if (!legacyKey) return null;
     const legacy = await this.storage.getWatchingFollow(userName, legacyKey);
     if (!legacy) return null;
-    const migrated = await this.migrateWatchingFollowValue(
-      userName,
-      key,
-      legacy,
-    );
-    await this.storage.deleteWatchingFollow(userName, legacyKey);
+    const migrated = migrateStoredWatchingFollow(legacy);
+    if (!migrated || !comparePlayRecordIdentity(migrated, identity)) {
+      return null;
+    }
+    await this.storage.setWatchingFollow(userName, key, migrated);
     return migrated;
   }
 
@@ -410,21 +405,30 @@ export class DbManager {
     incrementDbQuery();
     const stored = await this.storage.getAllWatchingFollows(userName);
     const result: Record<string, WatchingFollow> = {};
+
     for (const [storedKey, raw] of Object.entries(stored)) {
+      const identity = resolvePlayRecordIdentity(storedKey);
+      if (!identity || identity.format !== 'canonical') continue;
       const follow = await this.migrateWatchingFollowValue(
         userName,
         storedKey,
         raw,
       );
+      if (!comparePlayRecordIdentity(follow, identity)) continue;
+      result[identity.canonicalKey] = follow;
+    }
+
+    for (const [storedKey, raw] of Object.entries(stored)) {
+      const storedIdentity = resolvePlayRecordIdentity(storedKey);
+      if (storedIdentity?.format === 'canonical') continue;
+      const follow = migrateStoredWatchingFollow(raw);
       if (!follow) continue;
       const key = watchingFollowStorageKey(follow.source, follow.id);
+      if (key in result) continue;
       result[key] = follow;
-      if (storedKey !== key) {
-        const existing = await this.storage.getWatchingFollow(userName, key);
-        if (!existing)
-          await this.storage.setWatchingFollow(userName, key, follow);
-        await this.storage.deleteWatchingFollow(userName, storedKey);
-      }
+      const existing = await this.storage.getWatchingFollow(userName, key);
+      if (!existing)
+        await this.storage.setWatchingFollow(userName, key, follow);
     }
     return result;
   }
@@ -435,11 +439,21 @@ export class DbManager {
     id: string,
   ): Promise<void> {
     incrementDbQuery();
-    const key = watchingFollowStorageKey(source, id);
-    const legacyKey = generateStorageKey(source, id);
-    await this.storage.deleteWatchingFollow(userName, key);
-    if (legacyKey !== key) {
-      await this.storage.deleteWatchingFollow(userName, legacyKey);
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) return;
+    await this.storage.deleteWatchingFollow(userName, identity.canonicalKey);
+    if (identity.legacyKey) {
+      const legacy = await this.storage.getWatchingFollow(
+        userName,
+        identity.legacyKey,
+      );
+      const legacyFollow = migrateStoredWatchingFollow(legacy);
+      if (legacyFollow && comparePlayRecordIdentity(legacyFollow, identity)) {
+        await this.storage.deleteWatchingFollow(
+          userName,
+          identity.legacyKey,
+        );
+      }
     }
   }
 

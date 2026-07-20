@@ -8,7 +8,10 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
-import { parsePlayRecordStorageKey } from '@/lib/play-record';
+import {
+  parseLegacyPlayRecordKey,
+  resolvePlayRecordIdentity,
+} from '@/lib/play-record-identity';
 import { resolveSkipConfigIdentityKey } from '@/lib/skip-config-identity';
 import {
   MANUAL_ORIGIN,
@@ -26,6 +29,11 @@ const gunzipAsync = promisify(gunzip);
 
 export async function POST(req: NextRequest) {
   try {
+    const diagnostics: Array<{
+      username: string;
+      key: string;
+      reason: string;
+    }> = [];
     // 检查存储类型
     const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
     if (storageType === 'localstorage') {
@@ -139,12 +147,24 @@ export async function POST(req: NextRequest) {
 
       // 导入播放记录（带数据升级）
       if (user.playRecords) {
-        for (const [key, record] of Object.entries(user.playRecords)) {
-          const identity = parsePlayRecordStorageKey(key);
-          if (!identity) {
-            console.warn(`跳过用户 ${username} 的无效播放记录键: ${key}`);
-            continue;
-          }
+        const entries = Object.entries(user.playRecords);
+        const canonicalKeys = new Set(
+          entries
+            .map(([key]) => resolvePlayRecordIdentity(key))
+            .filter((identity) => identity?.format === 'canonical')
+            .map((identity) => identity!.canonicalKey),
+        );
+        const storage = (db as unknown as {
+          storage: {
+            setPlayRecord: (
+              userName: string,
+              key: string,
+              record: unknown,
+            ) => Promise<void>;
+          };
+        }).storage;
+
+        for (const [key, record] of entries) {
           // 数据升级：确保所有必需字段存在
           const recordData = record as any;
           const upgradedRecord = {
@@ -158,6 +178,44 @@ export async function POST(req: NextRequest) {
             // 确保 original_episodes 字段存在
             original_episodes: recordData.original_episodes || undefined,
           };
+
+          const identity = resolvePlayRecordIdentity(key);
+          if (!identity) {
+            const legacy = parseLegacyPlayRecordKey(key);
+            if ('reason' in legacy && legacy.reason === 'ambiguous') {
+              await storage.setPlayRecord(username, key, upgradedRecord);
+              diagnostics.push({
+                username,
+                key,
+                reason: 'ambiguous legacy identity preserved',
+              });
+              console.warn(
+                `保留用户 ${username} 的歧义播放记录键，未迁移: ${key}`,
+              );
+              continue;
+            }
+
+            diagnostics.push({
+              username,
+              key,
+              reason: 'invalid play record identity skipped',
+            });
+            console.warn(`跳过用户 ${username} 的无效播放记录键: ${key}`);
+            continue;
+          }
+
+          if (identity.format === 'legacy') {
+            await storage.setPlayRecord(username, key, upgradedRecord);
+            if (canonicalKeys.has(identity.canonicalKey)) {
+              diagnostics.push({
+                username,
+                key,
+                reason: 'canonical play record preferred over legacy',
+              });
+              continue;
+            }
+          }
+
           await db.savePlayRecord(
             username,
             identity.source,
@@ -290,6 +348,7 @@ export async function POST(req: NextRequest) {
       message: '数据导入成功',
       importedUsers: Object.keys(userData).length,
       timestamp: importData.timestamp,
+      diagnostics,
       serverVersion:
         typeof importData.serverVersion === 'string'
           ? importData.serverVersion

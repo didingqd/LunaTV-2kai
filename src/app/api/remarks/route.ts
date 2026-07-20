@@ -12,10 +12,12 @@ import {
 import {
   BANGUMI_DATE_ORIGIN,
   MANUAL_ORIGIN,
-  buildRemarkKey,
+  deleteRemarkEntries,
   normalizeOrigin,
   normalizeRecord,
   readRemarks,
+  resolveRemarkEntry,
+  resolveRemarkWriteKey,
   writeRemarks,
 } from '@/lib/video-remarks.server';
 
@@ -97,7 +99,11 @@ export async function GET(request: NextRequest) {
     const id = request.nextUrl.searchParams.get('id')?.trim() || '';
 
     if (source && id) {
-      const record = remarks[buildRemarkKey(source, id)] || {
+      const lookup = resolveRemarkEntry(remarks, source, id);
+      if (lookup?.migrated) {
+        await writeRemarks(user.username, remarks);
+      }
+      const record = lookup?.record || {
         remark: '',
         updatedAt: 0,
         origin: MANUAL_ORIGIN,
@@ -145,8 +151,18 @@ export async function POST(request: NextRequest) {
     }
 
     const remarks = await readRemarks(user.username);
-    const key = buildRemarkKey(source, id);
-    const existing = remarks[key];
+    const lookup = resolveRemarkEntry(remarks, source, id);
+    const key = resolveRemarkWriteKey(source, id);
+    if (!lookup || !key) {
+      return jsonResponse('POST', startTime, startMemory, 400, requestSize, {
+        error: 'Invalid source or id',
+      });
+    }
+    const existing = lookup.record;
+
+    if (lookup.migrated) {
+      await writeRemarks(user.username, remarks);
+    }
 
     if (origin === BANGUMI_DATE_ORIGIN) {
       if (!remark) {
@@ -214,11 +230,13 @@ export async function DELETE(request: NextRequest) {
 
     if (source && id) {
       const remarks = await readRemarks(user.username);
-      const key = buildRemarkKey(source, id);
-      const existing = remarks[key];
+      const lookup = resolveRemarkEntry(remarks, source, id);
+      const existing = lookup?.record;
 
       if (!existing || existing.updatedAt <= updatedAt) {
-        delete remarks[key];
+        deleteRemarkEntries(remarks, source, id);
+        await writeRemarks(user.username, remarks);
+      } else if (lookup?.migrated) {
         await writeRemarks(user.username, remarks);
       }
     } else {

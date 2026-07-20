@@ -32,28 +32,41 @@ describe('PlayRecord identity protocol', () => {
   });
 
   it('falls back to the legacy source+id key parser', () => {
-    const safeKey = playRecordStorageKey('bangumi', '123+456');
-    const legacyKey = legacyPlayRecordStorageKey('bangumi', '123+456');
+    const safeKey = playRecordStorageKey('bangumi', '123');
+    const legacyKey = legacyPlayRecordStorageKey('bangumi', '123');
+    expect(legacyKey).not.toBeNull();
     const migrated = normalizePlayRecordKeys({
-      [legacyKey]: record,
+      [legacyKey!]: record,
     });
     expect(migrated.changed).toBe(true);
     expect(migrated.records[safeKey]).toBe(record);
+    expect(migrated.storageRecords[legacyKey!]).toBe(record);
+    expect(migrated.storageRecords[safeKey]).toBe(record);
   });
 
   it('keeps the canonical entry when matching legacy and canonical keys coexist', () => {
-    const safeKey = playRecordStorageKey('bangumi', '123+456');
-    const legacyKey = legacyPlayRecordStorageKey('bangumi', '123+456');
+    const safeKey = playRecordStorageKey('bangumi', '123');
+    const legacyKey = legacyPlayRecordStorageKey('bangumi', '123');
+    expect(legacyKey).not.toBeNull();
     const canonicalRecord = { ...record, title: 'Canonical' };
     const legacyRecord = { ...record, title: 'Legacy' };
 
     const migrated = normalizePlayRecordKeys({
-      [legacyKey]: legacyRecord,
+      [legacyKey!]: legacyRecord,
       [safeKey]: canonicalRecord,
     });
 
-    expect(migrated.changed).toBe(true);
+    expect(migrated.changed).toBe(false);
     expect(migrated.records).toEqual({ [safeKey]: canonicalRecord });
+    expect(migrated.storageRecords[legacyKey!]).toBe(legacyRecord);
+  });
+
+  it('does not expose or rewrite an ambiguous legacy key', () => {
+    const migrated = normalizePlayRecordKeys({ 'a+b+123': record });
+
+    expect(migrated.records).toEqual({});
+    expect(migrated.storageRecords).toEqual({ 'a+b+123': record });
+    expect(migrated.changed).toBe(false);
   });
 
   it('does not let playback writes modify original_episodes', () => {
