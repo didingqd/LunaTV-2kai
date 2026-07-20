@@ -32,6 +32,10 @@ import {
   hasFavoriteReminderIdentity,
   normalizeFavoriteReminderRecord,
 } from './favorite-reminder-identity';
+import {
+  normalizeSkipConfigIdentity,
+  normalizeSkipConfigRecord,
+} from './skip-config-identity';
 
 // 重新导出类型以保持API兼容性
 export type { PlayRecord, SkipConfig, SkipSegment, EpisodeSkipConfig } from './types';
@@ -792,6 +796,22 @@ async function fetchFromApi<T>(path: string, retries = 2): Promise<T> {
   } finally {
     inFlightRequests.delete(requestKey);
   }
+}
+
+async function fetchAllSkipConfigsFromApi(): Promise<
+  Record<string, SkipConfig>
+> {
+  const authInfo = getAuthInfoFromBrowserCookie();
+  if (!authInfo?.username) throw new Error('未登录');
+  const response = await fetchWithAuth('/api/skipconfigs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'getAll', username: authInfo.username }),
+  });
+  const data = (await response.json()) as {
+    configs?: Record<string, SkipConfig>;
+  };
+  return data.configs ?? {};
 }
 
 /**
@@ -1716,7 +1736,7 @@ export async function refreshAllCache(): Promise<void> {
         fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`),
         fetchFromApi<Record<string, Favorite>>(`/api/favorites`),
         fetchFromApi<string[]>(`/api/searchhistory`),
-        fetchFromApi<Record<string, SkipConfig>>(`/api/skipconfigs`),
+        fetchAllSkipConfigsFromApi(),
       ]);
 
     if (playRecords.status === 'fulfilled') {
@@ -1747,10 +1767,13 @@ export async function refreshAllCache(): Promise<void> {
     }
 
     if (skipConfigs.status === 'fulfilled') {
-      cacheManager.cacheSkipConfigs(skipConfigs.value);
+      const normalizedSkipConfigs = normalizeSkipConfigRecord(
+        skipConfigs.value,
+      ).values;
+      cacheManager.cacheSkipConfigs(normalizedSkipConfigs);
       window.dispatchEvent(
         new CustomEvent('skipConfigsUpdated', {
-          detail: skipConfigs.value,
+          detail: normalizedSkipConfigs,
         })
       );
     }
@@ -1893,17 +1916,38 @@ export async function getSkipConfig(
       return null;
     }
 
-    const key = generateStorageKey(source, id);
+    const identity = normalizeSkipConfigIdentity(source, id, identityKey);
+    if (!identity) return null;
+    const key = identity.storageKey;
 
     if (STORAGE_TYPE === 'localstorage') {
       // localStorage 模式
       const raw = localStorage.getItem('moontv_skip_configs');
       if (!raw) return null;
-      const allConfigs = JSON.parse(raw) as Record<string, SkipConfig>;
-      return allConfigs[key] || null;
+      const parsed = JSON.parse(raw) as Record<string, SkipConfig>;
+      const normalized = normalizeSkipConfigRecord(parsed);
+      if (normalized.changed) {
+        for (const migration of normalized.migrations) {
+          if (migration.writeCanonical) {
+            parsed[migration.storageKey] = migration.value;
+          }
+        }
+        localStorage.setItem(
+          'moontv_skip_configs',
+          JSON.stringify(parsed),
+        );
+      }
+      return normalized.values[key] || null;
     } else {
       // 数据库模式：先查缓存
-      const cachedConfigs = cacheManager.getCachedSkipConfigs();
+      const rawCachedConfigs = cacheManager.getCachedSkipConfigs();
+      const normalizedCached = rawCachedConfigs
+        ? normalizeSkipConfigRecord(rawCachedConfigs)
+        : null;
+      const cachedConfigs = normalizedCached?.values ?? null;
+      if (normalizedCached?.changed) {
+        cacheManager.cacheSkipConfigs(normalizedCached.values);
+      }
 
       if (cachedConfigs && cachedConfigs[key]) {
         return cachedConfigs[key];
@@ -1924,7 +1968,7 @@ export async function getSkipConfig(
           action: 'get',
           key,
           username: authInfo.username,
-          identityKey,
+          identityKey: identity.semanticKey,
         }),
       });
 
@@ -1961,7 +2005,9 @@ export async function saveSkipConfig(
   identityKey?: string
 ): Promise<void> {
   try {
-    const key = generateStorageKey(source, id);
+    const identity = normalizeSkipConfigIdentity(source, id, identityKey);
+    if (!identity) throw new Error('无效的跳过配置身份');
+    const key = identity.storageKey;
 
     if (STORAGE_TYPE === 'localstorage') {
       // localStorage 模式
@@ -1970,7 +2016,9 @@ export async function saveSkipConfig(
         return;
       }
       const raw = localStorage.getItem('moontv_skip_configs');
-      const configs = raw ? (JSON.parse(raw) as Record<string, SkipConfig>) : {};
+      const configs = raw
+        ? (JSON.parse(raw) as Record<string, SkipConfig>)
+        : {};
       configs[key] = config;
       localStorage.setItem('moontv_skip_configs', JSON.stringify(configs));
       window.dispatchEvent(
@@ -2006,7 +2054,7 @@ export async function saveSkipConfig(
           key,
           config,
           username: authInfo.username,
-          identityKey,
+          identityKey: identity.semanticKey,
         }),
       });
 
@@ -2036,16 +2084,24 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
     const cachedData = cacheManager.getCachedSkipConfigs();
 
     if (cachedData) {
+      const normalizedCached = normalizeSkipConfigRecord(cachedData);
+      if (normalizedCached.changed) {
+        cacheManager.cacheSkipConfigs(normalizedCached.values);
+      }
       // 返回缓存数据，同时后台异步更新
-      fetchFromApi<Record<string, SkipConfig>>(`/api/skipconfigs`)
+      fetchAllSkipConfigsFromApi()
         .then((freshData) => {
+          const normalizedFresh = normalizeSkipConfigRecord(freshData).values;
           // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cacheSkipConfigs(freshData);
+          if (
+            JSON.stringify(normalizedCached.values) !==
+            JSON.stringify(normalizedFresh)
+          ) {
+            cacheManager.cacheSkipConfigs(normalizedFresh);
             // 触发数据更新事件
             window.dispatchEvent(
               new CustomEvent('skipConfigsUpdated', {
-                detail: freshData,
+                detail: normalizedFresh,
               })
             );
           }
@@ -2055,15 +2111,14 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
           console.warn('[后台同步] 跳过片头片尾配置同步失败（不影响使用，已使用缓存数据）:', err);
         });
 
-      return cachedData;
+      return normalizedCached.values;
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
-        const freshData = await fetchFromApi<Record<string, SkipConfig>>(
-          `/api/skipconfigs`
-        );
-        cacheManager.cacheSkipConfigs(freshData);
-        return freshData;
+        const freshData = await fetchAllSkipConfigsFromApi();
+        const normalized = normalizeSkipConfigRecord(freshData).values;
+        cacheManager.cacheSkipConfigs(normalized);
+        return normalized;
       } catch (err) {
         console.error('获取跳过片头片尾配置失败:', err);
         return {};
@@ -2075,7 +2130,20 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
   try {
     const raw = localStorage.getItem('moontv_skip_configs');
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, SkipConfig>;
+    const parsed = JSON.parse(raw) as Record<string, SkipConfig>;
+    const normalized = normalizeSkipConfigRecord(parsed);
+    if (normalized.changed) {
+      for (const migration of normalized.migrations) {
+        if (migration.writeCanonical) {
+          parsed[migration.storageKey] = migration.value;
+        }
+      }
+      localStorage.setItem(
+        'moontv_skip_configs',
+        JSON.stringify(parsed),
+      );
+    }
+    return normalized.values;
   } catch (err) {
     console.error('读取跳过片头片尾配置失败:', err);
     return {};
@@ -2092,7 +2160,9 @@ export async function deleteSkipConfig(
   identityKey?: string
 ): Promise<void> {
   try {
-    const key = generateStorageKey(source, id);
+    const identity = normalizeSkipConfigIdentity(source, id, identityKey);
+    if (!identity) throw new Error('无效的跳过配置身份');
+    const key = identity.storageKey;
 
     if (STORAGE_TYPE === 'localstorage') {
       // localStorage 模式
@@ -2104,6 +2174,7 @@ export async function deleteSkipConfig(
       if (raw) {
         const configs = JSON.parse(raw) as Record<string, SkipConfig>;
         delete configs[key];
+        if (identity.legacyKey) delete configs[identity.legacyKey];
         localStorage.setItem('moontv_skip_configs', JSON.stringify(configs));
         window.dispatchEvent(
           new CustomEvent('skipConfigsUpdated', {
@@ -2113,8 +2184,11 @@ export async function deleteSkipConfig(
       }
     } else {
       // 数据库模式：乐观更新策略
-      const cachedConfigs = cacheManager.getCachedSkipConfigs() || {};
+      const cachedConfigs = normalizeSkipConfigRecord(
+        cacheManager.getCachedSkipConfigs() || {},
+      ).values;
       delete cachedConfigs[key];
+      if (identity.legacyKey) delete cachedConfigs[identity.legacyKey];
       cacheManager.cacheSkipConfigs(cachedConfigs);
 
       window.dispatchEvent(
@@ -2138,7 +2212,7 @@ export async function deleteSkipConfig(
           action: 'delete',
           key,
           username: authInfo.username,
-          identityKey,
+          identityKey: identity.semanticKey,
         }),
       });
 

@@ -6,6 +6,11 @@ import { AdminConfig } from './admin.types';
 import { hashPassword as hashPwd, isHashed, verifyPassword } from './password';
 import { parsePlayRecordStorageKey } from './play-record';
 import {
+  buildSkipConfigKey,
+  legacySkipConfigKey,
+  normalizeSkipConfigRecord,
+} from './skip-config-identity';
+import {
   ContentStat,
   EpisodeSkipConfig,
   Favorite,
@@ -702,7 +707,7 @@ export abstract class BaseRedisStorage implements IStorage {
   }
 
   private skipField(source: string, id: string) {
-    return `${source}+${id}`;
+    return buildSkipConfigKey(source, id);
   }
 
   async getSkipConfig(
@@ -710,9 +715,16 @@ export abstract class BaseRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<SkipConfig | null> {
-    const val = await this.withRetry(() =>
-      this.client.hGet(this.skipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.skipHashKey(userName);
+    const field = this.skipField(source, id);
+    let val = await this.withRetry(() => this.client.hGet(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (!val && legacyField && legacyField !== field) {
+      val = await this.withRetry(() => this.client.hGet(hashKey, legacyField));
+      if (val) {
+        await this.withRetry(() => this.client.hSet(hashKey, field, val));
+      }
+    }
     return val ? (JSON.parse(val) as SkipConfig) : null;
   }
 
@@ -732,9 +744,13 @@ export abstract class BaseRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<void> {
-    await this.withRetry(() =>
-      this.client.hDel(this.skipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.skipHashKey(userName);
+    const field = this.skipField(source, id);
+    await this.withRetry(() => this.client.hDel(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (legacyField && legacyField !== field) {
+      await this.withRetry(() => this.client.hDel(hashKey, legacyField));
+    }
   }
 
   async getAllSkipConfigs(
@@ -747,7 +763,19 @@ export abstract class BaseRedisStorage implements IStorage {
     for (const [field, raw] of Object.entries(all)) {
       if (raw) configs[field] = JSON.parse(raw) as SkipConfig;
     }
-    return configs;
+    const normalized = normalizeSkipConfigRecord(configs);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await this.withRetry(() =>
+          this.client.hSet(
+            this.skipHashKey(userName),
+            migration.storageKey,
+            JSON.stringify(migration.value),
+          ),
+        );
+      }
+    }
+    return normalized.values;
   }
 
   // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------
@@ -760,9 +788,16 @@ export abstract class BaseRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<EpisodeSkipConfig | null> {
-    const val = await this.withRetry(() =>
-      this.client.hGet(this.episodeSkipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.episodeSkipHashKey(userName);
+    const field = this.skipField(source, id);
+    let val = await this.withRetry(() => this.client.hGet(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (!val && legacyField && legacyField !== field) {
+      val = await this.withRetry(() => this.client.hGet(hashKey, legacyField));
+      if (val) {
+        await this.withRetry(() => this.client.hSet(hashKey, field, val));
+      }
+    }
     return val ? (JSON.parse(val) as EpisodeSkipConfig) : null;
   }
 
@@ -782,9 +817,13 @@ export abstract class BaseRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<void> {
-    await this.withRetry(() =>
-      this.client.hDel(this.episodeSkipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.episodeSkipHashKey(userName);
+    const field = this.skipField(source, id);
+    await this.withRetry(() => this.client.hDel(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (legacyField && legacyField !== field) {
+      await this.withRetry(() => this.client.hDel(hashKey, legacyField));
+    }
   }
 
   async getAllEpisodeSkipConfigs(
@@ -797,7 +836,19 @@ export abstract class BaseRedisStorage implements IStorage {
     for (const [field, raw] of Object.entries(all)) {
       if (raw) configs[field] = JSON.parse(raw) as EpisodeSkipConfig;
     }
-    return configs;
+    const normalized = normalizeSkipConfigRecord(configs);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await this.withRetry(() =>
+          this.client.hSet(
+            this.episodeSkipHashKey(userName),
+            migration.storageKey,
+            JSON.stringify(migration.value),
+          ),
+        );
+      }
+    }
+    return normalized.values;
   }
 
   // 清空所有数据

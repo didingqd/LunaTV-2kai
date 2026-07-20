@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { recordRequest, getDbQueryCount, resetDbQueryCount } from '@/lib/performance-monitor';
+import { normalizeSkipConfigIdentity } from '@/lib/skip-config-identity';
 import { EpisodeSkipConfig } from '@/lib/types';
 
 // 配置 Node.js Runtime
@@ -13,16 +14,8 @@ function resolveSkipKey(
   key: string,
   identityKey?: string,
 ): { source: string; id: string } | null {
-  if (identityKey) {
-    // 新格式：视频身份 key，source=identityKey, id='__identity__' 用于兼容 SQLite 主键
-    return { source: identityKey, id: '__identity__' };
-  }
-  // 旧格式：source+id
-  const parts = key.split('+');
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return { source: parts[0], id: parts.slice(1).join('+') };
-  }
-  return null;
+  const identity = normalizeSkipConfigIdentity({ key, identityKey });
+  return identity ? { source: identity.source, id: identity.id } : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -101,7 +94,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(errorResponse, { status: 400 });
         }
 
-        // 解析 key 为 source 和 id (格式: source+id)
+        // 通过 SkipConfig Identity Adapter 解析 key
         const resolved = resolveSkipKey(key, identityKey);
         if (!resolved) {
           const errorResponse = { error: '无效的key格式' };
@@ -161,7 +154,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(errorResponse, { status: 400 });
         }
 
-        // 解析 key 为 source 和 id (格式: source+id)
+        // 通过 SkipConfig Identity Adapter 解析 key
         const resolved = resolveSkipKey(key, identityKey);
         if (!resolved) {
           const errorResponse = { error: '无效的key格式' };
@@ -267,7 +260,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(errorResponse, { status: 400 });
         }
 
-        // 解析 key 为 source 和 id (格式: source+id)
+        // 通过 SkipConfig Identity Adapter 解析 key
         const resolved = resolveSkipKey(key, identityKey);
         if (!resolved) {
           const errorResponse = { error: '无效的key格式' };

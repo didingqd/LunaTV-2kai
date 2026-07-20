@@ -15,6 +15,10 @@ import { AdminConfig } from './admin.types';
 import { hashPassword as hashPwd, isHashed, verifyPassword } from './password';
 import { parsePlayRecordStorageKey } from './play-record';
 import {
+  resolveSkipConfigStorageIdentity,
+  skipConfigStorageIdentity,
+} from './skip-config-identity';
+import {
   ContentStat,
   CrashLog,
   EpisodeSkipConfig,
@@ -752,20 +756,31 @@ export class SqliteStorage implements IStorage {
 
   // ==================== 跳过片头片尾配置 ====================
 
-  private skipField(source: string, id: string): string {
-    return `${source}+${id}`;
-  }
-
   async getSkipConfig(
     userName: string,
     source: string,
     id: string,
   ): Promise<SkipConfig | null> {
-    const row = this.db
+    const canonical = skipConfigStorageIdentity(source, id);
+    let row = this.db
       .prepare(
         'SELECT value FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
-      .get(userName, source, id) as { value: string } | undefined;
+      .get(userName, canonical.source, canonical.id) as { value: string } | undefined;
+    if (!row) {
+      row = this.db
+        .prepare(
+          'SELECT value FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
+        )
+        .get(userName, source, id) as { value: string } | undefined;
+      if (row && (canonical.source !== source || canonical.id !== id)) {
+        this.db
+          .prepare(
+            'INSERT OR REPLACE INTO skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
+          )
+          .run(userName, canonical.source, canonical.id, row.value);
+      }
+    }
     return row ? (JSON.parse(row.value) as SkipConfig) : null;
   }
 
@@ -775,11 +790,12 @@ export class SqliteStorage implements IStorage {
     id: string,
     config: SkipConfig,
   ): Promise<void> {
+    const canonical = skipConfigStorageIdentity(source, id);
     this.db
       .prepare(
         'INSERT OR REPLACE INTO skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
       )
-      .run(userName, source, id, JSON.stringify(config));
+      .run(userName, canonical.source, canonical.id, JSON.stringify(config));
   }
 
   async deleteSkipConfig(
@@ -787,11 +803,19 @@ export class SqliteStorage implements IStorage {
     source: string,
     id: string,
   ): Promise<void> {
+    const canonical = skipConfigStorageIdentity(source, id);
     this.db
       .prepare(
         'DELETE FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
-      .run(userName, source, id);
+      .run(userName, canonical.source, canonical.id);
+    if (canonical.source !== source || canonical.id !== id) {
+      this.db
+        .prepare(
+          'DELETE FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
+        )
+        .run(userName, source, id);
+    }
   }
 
   async getAllSkipConfigs(
@@ -802,9 +826,26 @@ export class SqliteStorage implements IStorage {
       .all(userName) as Array<{ source: string; id: string; value: string }>;
     const result: Record<string, SkipConfig> = {};
     for (const row of rows) {
-      result[this.skipField(row.source, row.id)] = JSON.parse(
-        row.value,
-      ) as SkipConfig;
+      const identity = resolveSkipConfigStorageIdentity(row.source, row.id);
+      if (!identity) continue;
+      const config = JSON.parse(row.value) as SkipConfig;
+      const existing = result[identity.storageKey];
+      if (!existing || row.id === '' || row.id === '__identity__') {
+        result[identity.storageKey] = config;
+      }
+      if (row.id !== '' && row.id !== '__identity__') {
+        const canonical = skipConfigStorageIdentity(identity.source, identity.id);
+        if (
+          !existing &&
+          (canonical.source !== row.source || canonical.id !== row.id)
+        ) {
+          this.db
+            .prepare(
+              'INSERT OR REPLACE INTO skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
+            )
+            .run(userName, canonical.source, canonical.id, row.value);
+        }
+      }
     }
     return result;
   }
@@ -816,11 +857,26 @@ export class SqliteStorage implements IStorage {
     source: string,
     id: string,
   ): Promise<EpisodeSkipConfig | null> {
-    const row = this.db
+    const canonical = skipConfigStorageIdentity(source, id);
+    let row = this.db
       .prepare(
         'SELECT value FROM episode_skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
-      .get(userName, source, id) as { value: string } | undefined;
+      .get(userName, canonical.source, canonical.id) as { value: string } | undefined;
+    if (!row) {
+      row = this.db
+        .prepare(
+          'SELECT value FROM episode_skip_configs WHERE username = ? AND source = ? AND id = ?',
+        )
+        .get(userName, source, id) as { value: string } | undefined;
+      if (row && (canonical.source !== source || canonical.id !== id)) {
+        this.db
+          .prepare(
+            'INSERT OR REPLACE INTO episode_skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
+          )
+          .run(userName, canonical.source, canonical.id, row.value);
+      }
+    }
     return row ? (JSON.parse(row.value) as EpisodeSkipConfig) : null;
   }
 
@@ -830,11 +886,12 @@ export class SqliteStorage implements IStorage {
     id: string,
     config: EpisodeSkipConfig,
   ): Promise<void> {
+    const canonical = skipConfigStorageIdentity(source, id);
     this.db
       .prepare(
         'INSERT OR REPLACE INTO episode_skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
       )
-      .run(userName, source, id, JSON.stringify(config));
+      .run(userName, canonical.source, canonical.id, JSON.stringify(config));
   }
 
   async deleteEpisodeSkipConfig(
@@ -842,11 +899,19 @@ export class SqliteStorage implements IStorage {
     source: string,
     id: string,
   ): Promise<void> {
+    const canonical = skipConfigStorageIdentity(source, id);
     this.db
       .prepare(
         'DELETE FROM episode_skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
-      .run(userName, source, id);
+      .run(userName, canonical.source, canonical.id);
+    if (canonical.source !== source || canonical.id !== id) {
+      this.db
+        .prepare(
+          'DELETE FROM episode_skip_configs WHERE username = ? AND source = ? AND id = ?',
+        )
+        .run(userName, source, id);
+    }
   }
 
   async getAllEpisodeSkipConfigs(
@@ -859,9 +924,26 @@ export class SqliteStorage implements IStorage {
       .all(userName) as Array<{ source: string; id: string; value: string }>;
     const result: Record<string, EpisodeSkipConfig> = {};
     for (const row of rows) {
-      result[this.skipField(row.source, row.id)] = JSON.parse(
-        row.value,
-      ) as EpisodeSkipConfig;
+      const identity = resolveSkipConfigStorageIdentity(row.source, row.id);
+      if (!identity) continue;
+      const config = JSON.parse(row.value) as EpisodeSkipConfig;
+      const existing = result[identity.storageKey];
+      if (!existing || row.id === '' || row.id === '__identity__') {
+        result[identity.storageKey] = config;
+      }
+      if (row.id !== '' && row.id !== '__identity__') {
+        const canonical = skipConfigStorageIdentity(identity.source, identity.id);
+        if (
+          !existing &&
+          (canonical.source !== row.source || canonical.id !== row.id)
+        ) {
+          this.db
+            .prepare(
+              'INSERT OR REPLACE INTO episode_skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
+            )
+            .run(userName, canonical.source, canonical.id, row.value);
+        }
+      }
     }
     return result;
   }

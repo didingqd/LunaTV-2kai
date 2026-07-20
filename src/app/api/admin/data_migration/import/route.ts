@@ -9,6 +9,7 @@ import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { parsePlayRecordStorageKey } from '@/lib/play-record';
+import { resolveSkipConfigIdentityKey } from '@/lib/skip-config-identity';
 import {
   MANUAL_ORIGIN,
   normalizeRemarks,
@@ -243,10 +244,17 @@ export async function POST(req: NextRequest) {
       // 导入跳过片头片尾配置
       if (user.skipConfigs) {
         for (const [key, skipConfig] of Object.entries(user.skipConfigs)) {
-          const [source, id] = key.split('+');
-          if (source && id) {
-            await db.setSkipConfig(username, source, id, skipConfig as any);
+          const identity = resolveSkipConfigIdentityKey(key);
+          if (!identity) {
+            console.warn(`跳过用户 ${username} 的歧义跳过配置键`);
+            continue;
           }
+          await db.setSkipConfig(
+            username,
+            identity.source,
+            identity.id,
+            skipConfig as any,
+          );
         }
       }
 

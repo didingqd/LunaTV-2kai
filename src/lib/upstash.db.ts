@@ -5,6 +5,11 @@ import { Redis } from '@upstash/redis';
 import { AdminConfig } from './admin.types';
 import { hashPassword as hashPwd, isHashed, verifyPassword } from './password';
 import {
+  buildSkipConfigKey,
+  legacySkipConfigKey,
+  normalizeSkipConfigRecord,
+} from './skip-config-identity';
+import {
   ContentStat,
   EpisodeSkipConfig,
   Favorite,
@@ -616,7 +621,7 @@ export class UpstashRedisStorage implements IStorage {
   }
 
   private skipField(source: string, id: string) {
-    return `${source}+${id}`;
+    return buildSkipConfigKey(source, id);
   }
 
   async getSkipConfig(
@@ -624,9 +629,16 @@ export class UpstashRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<SkipConfig | null> {
-    const val = await withRetry(() =>
-      this.client.hget(this.skipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.skipHashKey(userName);
+    const field = this.skipField(source, id);
+    let val = await withRetry(() => this.client.hget(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (!val && legacyField && legacyField !== field) {
+      val = await withRetry(() => this.client.hget(hashKey, legacyField));
+      if (val) {
+        await withRetry(() => this.client.hset(hashKey, { [field]: val }));
+      }
+    }
     return val ? (val as SkipConfig) : null;
   }
 
@@ -648,9 +660,13 @@ export class UpstashRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<void> {
-    await withRetry(() =>
-      this.client.hdel(this.skipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.skipHashKey(userName);
+    const field = this.skipField(source, id);
+    await withRetry(() => this.client.hdel(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (legacyField && legacyField !== field) {
+      await withRetry(() => this.client.hdel(hashKey, legacyField));
+    }
   }
 
   async getAllSkipConfigs(
@@ -664,7 +680,17 @@ export class UpstashRedisStorage implements IStorage {
     for (const [field, value] of Object.entries(all)) {
       if (value) configs[field] = value as SkipConfig;
     }
-    return configs;
+    const normalized = normalizeSkipConfigRecord(configs);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await withRetry(() =>
+          this.client.hset(this.skipHashKey(userName), {
+            [migration.storageKey]: migration.value,
+          }),
+        );
+      }
+    }
+    return normalized.values;
   }
 
   // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------
@@ -677,9 +703,16 @@ export class UpstashRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<EpisodeSkipConfig | null> {
-    const val = await withRetry(() =>
-      this.client.hget(this.episodeSkipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.episodeSkipHashKey(userName);
+    const field = this.skipField(source, id);
+    let val = await withRetry(() => this.client.hget(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (!val && legacyField && legacyField !== field) {
+      val = await withRetry(() => this.client.hget(hashKey, legacyField));
+      if (val) {
+        await withRetry(() => this.client.hset(hashKey, { [field]: val }));
+      }
+    }
     return val ? (val as EpisodeSkipConfig) : null;
   }
 
@@ -701,9 +734,13 @@ export class UpstashRedisStorage implements IStorage {
     source: string,
     id: string
   ): Promise<void> {
-    await withRetry(() =>
-      this.client.hdel(this.episodeSkipHashKey(userName), this.skipField(source, id))
-    );
+    const hashKey = this.episodeSkipHashKey(userName);
+    const field = this.skipField(source, id);
+    await withRetry(() => this.client.hdel(hashKey, field));
+    const legacyField = legacySkipConfigKey(source, id);
+    if (legacyField && legacyField !== field) {
+      await withRetry(() => this.client.hdel(hashKey, legacyField));
+    }
   }
 
   async getAllEpisodeSkipConfigs(
@@ -717,7 +754,17 @@ export class UpstashRedisStorage implements IStorage {
     for (const [field, value] of Object.entries(all)) {
       if (value) configs[field] = value as EpisodeSkipConfig;
     }
-    return configs;
+    const normalized = normalizeSkipConfigRecord(configs);
+    for (const migration of normalized.migrations) {
+      if (migration.writeCanonical) {
+        await withRetry(() =>
+          this.client.hset(this.episodeSkipHashKey(userName), {
+            [migration.storageKey]: migration.value,
+          }),
+        );
+      }
+    }
+    return normalized.values;
   }
 
   // 清空所有数据
