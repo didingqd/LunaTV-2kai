@@ -43,6 +43,44 @@ function mockDanmuApi(comments: Array<{ p: string; m: string }>) {
   });
 }
 
+function mockAutoMatchDanmuApi() {
+  (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+    if (url.includes('/api/v2/search/anime')) {
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          animes: [{ animeId: 11, animeTitle: 'Demo 2026' }],
+        }),
+      };
+    }
+
+    if (url.includes('/api/v2/bangumi/11')) {
+      return {
+        ok: true,
+        json: async () => ({
+          bangumi: {
+            episodes: [
+              { episodeId: 201, episodeTitle: 'Episode 1' },
+              { episodeId: 202, episodeTitle: 'Episode 2' },
+            ],
+          },
+        }),
+      };
+    }
+
+    return {
+      ok: true,
+      json: async () => ({
+        count: 10,
+        comments: Array.from({ length: 10 }, (_, index) =>
+          makeComment(index + 1),
+        ),
+      }),
+    };
+  });
+}
+
 async function request(query: string) {
   return GET(new NextRequest(`http://localhost/api/danmu-external?${query}`));
 }
@@ -121,6 +159,25 @@ describe('/api/danmu-external segment query', () => {
       secondSegment.danmu.map((item: { time: number }) => item.time),
     ).toEqual([310, 320]);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the matched episode_id while preserving legacy response fields', async () => {
+    mockAutoMatchDanmuApi();
+
+    const response = await request('title=Demo&year=2026&episode=2');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      episode_id: '202',
+      platforms: [{ platform: 'danmu_api', count: 10 }],
+      total: 10,
+    });
+    expect(body.danmu).toHaveLength(10);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://danmu.example/token/api/v2/comment/202?format=json',
+      expect.any(Object),
+    );
   });
 
   it('treats limit=0 as unlimited for the current segment', async () => {

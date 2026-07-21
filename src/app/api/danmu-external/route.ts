@@ -48,7 +48,11 @@ interface DanmuQueryOptions {
   limit?: number;
 }
 
-type DanmuApiResult = { danmu: DanmuItem[]; source: string };
+type DanmuApiResult = {
+  danmu: DanmuItem[];
+  source: string;
+  episodeId?: string;
+};
 
 interface EpisodeDanmuCacheEntry {
   expiresAt: number;
@@ -210,7 +214,7 @@ async function fetchDanmuFromCustomAPI(
   title: string,
   episode?: string | null,
   year?: string | null,
-): Promise<{ danmu: DanmuItem[]; source: string } | null> {
+): Promise<DanmuApiResult | null> {
   const config = await getDanmuApiConfig();
 
   if (!config.enabled || !config.apiUrl) {
@@ -411,6 +415,7 @@ async function fetchDanmuFromCustomAPI(
     return {
       danmu: finalDanmu,
       source: `弹幕API (${bestMatch.animeTitle})`,
+      episodeId: String(targetEpisode.episodeId),
     };
   } catch (error) {
     clearTimeout(timeoutId);
@@ -1476,6 +1481,7 @@ export async function GET(request: NextRequest) {
         const danmu = applyDanmuQueryOptions(fullDanmu, danmuQueryOptions);
 
         const successResponse = {
+          episode_id: customResult.episodeId,
           danmu,
           platforms: [
             {
