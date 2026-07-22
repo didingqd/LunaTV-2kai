@@ -87,13 +87,18 @@ describe('UserPermissionSettingsModal', () => {
     );
   });
 
-  it('keeps the effective update-check mode local when the system switch is off', async () => {
+  it('saves update-check permission with special features', async () => {
     const fetchMock = global.fetch as jest.Mock;
     const onRefresh = jest.fn().mockResolvedValue(undefined);
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ permission: { userId: 'alice', enabled: true } }),
-    } as Response);
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ permission: { userId: 'alice', enabled: true } }),
+      } as Response);
 
     render(
       <UserPermissionSettingsModal
@@ -107,17 +112,27 @@ describe('UserPermissionSettingsModal', () => {
     );
 
     fireEvent.click(await screen.findByRole('tab', { name: '特殊功能权限' }));
-    fireEvent.click(await screen.findByRole('switch'));
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: /追更后端计算/ }),
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存特殊功能' }));
 
     await waitFor(() =>
       expect(
         screen.getByText(/当前状态：已授权，实际模式：本地计算/),
       ).toBeInTheDocument(),
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/user');
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/settings/update-check/permissions',
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
       userId: 'alice',
       enabled: true,
     });
-    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledTimes(2);
   });
 });

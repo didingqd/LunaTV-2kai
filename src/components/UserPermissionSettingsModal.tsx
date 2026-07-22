@@ -85,7 +85,9 @@ export default function UserPermissionSettingsModal({
       mode: enabled ? 'backend' : 'local',
     };
   });
-  const permissionLoading = false;
+  const [selectedUpdateCheckBackend, setSelectedUpdateCheckBackend] = useState(
+    user.role === 'owner' || user.updateCheckBackendEnabled === true,
+  );
   const [saving, setSaving] = useState<Tab | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -144,6 +146,34 @@ export default function UserPermissionSettingsModal({
         },
         '采集源配置已保存',
       );
+      if (
+        !permission.owner &&
+        selectedUpdateCheckBackend !== permission.granted
+      ) {
+        const response = await fetch(
+          '/api/admin/settings/update-check/permissions',
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.username,
+              enabled: selectedUpdateCheckBackend,
+            }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || '更新追更授权失败');
+        const granted = data.permission?.enabled === true;
+        setPermission((current) => ({
+          ...current,
+          granted,
+          enabled: systemUpdateCheckEnabled && granted,
+          mode: systemUpdateCheckEnabled && granted ? 'backend' : 'local',
+        }));
+        setSelectedUpdateCheckBackend(granted);
+        await onRefresh();
+      }
+      setMessage('特殊功能权限已保存');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存采集源配置失败');
     } finally {
@@ -198,44 +228,6 @@ export default function UserPermissionSettingsModal({
       setMessage(
         error instanceof Error ? error.message : '删除 TVBox Token 失败',
       );
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const updatePermission = async () => {
-    if (permission.owner) return;
-    setSaving('special');
-    setMessage(null);
-    try {
-      const response = await fetch(
-        '/api/admin/settings/update-check/permissions',
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.username,
-            enabled: !permission.granted,
-          }),
-        },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || '更新追更授权失败');
-      const granted = data.permission?.enabled === true;
-      setPermission((current) => ({
-        ...current,
-        granted,
-        enabled: systemUpdateCheckEnabled && granted,
-        mode: systemUpdateCheckEnabled && granted ? 'backend' : 'local',
-      }));
-      await onRefresh();
-      setMessage(
-        permission.granted
-          ? '已关闭后端追更计算授权'
-          : '已开启后端追更计算授权',
-      );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '更新追更授权失败');
     } finally {
       setSaving(null);
     }
@@ -520,8 +512,17 @@ export default function UserPermissionSettingsModal({
                 </span>
               </label>
 
-              <div className='rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-900/10'>
-                <div className='flex flex-wrap items-center justify-between gap-3'>
+              <label className='flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700'>
+                <input
+                  type='checkbox'
+                  checked={selectedUpdateCheckBackend}
+                  onChange={(event) =>
+                    setSelectedUpdateCheckBackend(event.target.checked)
+                  }
+                  disabled={permission.owner || saving === 'sources'}
+                  className='mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
+                />
+                <div className='min-w-0 flex-1'>
                   <div>
                     <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
                       追更后端计算
@@ -532,43 +533,23 @@ export default function UserPermissionSettingsModal({
                         : '系统总开关已关闭，当前授权不会生效，用户继续本地计算。'}
                     </p>
                   </div>
-                  {permissionLoading ? (
-                    <LoaderCircle className='h-4 w-4 animate-spin text-gray-400' />
-                  ) : permission.owner ? (
+                  {permission.owner && (
                     <span className='text-xs text-gray-500'>
                       站长跟随总开关
                     </span>
-                  ) : (
-                    <button
-                      type='button'
-                      role='switch'
-                      aria-checked={permission.granted}
-                      onClick={updatePermission}
-                      disabled={saving === 'special'}
-                      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-                        permission.granted
-                          ? 'bg-green-600'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${
-                          permission.granted ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                  )}
+                  {!permission.owner && (
+                    <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
+                      当前状态：
+                      {selectedUpdateCheckBackend ? '已授权' : '未授权'}
+                      ，实际模式：
+                      {systemUpdateCheckEnabled && selectedUpdateCheckBackend
+                        ? '后端计算'
+                        : '本地计算'}
+                    </p>
                   )}
                 </div>
-                {!permission.owner && (
-                  <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
-                    当前状态：{permission.granted ? '已授权' : '未授权'}
-                    ，实际模式：
-                    {systemUpdateCheckEnabled && permission.enabled
-                      ? '后端计算'
-                      : '本地计算'}
-                  </p>
-                )}
-              </div>
+              </label>
 
               <SaveButton
                 loading={saving === 'sources'}

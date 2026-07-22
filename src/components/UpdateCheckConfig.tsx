@@ -54,41 +54,37 @@ export default function UpdateCheckConfig() {
   } | null>(null);
   const requestSequence = useRef(0);
 
-  const applyAdminConfig = useCallback(
-    (config: AdminConfig, role?: string) => {
-      const systemConfig = config.SystemConfig;
-      const enabled = systemConfig?.updateCheckBackendEnabled === true;
-      setAdminConfig(config);
-      if (role) setCanEditSystemConfig(role === 'owner');
-      setSettings({
-        enabled,
-        updateCheckCronInterval:
-          systemConfig?.updateCheckCronInterval ??
-          DEFAULT_SETTINGS.updateCheckCronInterval,
-        batchSize:
-          systemConfig?.updateCheckBatchSize ?? DEFAULT_SETTINGS.batchSize,
-        maxUsers:
-          systemConfig?.updateCheckMaxUsers ?? DEFAULT_SETTINGS.maxUsers,
-        maxFollowPerUser:
-          systemConfig?.updateCheckMaxFollowPerUser ??
-          DEFAULT_SETTINGS.maxFollowPerUser,
-        users: config.UserConfig.Users.map((user) => {
-          const owner = user.role === 'owner';
-          const granted = owner || user.updateCheckBackendEnabled === true;
-          return {
-            userId: user.username,
-            owner,
-            granted,
-            enabled: enabled && granted,
-            mode: enabled && granted ? 'backend' : 'local',
-            updatedAt: user.updateCheckPermissionUpdatedAt ?? null,
-            operator: user.updateCheckPermissionOperator ?? null,
-          };
-        }),
-      });
-    },
-    [],
-  );
+  const applyAdminConfig = useCallback((config: AdminConfig, role?: string) => {
+    const systemConfig = config.SystemConfig;
+    const enabled = systemConfig?.updateCheckBackendEnabled === true;
+    setAdminConfig(config);
+    if (role) setCanEditSystemConfig(role === 'owner');
+    setSettings({
+      enabled,
+      updateCheckCronInterval:
+        systemConfig?.updateCheckCronInterval ??
+        DEFAULT_SETTINGS.updateCheckCronInterval,
+      batchSize:
+        systemConfig?.updateCheckBatchSize ?? DEFAULT_SETTINGS.batchSize,
+      maxUsers: systemConfig?.updateCheckMaxUsers ?? DEFAULT_SETTINGS.maxUsers,
+      maxFollowPerUser:
+        systemConfig?.updateCheckMaxFollowPerUser ??
+        DEFAULT_SETTINGS.maxFollowPerUser,
+      users: config.UserConfig.Users.map((user) => {
+        const owner = user.role === 'owner';
+        const granted = owner || user.updateCheckBackendEnabled === true;
+        return {
+          userId: user.username,
+          owner,
+          granted,
+          enabled: enabled && granted,
+          mode: enabled && granted ? 'backend' : 'local',
+          updatedAt: user.updateCheckPermissionUpdatedAt ?? null,
+          operator: user.updateCheckPermissionOperator ?? null,
+        };
+      }),
+    });
+  }, []);
 
   const loadSettings = useCallback(
     async (showLoading = true) => {
@@ -238,12 +234,15 @@ export default function UpdateCheckConfig() {
               enabled: !current.enabled,
             }))
           }
-          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-            settings.enabled ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+            settings.enabled
+              ? 'bg-green-600 dark:bg-green-600'
+              : 'bg-gray-200 dark:bg-gray-700'
           }`}
         >
           <span
-            className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${
+            aria-hidden='true'
+            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
               settings.enabled ? 'translate-x-6' : 'translate-x-1'
             }`}
           />
