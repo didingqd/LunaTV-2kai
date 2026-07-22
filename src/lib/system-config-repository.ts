@@ -4,10 +4,19 @@ import { db } from './db';
 
 export const DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG: SystemConfig = {
   updateCheckBackendEnabled: false,
+  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckBatchSize: 100,
   updateCheckMaxUsers: 1000,
   updateCheckMaxFollowPerUser: 100,
 };
+
+export const UPDATE_CHECK_CRON_INTERVAL_OPTIONS = [
+  30 * 60 * 1000,
+  60 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+  12 * 60 * 60 * 1000,
+  24 * 60 * 60 * 1000,
+] as const;
 
 export interface SystemConfigStore {
   getAdminConfig(): Promise<AdminConfig | null>;
@@ -34,6 +43,11 @@ export function normalizeUpdateCheckSystemConfig(
 ): SystemConfig {
   return {
     updateCheckBackendEnabled: value?.updateCheckBackendEnabled === true,
+    updateCheckCronInterval: UPDATE_CHECK_CRON_INTERVAL_OPTIONS.includes(
+      value?.updateCheckCronInterval as (typeof UPDATE_CHECK_CRON_INTERVAL_OPTIONS)[number],
+    )
+      ? (value?.updateCheckCronInterval as number)
+      : DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronInterval,
     updateCheckBatchSize: boundedInteger(
       value?.updateCheckBatchSize,
       DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckBatchSize,

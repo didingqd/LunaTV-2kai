@@ -9,6 +9,8 @@ import {
 
 export interface UpdateCheckCapability {
   enabled: boolean;
+  backendEnabled: boolean;
+  userEnabled: boolean;
   mode: 'backend' | 'local';
   reason?: 'backend_disabled' | 'user_not_enabled';
 }
@@ -28,16 +30,33 @@ export class UpdateCheckCapabilityService implements UpdateCheckCapabilityReader
   async getCapability(userId: string): Promise<UpdateCheckCapability> {
     const config = await this.config.getUpdateCheckConfig();
     if (!config.updateCheckBackendEnabled) {
-      return { enabled: false, mode: 'local', reason: 'backend_disabled' };
+      return {
+        enabled: false,
+        backendEnabled: false,
+        userEnabled: false,
+        mode: 'local',
+        reason: 'backend_disabled',
+      };
     }
 
     if (
       userId === this.ownerId() ||
       (await this.permissions.get(userId))?.enabled
     ) {
-      return { enabled: true, mode: 'backend' };
+      return {
+        enabled: true,
+        backendEnabled: true,
+        userEnabled: true,
+        mode: 'backend',
+      };
     }
-    return { enabled: false, mode: 'local', reason: 'user_not_enabled' };
+    return {
+      enabled: false,
+      backendEnabled: true,
+      userEnabled: false,
+      mode: 'local',
+      reason: 'user_not_enabled',
+    };
   }
 }
 

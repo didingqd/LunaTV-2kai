@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckCircle, LoaderCircle, Save, XCircle } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface UpdateCheckUserAccess {
   userId: string;
@@ -15,6 +15,7 @@ interface UpdateCheckUserAccess {
 
 interface UpdateCheckSettings {
   enabled: boolean;
+  updateCheckCronInterval: number;
   batchSize: number;
   maxUsers: number;
   maxFollowPerUser: number;
@@ -23,11 +24,20 @@ interface UpdateCheckSettings {
 
 const DEFAULT_SETTINGS: UpdateCheckSettings = {
   enabled: false,
+  updateCheckCronInterval: 30 * 60 * 1000,
   batchSize: 100,
   maxUsers: 1000,
   maxFollowPerUser: 100,
   users: [],
 };
+
+const CRON_INTERVAL_OPTIONS = [
+  { value: 30 * 60 * 1000, label: '30 分钟' },
+  { value: 60 * 60 * 1000, label: '1 小时' },
+  { value: 6 * 60 * 60 * 1000, label: '6 小时' },
+  { value: 12 * 60 * 60 * 1000, label: '12 小时' },
+  { value: 24 * 60 * 60 * 1000, label: '24 小时' },
+] as const;
 
 export default function UpdateCheckConfig() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -38,25 +48,45 @@ export default function UpdateCheckConfig() {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const requestSequence = useRef(0);
 
-  const loadSettings = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/admin/settings/update-check', {
-        cache: 'no-store',
+  const applyServerSettings = useCallback(
+    (data: Partial<UpdateCheckSettings>) => {
+      setSettings({
+        ...DEFAULT_SETTINGS,
+        ...data,
+        users: Array.isArray(data.users) ? data.users : [],
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '读取追更配置失败');
-      setSettings(data);
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text: error instanceof Error ? error.message : '读取追更配置失败',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
+
+  const loadSettings = useCallback(
+    async (showLoading = true) => {
+      const requestId = ++requestSequence.current;
+      if (showLoading) setLoading(true);
+      try {
+        const response = await fetch('/api/admin/settings/update-check', {
+          cache: 'no-store',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '读取追更配置失败');
+        if (requestId === requestSequence.current) applyServerSettings(data);
+      } catch (error) {
+        if (requestId === requestSequence.current) {
+          setMessage({
+            type: 'error',
+            text: error instanceof Error ? error.message : '读取追更配置失败',
+          });
+        }
+      } finally {
+        if (showLoading && requestId === requestSequence.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [applyServerSettings],
+  );
 
   useEffect(() => {
     void loadSettings();
@@ -71,6 +101,7 @@ export default function UpdateCheckConfig() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           enabled: settings.enabled,
+          updateCheckCronInterval: settings.updateCheckCronInterval,
           batchSize: settings.batchSize,
           maxUsers: settings.maxUsers,
           maxFollowPerUser: settings.maxFollowPerUser,
@@ -78,8 +109,9 @@ export default function UpdateCheckConfig() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '保存追更配置失败');
+      requestSequence.current += 1;
+      applyServerSettings(data);
       setMessage({ type: 'success', text: '追更后台计算配置已保存' });
-      await loadSettings();
     } catch (error) {
       setMessage({
         type: 'error',
@@ -108,7 +140,7 @@ export default function UpdateCheckConfig() {
         type: 'success',
         text: enabled ? `已授权 ${userId}` : `已关闭 ${userId} 的后端计算`,
       });
-      await loadSettings();
+      await loadSettings(false);
     } catch (error) {
       setMessage({
         type: 'error',
@@ -181,7 +213,28 @@ export default function UpdateCheckConfig() {
         </button>
       </div>
 
-      <div className='grid gap-4 md:grid-cols-3'>
+      <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
+        <label className='block'>
+          <span className='mb-1.5 block text-sm text-gray-700 dark:text-gray-300'>
+            Cron 调度周期
+          </span>
+          <select
+            value={settings.updateCheckCronInterval}
+            onChange={(event) =>
+              setSettings((current) => ({
+                ...current,
+                updateCheckCronInterval: Number(event.target.value),
+              }))
+            }
+            className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+          >
+            {CRON_INTERVAL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <NumberSetting
           label='单次任务数'
           value={settings.batchSize}

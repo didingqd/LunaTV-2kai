@@ -1,5 +1,6 @@
 export interface SystemConfig {
   updateCheckBackendEnabled: boolean;
+  updateCheckCronInterval: number;
   updateCheckBatchSize: number;
   updateCheckMaxUsers: number;
   updateCheckMaxFollowPerUser: number;

@@ -12,6 +12,6 @@ export function parseJsonBody(request: NextRequest): Promise<unknown> {
 }
 
 export function internalError(error: unknown): NextResponse {
-  console.error('Update reminder request failed', error);
+  console.error('Watching update request failed', error);
   return noStoreJson({ error: 'Internal Server Error' }, { status: 500 });
 }

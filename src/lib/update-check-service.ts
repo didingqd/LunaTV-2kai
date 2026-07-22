@@ -16,7 +16,6 @@ import {
 } from './update-check-repository';
 import {
   DEFAULT_UPDATE_CHECK_EXPIRE_MS,
-  DEFAULT_UPDATE_CHECK_INTERVAL_MS,
   UPDATE_CHECK_ALGORITHM_VERSION,
   type UpdateCheckTask,
   type UpdateObservation,
@@ -419,9 +418,10 @@ export class UpdateCheckService {
     );
     const current = await this.tasks.get(id);
     if (!current) return;
+    const config = await this.config.getUpdateCheckConfig();
     await this.tasks.save({
       ...current,
-      nextCheckAt: checkedAt + DEFAULT_UPDATE_CHECK_INTERVAL_MS,
+      nextCheckAt: checkedAt + config.updateCheckCronInterval,
       attempt: 0,
       updatedAt: checkedAt,
       lastSuccessAt: checkedAt,

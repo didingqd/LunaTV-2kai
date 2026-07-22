@@ -12,6 +12,7 @@ import type { UpdateCheckUserPermissionRepository } from './update-check-permiss
 
 const enabledConfig: SystemConfig = {
   updateCheckBackendEnabled: true,
+  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckBatchSize: 100,
   updateCheckMaxUsers: 1000,
   updateCheckMaxFollowPerUser: 100,

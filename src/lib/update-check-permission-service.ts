@@ -1,3 +1,4 @@
+import type { SystemConfig } from './admin.types';
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
@@ -51,10 +52,38 @@ export class UpdateCheckPermissionService {
     return permission;
   }
 
-  async listUsers(userIds: string[]) {
+  async onSystemConfigChanged(enabled: boolean): Promise<void> {
+    const [authorizedUsers, config] = await Promise.all([
+      this.permissions.listEnabledUserIds(),
+      this.config.getUpdateCheckConfig(),
+    ]);
+    const ownerId = this.ownerId();
+    const userIds = [
+      ...(ownerId ? [ownerId] : []),
+      ...authorizedUsers.filter((userId) => userId !== ownerId),
+    ];
+    const selected = enabled
+      ? userIds.slice(0, config.updateCheckMaxUsers)
+      : userIds;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < selected.length) {
+        const userId = selected[cursor++];
+        if (enabled) await this.checks.onUserPermissionEnabled(userId);
+        else await this.checks.onUserPermissionDisabled(userId);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(5, selected.length) }, worker),
+    );
+  }
+
+  async listUsers(userIds: string[], systemConfig?: SystemConfig) {
     const [permissions, config] = await Promise.all([
       this.permissions.getAll(),
-      this.config.getUpdateCheckConfig(),
+      systemConfig
+        ? Promise.resolve(systemConfig)
+        : this.config.getUpdateCheckConfig(),
     ]);
     const permissionByUser = new Map(
       permissions.map((permission) => [permission.userId, permission]),

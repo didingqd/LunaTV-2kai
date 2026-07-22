@@ -226,6 +226,7 @@ async function getInitConfig(configFile: string, subConfig: {
     ConfigSubscribtion: subConfig,
     SystemConfig: {
       updateCheckBackendEnabled: false,
+      updateCheckCronInterval: 30 * 60 * 1000,
       updateCheckBatchSize: 100,
       updateCheckMaxUsers: 1000,
       updateCheckMaxFollowPerUser: 100,
@@ -382,6 +383,8 @@ export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminCo
   adminConfig.SystemConfig = {
     updateCheckBackendEnabled:
       adminConfig.SystemConfig?.updateCheckBackendEnabled ?? false,
+    updateCheckCronInterval:
+      adminConfig.SystemConfig?.updateCheckCronInterval ?? 30 * 60 * 1000,
     updateCheckBatchSize:
       adminConfig.SystemConfig?.updateCheckBatchSize ?? 100,
     updateCheckMaxUsers:

@@ -23,7 +23,7 @@ import { POST } from './route';
 const getCapability = updateCheckCapabilityService.getCapability as jest.Mock;
 const processObservation = updateCheckService.processObservation as jest.Mock;
 
-describe('update reminder Observation sync', () => {
+describe('watching update Observation sync', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('rejects UpdateResult fields instead of accepting them as an Observation', async () => {
@@ -36,6 +36,8 @@ describe('update reminder Observation sync', () => {
   it('does not save an Observation when the user is not enabled', async () => {
     getCapability.mockResolvedValue({
       enabled: false,
+      backendEnabled: true,
+      userEnabled: false,
       mode: 'local',
       reason: 'user_not_enabled',
     });
@@ -52,7 +54,7 @@ describe('update reminder Observation sync', () => {
 });
 
 function createRequest(extraObservation: Record<string, unknown> = {}) {
-  return new NextRequest('http://localhost/api/update-reminders/sync', {
+  return new NextRequest('http://localhost/api/watching-updates/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

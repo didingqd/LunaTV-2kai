@@ -22,18 +22,20 @@ import { GET } from './route';
 const getCapability = updateCheckCapabilityService.getCapability as jest.Mock;
 const getResults = updateCheckService.getResultsForUser as jest.Mock;
 
-describe('update reminder results capability', () => {
+describe('watching update results capability', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('returns local mode with null results when the backend is disabled', async () => {
     getCapability.mockResolvedValue({
       enabled: false,
+      backendEnabled: false,
+      userEnabled: false,
       mode: 'local',
       reason: 'backend_disabled',
     });
 
     const response = await GET(
-      new NextRequest('http://localhost/api/update-reminders/results'),
+      new NextRequest('http://localhost/api/watching-updates/results'),
     );
     const body = await response.json();
 
@@ -46,11 +48,16 @@ describe('update reminder results capability', () => {
   });
 
   it('returns backend mode with an empty array when no result exists', async () => {
-    getCapability.mockResolvedValue({ enabled: true, mode: 'backend' });
+    getCapability.mockResolvedValue({
+      enabled: true,
+      backendEnabled: true,
+      userEnabled: true,
+      mode: 'backend',
+    });
     getResults.mockResolvedValue([]);
 
     const response = await GET(
-      new NextRequest('http://localhost/api/update-reminders/results'),
+      new NextRequest('http://localhost/api/watching-updates/results'),
     );
     const body = await response.json();
 

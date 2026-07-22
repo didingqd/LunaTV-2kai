@@ -6,6 +6,7 @@ import type { UpdateCheckUserPermissionRepository } from './update-check-permiss
 
 const config: SystemConfig = {
   updateCheckBackendEnabled: true,
+  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckBatchSize: 100,
   updateCheckMaxUsers: 1000,
   updateCheckMaxFollowPerUser: 100,
@@ -41,6 +42,8 @@ describe('UpdateCheckCapabilityService', () => {
 
     await expect(service.getCapability('alice')).resolves.toEqual({
       enabled: false,
+      backendEnabled: false,
+      userEnabled: false,
       mode: 'local',
       reason: 'backend_disabled',
     });
@@ -55,10 +58,14 @@ describe('UpdateCheckCapabilityService', () => {
 
     await expect(service.getCapability('owner')).resolves.toEqual({
       enabled: true,
+      backendEnabled: true,
+      userEnabled: true,
       mode: 'backend',
     });
     await expect(service.getCapability('alice')).resolves.toEqual({
       enabled: false,
+      backendEnabled: true,
+      userEnabled: false,
       mode: 'local',
       reason: 'user_not_enabled',
     });
@@ -73,6 +80,8 @@ describe('UpdateCheckCapabilityService', () => {
 
     await expect(service.getCapability('alice')).resolves.toEqual({
       enabled: true,
+      backendEnabled: true,
+      userEnabled: true,
       mode: 'backend',
     });
   });

@@ -4,7 +4,6 @@
  */
 
 export const UPDATE_CHECK_ALGORITHM_VERSION = 1;
-export const DEFAULT_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 export const DEFAULT_UPDATE_CHECK_EXPIRE_MS = 60 * 60 * 1000;
 
 export type UpdateResultStatus = 'fresh' | 'stale' | 'error';

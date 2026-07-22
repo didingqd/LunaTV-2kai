@@ -154,7 +154,21 @@ describe('UpdateCheckService', () => {
         get: () => provider,
       } as unknown as LatestEpisodeProviderRegistry,
       capability: {
-        getCapability: async () => ({ enabled: true, mode: 'backend' }),
+        getCapability: async () => ({
+          enabled: true,
+          backendEnabled: true,
+          userEnabled: true,
+          mode: 'backend',
+        }),
+      },
+      config: {
+        getUpdateCheckConfig: async () => ({
+          updateCheckBackendEnabled: true,
+          updateCheckCronInterval: 2_000,
+          updateCheckBatchSize: 100,
+          updateCheckMaxUsers: 1000,
+          updateCheckMaxFollowPerUser: 100,
+        }),
       },
       now: () => 1000,
     });
@@ -240,7 +254,7 @@ describe('UpdateCheckService', () => {
     facts.playRecord = null;
 
     expect(await service.checkTask(task)).toBeNull();
-    expect((await tasks.get(task.id))?.nextCheckAt).toBeGreaterThan(1000);
+    expect((await tasks.get(task.id))?.nextCheckAt).toBe(3000);
     expect(await results.get('alice', task.followId)).toBeNull();
   });
 
@@ -282,6 +296,8 @@ describe('UpdateCheckService', () => {
       capability: {
         getCapability: async () => ({
           enabled: false,
+          backendEnabled: true,
+          userEnabled: false,
           mode: 'local',
           reason: 'user_not_enabled',
         }),
