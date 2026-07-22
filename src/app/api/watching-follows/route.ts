@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 
 import { db } from '@/lib/db';
+import { updateCheckService } from '@/lib/update-check-service';
 import {
   createWatchingFollow,
   watchingFollowCreateSchema,
@@ -76,6 +77,7 @@ export async function POST(request: NextRequest) {
 
     const follow = createWatchingFollow(parsed.data);
     await db.saveWatchingFollow(auth.username, source, id, follow);
+    await updateCheckService.onFollowCreated(follow, auth.username);
 
     return noStoreJson(follow, { status: 201 });
   } catch (error) {

@@ -8,6 +8,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
 import { SimpleCrypto } from '@/lib/crypto';
 import { db } from '@/lib/db';
+import { updateCheckService } from '@/lib/update-check-service';
 import {
   parseLegacyPlayRecordKey,
   resolvePlayRecordIdentity,
@@ -154,15 +155,17 @@ export async function POST(req: NextRequest) {
             .filter((identity) => identity?.format === 'canonical')
             .map((identity) => identity!.canonicalKey),
         );
-        const storage = (db as unknown as {
-          storage: {
-            setPlayRecord: (
-              userName: string,
-              key: string,
-              record: unknown,
-            ) => Promise<void>;
-          };
-        }).storage;
+        const storage = (
+          db as unknown as {
+            storage: {
+              setPlayRecord: (
+                userName: string,
+                key: string,
+                record: unknown,
+              ) => Promise<void>;
+            };
+          }
+        ).storage;
 
         for (const [key, record] of entries) {
           // 数据升级：确保所有必需字段存在
@@ -288,6 +291,7 @@ export async function POST(req: NextRequest) {
             restoredFollow.id,
             restoredFollow,
           );
+          await updateCheckService.onFollowCreated(restoredFollow, username);
         }
       }
 

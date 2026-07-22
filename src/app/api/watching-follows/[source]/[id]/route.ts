@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 
 import { db } from '@/lib/db';
+import { updateCheckService } from '@/lib/update-check-service';
 import {
   updateWatchingFollow,
   watchingFollowUpdateSchema,
@@ -71,6 +72,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
 
     const follow = updateWatchingFollow(existing, parsed.data);
     await db.saveWatchingFollow(auth.username, source, id, follow);
+    await updateCheckService.onFollowUpdated(follow, auth.username);
 
     return noStoreJson(follow);
   } catch (error) {
@@ -90,6 +92,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     }
 
     await db.deleteWatchingFollow(auth.username, source, id);
+    await updateCheckService.onFollowDeleted(auth.username, source, id);
     return noStoreJson({ success: true });
   } catch (error) {
     console.error('删除追更关注失败', error);

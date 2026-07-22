@@ -10,6 +10,14 @@ jest.mock('@/lib/db', () => ({
   },
 }));
 
+jest.mock('@/lib/update-check-service', () => ({
+  updateCheckService: {
+    onFollowCreated: jest.fn(),
+    onFollowUpdated: jest.fn(),
+    onFollowDeleted: jest.fn(),
+  },
+}));
+
 jest.mock('./route-utils', () => ({
   requireWatchingFollowUser: jest.fn(async () => ({ username: 'alice' })),
   noStoreJson: (data: unknown, init?: ResponseInit) =>
@@ -18,10 +26,12 @@ jest.mock('./route-utils', () => ({
 
 import { POST } from './route';
 import { db } from '@/lib/db';
+import { updateCheckService } from '@/lib/update-check-service';
 
 const mockGetWatchingFollow = db.getWatchingFollow as jest.Mock;
 const mockGetPlayRecord = db.getPlayRecord as jest.Mock;
 const mockSaveWatchingFollow = db.saveWatchingFollow as jest.Mock;
+const mockOnFollowCreated = updateCheckService.onFollowCreated as jest.Mock;
 
 describe('WatchingFollow POST lifecycle', () => {
   beforeEach(() => {
@@ -53,6 +63,10 @@ describe('WatchingFollow POST lifecycle', () => {
         id: 'video-1',
         originalEpisodes: 10,
       }),
+    );
+    expect(mockOnFollowCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'source-a', id: 'video-1' }),
+      'alice',
     );
   });
 

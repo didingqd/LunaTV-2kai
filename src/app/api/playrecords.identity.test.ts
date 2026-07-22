@@ -22,6 +22,12 @@ jest.mock('@/lib/db', () => ({
   },
 }));
 
+jest.mock('@/lib/update-check-service', () => ({
+  updateCheckService: {
+    onFollowDeleted: jest.fn(),
+  },
+}));
+
 jest.mock('@/lib/performance-monitor', () => ({
   getDbQueryCount: jest.fn(() => 0),
   recordRequest: jest.fn(),
