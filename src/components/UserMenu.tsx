@@ -301,14 +301,6 @@ export const UserMenu: React.FC = () => {
     setIsWatchingUpdatesOpen(false);
   };
 
-  const handleWatchingSettings = () => {
-    setIsWatchingUpdatesOpen(false);
-    navigateWithBrowserPreference({
-      href: '/watching-settings',
-      routerPush: (href) => router.push(href),
-    });
-  };
-
   const handleContinueWatching = () => {
     setIsOpen(false);
     void refetchPlayRecords();
@@ -932,22 +924,13 @@ export const UserMenu: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className='flex shrink-0 items-center gap-2'>
-              <button
-                onClick={handleWatchingSettings}
-                className='inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-              >
-                <Settings className='h-4 w-4' />
-                追更设置
-              </button>
-              <button
-                onClick={handleCloseWatchingUpdates}
-                className='flex h-8 w-8 items-center justify-center rounded-full p-1 text-gray-500 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800'
-                aria-label='Close'
-              >
-                <X className='h-full w-full' />
-              </button>
-            </div>
+            <button
+              onClick={handleCloseWatchingUpdates}
+              className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full p-1 text-gray-500 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800'
+              aria-label='Close'
+            >
+              <X className='h-full w-full' />
+            </button>
           </div>
 
           {/* 更新列表 */}

@@ -7,6 +7,7 @@ import { memo, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { UserEmbyConfig } from './UserEmbyConfig';
+import { WatchingUpdateModeSetting } from './WatchingUpdateModeSetting';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { useEmbyConfigQuery } from '@/hooks/useUserMenuQueries';
 import { BROWSER_NAVIGATION_PREFERENCE_KEY } from '@/lib/browser-navigation';
@@ -31,6 +32,7 @@ import {
   sanitizeOutroSkipHintLeadSeconds,
   saveOutroSkipHintLeadSeconds,
 } from '@/lib/outro-skip-hint';
+import { writeWatchingUpdateSourceMode } from '@/lib/watching-update-preference';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -437,6 +439,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setFullscreenClockMode('controls');
     setOutroSkipHintLeadSeconds(DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS);
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
+    writeWatchingUpdateSourceMode('local');
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
     localStorage.setItem('enableOptimization', JSON.stringify(false));
@@ -520,6 +523,10 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
 
           {/* 设置项 */}
           <div className='space-y-6'>
+            <WatchingUpdateModeSetting />
+
+            <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
             {/* Emby 配置 */}
             <div className='space-y-3'>
               <div>
