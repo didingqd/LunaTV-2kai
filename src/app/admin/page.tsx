@@ -64,6 +64,7 @@ import { OIDCAuthConfig } from '@/components/OIDCAuthConfig';
 import TVBoxSecurityConfig from '@/components/TVBoxSecurityConfig';
 import TrustedNetworkConfig from '@/components/TrustedNetworkConfig';
 import UpdateCheckConfig from '@/components/UpdateCheckConfig';
+import UserPermissionSettingsModal from '@/components/UserPermissionSettingsModal';
 import DanmuApiConfig from '@/components/DanmuApiConfig';
 import { TVBoxTokenCell, TVBoxTokenModal } from '@/components/TVBoxTokenManager';
 import YouTubeConfig from '@/components/YouTubeConfig';
@@ -575,6 +576,9 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
     tvboxEnabledSources?: string[];
   } | null>(null);
   const [selectedTVBoxSources, setSelectedTVBoxSources] = useState<string[]>([]);
+  const [permissionSettingsUser, setPermissionSettingsUser] = useState<
+    AdminConfig['UserConfig']['Users'][number] | null
+  >(null);
 
   // 当前登录用户名
   const currentUsername = getAuthInfoFromBrowserCookie()?.username || null;
@@ -1786,6 +1790,11 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                       user.username !== currentUsername &&
                       (role === 'owner' ||
                         (role === 'admin' && user.role === 'user'));
+                    const canConfigurePermissions =
+                      role === 'owner' ||
+                      (role === 'admin' &&
+                        (user.role === 'user' ||
+                          user.username === currentUsername));
                     return (
                       <tr
                         key={user.username}
@@ -1843,18 +1852,6 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                                 ? user.tags.join(', ')
                                 : '无用户组'}
                             </span>
-                            {/* 配置用户组按钮 */}
-                            {(role === 'owner' ||
-                              (role === 'admin' &&
-                                (user.role === 'user' ||
-                                  user.username === currentUsername))) && (
-                                <button
-                                  onClick={() => handleConfigureUserGroup(user)}
-                                  className={buttonStyles.roundedPrimary}
-                                >
-                                  配置
-                                </button>
-                              )}
                           </div>
                         </td>
                         <td className='px-6 py-4 whitespace-nowrap'>
@@ -1884,47 +1881,23 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                                 return '无限制';
                               })()}
                             </span>
-                            {/* 配置采集源权限按钮 */}
-                            {(role === 'owner' ||
-                              (role === 'admin' &&
-                                (user.role === 'user' ||
-                                  user.username === currentUsername))) && (
-                                <button
-                                  onClick={() => handleConfigureUserApis(user)}
-                                  className={buttonStyles.roundedPrimary}
-                                >
-                                  配置
-                                </button>
-                              )}
                           </div>
                         </td>
                         {/* TVBox Token 列 */}
                         <td className='px-6 py-4 whitespace-nowrap'>
                           <div className='flex items-center space-x-2'>
                             <TVBoxTokenCell tvboxToken={user.tvboxToken} />
-                            {/* 配置 TVBox Token 按钮 */}
-                            {(role === 'owner' ||
-                              (role === 'admin' &&
-                                (user.role === 'user' ||
-                                  user.username === currentUsername))) && (
-                                <button
-                                  onClick={() => {
-                                    setTVBoxTokenUser({
-                                      username: user.username,
-                                      tvboxToken: user.tvboxToken,
-                                      tvboxEnabledSources: user.tvboxEnabledSources
-                                    });
-                                    setSelectedTVBoxSources(user.tvboxEnabledSources || []);
-                                    setShowTVBoxTokenModal(true);
-                                  }}
-                                  className={buttonStyles.roundedPrimary}
-                                >
-                                  配置
-                                </button>
-                              )}
                           </div>
                         </td>
                         <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+                          {canConfigurePermissions && (
+                            <button
+                              onClick={() => setPermissionSettingsUser(user)}
+                              className={buttonStyles.roundedPrimary}
+                            >
+                              权限设置
+                            </button>
+                          )}
                           {/* 修改密码按钮 */}
                           {canChangePassword && (
                             <button
@@ -2866,6 +2839,21 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
             </div>
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* 用户权限设置弹窗 */}
+      {permissionSettingsUser && createPortal(
+        <UserPermissionSettingsModal
+          user={permissionSettingsUser}
+          userGroups={config?.UserConfig?.Tags || []}
+          sources={config?.SourceConfig || []}
+          systemUpdateCheckEnabled={
+            config?.SystemConfig?.updateCheckBackendEnabled === true
+          }
+          onClose={() => setPermissionSettingsUser(null)}
+          onRefresh={refreshConfig}
+        />,
         document.body
       )}
 
