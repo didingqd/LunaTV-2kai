@@ -1,3 +1,10 @@
+export interface SystemConfig {
+  updateCheckBackendEnabled: boolean;
+  updateCheckBatchSize: number;
+  updateCheckMaxUsers: number;
+  updateCheckMaxFollowPerUser: number;
+}
+
 export interface AdminConfig {
   ConfigSubscribtion: {
     URL: string;
@@ -5,6 +12,7 @@ export interface AdminConfig {
     LastCheck: string;
   };
   ConfigFile: string;
+  SystemConfig?: SystemConfig;
   SiteConfig: {
     SiteName: string;
     Announcement: string;

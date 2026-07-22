@@ -24,6 +24,14 @@ import {
 } from './update-check-types';
 import type { LatestEpisodeProviderRegistry } from './latest-episode-provider';
 import { db } from './db';
+import {
+  systemConfigRepository,
+  type UpdateCheckConfigReader,
+} from './system-config-repository';
+import {
+  updateCheckCapabilityService,
+  type UpdateCheckCapabilityReader,
+} from './update-check-capability';
 
 export interface UpdateFactsRepository {
   getWatchingFollow(
@@ -47,6 +55,8 @@ export interface UpdateCheckServiceDependencies {
   observations?: UpdateObservationRepository;
   tasks?: UpdateCheckTaskRepository;
   providers?: LatestEpisodeProviderRegistry;
+  config?: UpdateCheckConfigReader;
+  capability?: UpdateCheckCapabilityReader;
   now?: () => number;
 }
 
@@ -73,6 +83,8 @@ export class UpdateCheckService {
   private readonly observations: UpdateObservationRepository;
   private readonly tasks: UpdateCheckTaskRepository;
   private providers?: LatestEpisodeProviderRegistry;
+  private readonly config: UpdateCheckConfigReader;
+  private readonly capability: UpdateCheckCapabilityReader;
   private readonly clock: () => number;
 
   constructor(dependencies: UpdateCheckServiceDependencies = {}) {
@@ -82,10 +94,13 @@ export class UpdateCheckService {
       dependencies.observations ?? new CachedUpdateObservationRepository();
     this.tasks = dependencies.tasks ?? new CachedUpdateCheckTaskRepository();
     this.providers = dependencies.providers;
+    this.config = dependencies.config ?? systemConfigRepository;
+    this.capability = dependencies.capability ?? updateCheckCapabilityService;
     this.clock = dependencies.now ?? Date.now;
   }
 
   async getResultsForUser(userId: string): Promise<UpdateResult[]> {
+    if (!(await this.isBackendEnabled(userId))) return [];
     const follows = await this.facts.getAllWatchingFollows(userId);
     const activeFollows = Object.values(follows).filter(
       (follow) => follow.enabled,
@@ -109,11 +124,13 @@ export class UpdateCheckService {
   }
 
   async onFollowCreated(follow: WatchingFollow, userId: string): Promise<void> {
+    if (!(await this.isBackendEnabled(userId))) return;
     await this.scheduleFollow(userId, follow, true);
   }
 
   async onFollowUpdated(follow: WatchingFollow, userId: string): Promise<void> {
     if (follow.enabled) {
+      if (!(await this.isBackendEnabled(userId))) return;
       await this.scheduleFollow(userId, follow, false);
     } else {
       await this.removeFollow(userId, follow);
@@ -137,6 +154,8 @@ export class UpdateCheckService {
     userId: string,
     followIds?: string[],
   ): Promise<UpdateCheckBatch> {
+    if (!(await this.isBackendEnabled(userId)))
+      return { results: [], errors: [] };
     const follows = Object.values(
       await this.facts.getAllWatchingFollows(userId),
     ).filter(
@@ -172,6 +191,7 @@ export class UpdateCheckService {
   async processObservation(
     observation: UpdateObservation,
   ): Promise<UpdateResult | null> {
+    if (!(await this.isBackendEnabled(observation.userId))) return null;
     const identity = await this.resolveObservationFollow(observation);
     if (!identity) return null;
     const latestEpisode = normalizeEpisode(observation.latestEpisode);
@@ -198,6 +218,7 @@ export class UpdateCheckService {
   }
 
   async checkTask(task: UpdateCheckTask): Promise<UpdateResult | null> {
+    if (!(await this.isBackendEnabled(task.userId))) return null;
     const follow = await this.facts.getWatchingFollow(
       task.userId,
       task.source,
@@ -434,6 +455,29 @@ export class UpdateCheckService {
       this.providers = module.latestEpisodeProviderRegistry;
     }
     return this.providers;
+  }
+
+  async onUserPermissionEnabled(userId: string): Promise<void> {
+    if (!(await this.isBackendEnabled(userId))) return;
+    const config = await this.config.getUpdateCheckConfig();
+    const follows = Object.values(
+      await this.facts.getAllWatchingFollows(userId),
+    )
+      .filter((follow) => follow.enabled)
+      .slice(0, config.updateCheckMaxFollowPerUser);
+    await Promise.all(follows.map((follow) => this.ensureTask(userId, follow)));
+  }
+
+  async onUserPermissionDisabled(userId: string): Promise<void> {
+    await Promise.all([
+      this.results.deleteForUser(userId),
+      this.observations.deleteForUser(userId),
+      this.tasks.deleteForUser(userId),
+    ]);
+  }
+
+  private async isBackendEnabled(userId: string): Promise<boolean> {
+    return (await this.capability.getCapability(userId)).enabled;
   }
 }
 

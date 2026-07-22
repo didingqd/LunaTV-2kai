@@ -153,6 +153,9 @@ describe('UpdateCheckService', () => {
       providers: {
         get: () => provider,
       } as unknown as LatestEpisodeProviderRegistry,
+      capability: {
+        getCapability: async () => ({ enabled: true, mode: 'backend' }),
+      },
       now: () => 1000,
     });
     await service.onFollowCreated(follow, 'alice');
@@ -249,5 +252,55 @@ describe('UpdateCheckService', () => {
     expect(await results.get('alice', task.followId)).toBeNull();
     expect(await observations.get('alice', task.followId)).toBeNull();
     expect(await tasks.get(task.id)).toBeNull();
+  });
+
+  it('cleans only calculated update data when user permission is disabled', async () => {
+    const task = [...tasks.values.values()][0];
+    await service.processObservation({
+      userId: 'alice',
+      followId: task.followId,
+      source: follow.source,
+      resourceId: follow.id,
+      latestEpisode: 11,
+      observedAt: 1000,
+    });
+
+    await service.onUserPermissionDisabled('alice');
+
+    expect(await results.get('alice', task.followId)).toBeNull();
+    expect(await observations.get('alice', task.followId)).toBeNull();
+    expect(await tasks.get(task.id)).toBeNull();
+  });
+
+  it('does not create task, observation or result when capability is local', async () => {
+    const localTasks = new MemoryTasks();
+    const localService = new UpdateCheckService({
+      facts,
+      results,
+      observations,
+      tasks: localTasks,
+      capability: {
+        getCapability: async () => ({
+          enabled: false,
+          mode: 'local',
+          reason: 'user_not_enabled',
+        }),
+      },
+      now: () => 1000,
+    });
+    await localService.onFollowCreated(follow, 'alice');
+    const result = await localService.processObservation({
+      userId: 'alice',
+      followId: 'follow-1',
+      source: follow.source,
+      resourceId: follow.id,
+      latestEpisode: 11,
+      observedAt: 1000,
+    });
+
+    expect(localTasks.values.size).toBe(0);
+    expect(observations.values.size).toBe(0);
+    expect(results.values.size).toBe(0);
+    expect(result).toBeNull();
   });
 });

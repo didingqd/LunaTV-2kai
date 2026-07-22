@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { updateCheckService } from '@/lib/update-check-service';
+import { updateCheckCapabilityService } from '@/lib/update-check-capability';
 import {
   internalError,
   noStoreJson,
@@ -45,6 +46,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const capability = await updateCheckCapabilityService.getCapability(
+      auth.username,
+    );
+    if (!capability.enabled) {
+      return noStoreJson({
+        userId: auth.username,
+        status: capability.reason,
+        reason: capability.reason,
+        capability,
+        syncedAt: Date.now(),
+        accepted: false,
+        rejected: [],
+      });
+    }
+
     const accepted = [];
     const rejected = [];
     for (const observation of parsed.data.observations) {
@@ -68,6 +84,7 @@ export async function POST(request: NextRequest) {
 
     return noStoreJson({
       userId: auth.username,
+      capability,
       syncedAt: Date.now(),
       accepted,
       rejected,

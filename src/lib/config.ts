@@ -224,6 +224,12 @@ async function getInitConfig(configFile: string, subConfig: {
   const adminConfig: AdminConfig = {
     ConfigFile: configFile,
     ConfigSubscribtion: subConfig,
+    SystemConfig: {
+      updateCheckBackendEnabled: false,
+      updateCheckBatchSize: 100,
+      updateCheckMaxUsers: 1000,
+      updateCheckMaxFollowPerUser: 100,
+    },
     SiteConfig: {
       SiteName: process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV',
       Announcement:
@@ -373,6 +379,16 @@ export function clearConfigCache(): void {
 
 export async function configSelfCheck(adminConfig: AdminConfig): Promise<AdminConfig> {
   // 确保必要的属性存在和初始化
+  adminConfig.SystemConfig = {
+    updateCheckBackendEnabled:
+      adminConfig.SystemConfig?.updateCheckBackendEnabled ?? false,
+    updateCheckBatchSize:
+      adminConfig.SystemConfig?.updateCheckBatchSize ?? 100,
+    updateCheckMaxUsers:
+      adminConfig.SystemConfig?.updateCheckMaxUsers ?? 1000,
+    updateCheckMaxFollowPerUser:
+      adminConfig.SystemConfig?.updateCheckMaxFollowPerUser ?? 100,
+  };
   if (!adminConfig.UserConfig) {
     adminConfig.UserConfig = { AllowRegister: true, Users: [] };
   }

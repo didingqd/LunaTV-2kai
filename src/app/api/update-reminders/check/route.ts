@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { updateCheckService } from '@/lib/update-check-service';
+import { updateCheckCapabilityService } from '@/lib/update-check-capability';
 import {
   internalError,
   noStoreJson,
@@ -30,12 +31,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const capability = await updateCheckCapabilityService.getCapability(
+      auth.username,
+    );
+    if (!capability.enabled) {
+      return noStoreJson({
+        userId: auth.username,
+        status: capability.reason,
+        reason: capability.reason,
+        capability,
+        checkedAt: Date.now(),
+        results: [],
+        errors: [],
+      });
+    }
+
     const batch = await updateCheckService.checkUser(
       auth.username,
       parsed.data.followIds,
     );
     return noStoreJson({
       userId: auth.username,
+      capability,
       checkedAt: Date.now(),
       ...batch,
     });

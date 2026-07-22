@@ -63,6 +63,7 @@ import { TelegramAuthConfig } from '@/components/TelegramAuthConfig';
 import { OIDCAuthConfig } from '@/components/OIDCAuthConfig';
 import TVBoxSecurityConfig from '@/components/TVBoxSecurityConfig';
 import TrustedNetworkConfig from '@/components/TrustedNetworkConfig';
+import UpdateCheckConfig from '@/components/UpdateCheckConfig';
 import DanmuApiConfig from '@/components/DanmuApiConfig';
 import { TVBoxTokenCell, TVBoxTokenModal } from '@/components/TVBoxTokenManager';
 import YouTubeConfig from '@/components/YouTubeConfig';
@@ -8172,6 +8173,7 @@ function AdminPageClient() {
     cacheManager: false,
     dataMigration: false,
     performanceMonitor: false,
+    updateCheckConfig: false,
   });
 
   // 获取管理员配置
@@ -8319,6 +8321,22 @@ function AdminPageClient() {
             >
               <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
+
+            {role && (
+              <CollapsibleTab
+                title='追更系统'
+                icon={
+                  <Activity
+                    size={20}
+                    className='text-gray-600 dark:text-gray-400'
+                  />
+                }
+                isExpanded={expandedTabs.updateCheckConfig}
+                onToggle={() => toggleTab('updateCheckConfig')}
+              >
+                <UpdateCheckConfig />
+              </CollapsibleTab>
+            )}
 
             {/* 首页与分类配置标签 */}
             <CollapsibleTab
