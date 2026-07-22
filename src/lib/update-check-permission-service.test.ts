@@ -4,32 +4,82 @@ jest.mock('./latest-episode-provider', () => ({
   latestEpisodeProviderRegistry: { get: jest.fn() },
 }));
 
-import { UpdateCheckPermissionService } from './update-check-permission-service';
-import type { UpdateCheckUserPermissionRepository } from './update-check-permission-repository';
+import type { AdminConfig } from './admin.types';
+import {
+  UpdateCheckPermissionService,
+  type UpdateCheckPermissionConfigStore,
+} from './update-check-permission-service';
 
-function permissions(): UpdateCheckUserPermissionRepository {
+function adminConfig(): AdminConfig {
   return {
-    get: async () => null,
-    getAll: async () => [],
-    save: async () => undefined,
-    listEnabledUserIds: async () => ['alice'],
+    UserConfig: {
+      Users: [
+        { username: 'owner', role: 'owner' },
+        {
+          username: 'alice',
+          role: 'user',
+          updateCheckBackendEnabled: true,
+        },
+      ],
+    },
+  } as AdminConfig;
+}
+
+function configStore(config: AdminConfig, save = jest.fn()) {
+  return {
+    store: {
+      getAdminConfig: async () => config,
+      saveAdminConfig: save,
+    } satisfies UpdateCheckPermissionConfigStore,
+    save,
   };
 }
 
-describe('UpdateCheckPermissionService system switch lifecycle', () => {
-  it('cleans only owner and explicitly authorized update caches when disabled', async () => {
+const systemConfig = {
+  getUpdateCheckConfig: async () => ({
+    updateCheckBackendEnabled: false,
+    updateCheckCronInterval: 30 * 60 * 1000,
+    updateCheckBatchSize: 100,
+    updateCheckMaxUsers: 1000,
+    updateCheckMaxFollowPerUser: 100,
+  }),
+};
+
+describe('UpdateCheckPermissionService AdminConfig storage', () => {
+  it('persists user permission in the existing UserConfig entry', async () => {
+    const config = adminConfig();
+    const { store, save } = configStore(config);
     const onUserPermissionDisabled = jest.fn(async () => undefined);
     const service = new UpdateCheckPermissionService(
-      permissions(),
+      store,
+      systemConfig,
       {
-        getUpdateCheckConfig: async () => ({
-          updateCheckBackendEnabled: false,
-          updateCheckCronInterval: 30 * 60 * 1000,
-          updateCheckBatchSize: 100,
-          updateCheckMaxUsers: 1000,
-          updateCheckMaxFollowPerUser: 100,
-        }),
+        onUserPermissionEnabled: async () => undefined,
+        onUserPermissionDisabled,
       },
+      () => 1000,
+      () => 'owner',
+    );
+
+    const permission = await service.setPermission('alice', false, 'admin');
+
+    expect(config.UserConfig.Users[1]).toMatchObject({
+      updateCheckBackendEnabled: false,
+      updateCheckPermissionCreatedAt: 1000,
+      updateCheckPermissionUpdatedAt: 1000,
+      updateCheckPermissionOperator: 'admin',
+    });
+    expect(permission).toMatchObject({ userId: 'alice', enabled: false });
+    expect(save).toHaveBeenCalledWith(config);
+    expect(onUserPermissionDisabled).toHaveBeenCalledWith('alice');
+  });
+
+  it('cleans only owner and explicitly authorized update caches when disabled', async () => {
+    const { store } = configStore(adminConfig());
+    const onUserPermissionDisabled = jest.fn(async () => undefined);
+    const service = new UpdateCheckPermissionService(
+      store,
+      systemConfig,
       {
         onUserPermissionEnabled: async () => undefined,
         onUserPermissionDisabled,

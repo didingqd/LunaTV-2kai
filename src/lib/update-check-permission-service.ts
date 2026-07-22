@@ -1,21 +1,39 @@
-import type { SystemConfig } from './admin.types';
+import type { AdminConfig, SystemConfig } from './admin.types';
+import { clearConfigCache, getConfig } from './config';
+import { db } from './db';
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
 } from './system-config-repository';
 import {
-  updateCheckUserPermissionRepository,
-  type UpdateCheckUserPermission,
-  type UpdateCheckUserPermissionRepository,
-} from './update-check-permission-repository';
-import {
   updateCheckService,
   type UpdateCheckService,
 } from './update-check-service';
 
+export interface UpdateCheckUserPermission {
+  userId: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  operator: string;
+}
+
+export interface UpdateCheckPermissionConfigStore {
+  getAdminConfig(): Promise<AdminConfig>;
+  saveAdminConfig(config: AdminConfig): Promise<void>;
+}
+
+const adminConfigPermissionStore: UpdateCheckPermissionConfigStore = {
+  getAdminConfig: getConfig,
+  async saveAdminConfig(config) {
+    await db.saveAdminConfig(config);
+    clearConfigCache();
+  },
+};
+
 export class UpdateCheckPermissionService {
   constructor(
-    private readonly permissions: UpdateCheckUserPermissionRepository = updateCheckUserPermissionRepository,
+    private readonly store: UpdateCheckPermissionConfigStore = adminConfigPermissionStore,
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
     private readonly checks: Pick<
       UpdateCheckService,
@@ -37,24 +55,50 @@ export class UpdateCheckPermissionService {
       return null;
     }
 
+    const config = await this.store.getAdminConfig();
+    const user = config.UserConfig.Users.find(
+      (candidate) => candidate.username === userId,
+    );
+    if (!user) throw new Error('USER_NOT_FOUND');
+
     const timestamp = this.now();
-    const previous = await this.permissions.get(userId);
     const permission: UpdateCheckUserPermission = {
       userId,
       enabled,
-      createdAt: previous?.createdAt ?? timestamp,
+      createdAt: user.updateCheckPermissionCreatedAt ?? timestamp,
       updatedAt: timestamp,
       operator,
     };
-    await this.permissions.save(permission);
+    user.updateCheckBackendEnabled = enabled;
+    user.updateCheckPermissionCreatedAt = permission.createdAt;
+    user.updateCheckPermissionUpdatedAt = permission.updatedAt;
+    user.updateCheckPermissionOperator = operator;
+    await this.store.saveAdminConfig(config);
+
     if (enabled) await this.checks.onUserPermissionEnabled(userId);
     else await this.checks.onUserPermissionDisabled(userId);
     return permission;
   }
 
+  async isUserAllowed(userId: string): Promise<boolean> {
+    if (userId === this.ownerId()) return true;
+    const config = await this.store.getAdminConfig();
+    return (
+      config.UserConfig.Users.find((user) => user.username === userId)
+        ?.updateCheckBackendEnabled === true
+    );
+  }
+
+  async listEnabledUserIds(): Promise<string[]> {
+    const config = await this.store.getAdminConfig();
+    return config.UserConfig.Users.filter(
+      (user) => user.updateCheckBackendEnabled === true,
+    ).map((user) => user.username);
+  }
+
   async onSystemConfigChanged(enabled: boolean): Promise<void> {
     const [authorizedUsers, config] = await Promise.all([
-      this.permissions.listEnabledUserIds(),
+      this.listEnabledUserIds(),
       this.config.getUpdateCheckConfig(),
     ]);
     const ownerId = this.ownerId();
@@ -79,19 +123,19 @@ export class UpdateCheckPermissionService {
   }
 
   async listUsers(userIds: string[], systemConfig?: SystemConfig) {
-    const [permissions, config] = await Promise.all([
-      this.permissions.getAll(),
+    const [adminConfig, config] = await Promise.all([
+      this.store.getAdminConfig(),
       systemConfig
         ? Promise.resolve(systemConfig)
         : this.config.getUpdateCheckConfig(),
     ]);
-    const permissionByUser = new Map(
-      permissions.map((permission) => [permission.userId, permission]),
+    const userById = new Map(
+      adminConfig.UserConfig.Users.map((user) => [user.username, user]),
     );
     return userIds.map((userId) => {
-      const permission = permissionByUser.get(userId);
+      const user = userById.get(userId);
       const owner = userId === this.ownerId();
-      const granted = owner || permission?.enabled === true;
+      const granted = owner || user?.updateCheckBackendEnabled === true;
       return {
         userId,
         owner,
@@ -101,8 +145,8 @@ export class UpdateCheckPermissionService {
           config.updateCheckBackendEnabled && granted
             ? ('backend' as const)
             : ('local' as const),
-        updatedAt: permission?.updatedAt ?? null,
-        operator: permission?.operator ?? null,
+        updatedAt: user?.updateCheckPermissionUpdatedAt ?? null,
+        operator: user?.updateCheckPermissionOperator ?? null,
       };
     });
   }

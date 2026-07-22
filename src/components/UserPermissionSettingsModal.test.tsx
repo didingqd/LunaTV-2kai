@@ -23,20 +23,7 @@ describe('UserPermissionSettingsModal', () => {
     Object.defineProperty(global, 'fetch', {
       configurable: true,
       writable: true,
-      value: jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          users: [
-            {
-              userId: 'alice',
-              owner: false,
-              granted: false,
-              enabled: false,
-              mode: 'local',
-            },
-          ],
-        }),
-      } as Response),
+      value: jest.fn(),
     });
   });
 
@@ -102,20 +89,7 @@ describe('UserPermissionSettingsModal', () => {
 
   it('keeps the effective update-check mode local when the system switch is off', async () => {
     const fetchMock = global.fetch as jest.Mock;
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        users: [
-          {
-            userId: 'alice',
-            owner: false,
-            granted: false,
-            enabled: false,
-            mode: 'local',
-          },
-        ],
-      }),
-    } as Response);
+    const onRefresh = jest.fn().mockResolvedValue(undefined);
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ permission: { userId: 'alice', enabled: true } }),
@@ -128,7 +102,7 @@ describe('UserPermissionSettingsModal', () => {
         sources={sources}
         systemUpdateCheckEnabled={false}
         onClose={jest.fn()}
-        onRefresh={jest.fn().mockResolvedValue(undefined)}
+        onRefresh={onRefresh}
       />,
     );
 
@@ -140,9 +114,10 @@ describe('UserPermissionSettingsModal', () => {
         screen.getByText(/当前状态：已授权，实际模式：本地计算/),
       ).toBeInTheDocument(),
     );
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       userId: 'alice',
       enabled: true,
     });
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

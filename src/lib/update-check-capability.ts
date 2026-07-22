@@ -1,11 +1,8 @@
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
+  type UpdateCheckUserAccessReader,
 } from './system-config-repository';
-import {
-  updateCheckUserPermissionRepository,
-  type UpdateCheckUserPermissionRepository,
-} from './update-check-permission-repository';
 
 export interface UpdateCheckCapability {
   enabled: boolean;
@@ -22,9 +19,10 @@ export interface UpdateCheckCapabilityReader {
 export class UpdateCheckCapabilityService implements UpdateCheckCapabilityReader {
   constructor(
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
-    private readonly permissions: UpdateCheckUserPermissionRepository = updateCheckUserPermissionRepository,
-    private readonly ownerId: () => string | undefined = () =>
-      process.env.USERNAME,
+    private readonly permissions: Pick<
+      UpdateCheckUserAccessReader,
+      'isUserUpdateCheckAllowed'
+    > = systemConfigRepository,
   ) {}
 
   async getCapability(userId: string): Promise<UpdateCheckCapability> {
@@ -39,10 +37,7 @@ export class UpdateCheckCapabilityService implements UpdateCheckCapabilityReader
       };
     }
 
-    if (
-      userId === this.ownerId() ||
-      (await this.permissions.get(userId))?.enabled
-    ) {
+    if (await this.permissions.isUserUpdateCheckAllowed(userId)) {
       return {
         enabled: true,
         backendEnabled: true,

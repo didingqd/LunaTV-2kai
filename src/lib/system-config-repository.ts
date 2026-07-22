@@ -27,6 +27,11 @@ export interface UpdateCheckConfigReader {
   getUpdateCheckConfig(): Promise<SystemConfig>;
 }
 
+export interface UpdateCheckUserAccessReader {
+  isUserUpdateCheckAllowed(userId: string): Promise<boolean>;
+  listUpdateCheckEnabledUserIds(): Promise<string[]>;
+}
+
 function boundedInteger(
   value: unknown,
   fallback: number,
@@ -69,7 +74,9 @@ export function normalizeUpdateCheckSystemConfig(
   };
 }
 
-export class AdminSystemConfigRepository implements UpdateCheckConfigReader {
+export class AdminSystemConfigRepository
+  implements UpdateCheckConfigReader, UpdateCheckUserAccessReader
+{
   constructor(
     private readonly store: SystemConfigStore = db,
     private readonly loadFullConfig: () => Promise<AdminConfig> = getConfig,
@@ -92,6 +99,22 @@ export class AdminSystemConfigRepository implements UpdateCheckConfigReader {
     await this.store.saveAdminConfig(config);
     clearConfigCache();
     return normalized;
+  }
+
+  async isUserUpdateCheckAllowed(userId: string): Promise<boolean> {
+    if (userId === process.env.USERNAME) return true;
+    const config = await this.loadFullConfig();
+    return (
+      config.UserConfig.Users.find((user) => user.username === userId)
+        ?.updateCheckBackendEnabled === true
+    );
+  }
+
+  async listUpdateCheckEnabledUserIds(): Promise<string[]> {
+    const config = await this.loadFullConfig();
+    return config.UserConfig.Users.filter(
+      (user) => user.updateCheckBackendEnabled === true,
+    ).map((user) => user.username);
   }
 }
 

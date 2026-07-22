@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyRound, LoaderCircle, Save, Settings, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { AdminConfig } from '@/lib/admin.types';
 
@@ -73,42 +73,21 @@ export default function UserPermissionSettingsModal({
   const [tvboxSources, setTvboxSources] = useState<string[]>(
     user.tvboxEnabledSources || [],
   );
-  const [permission, setPermission] = useState<PermissionResponse>({
-    userId: user.username,
-    owner: user.role === 'owner',
-    granted: false,
-    enabled: false,
-    mode: 'local',
+  const [permission, setPermission] = useState<PermissionResponse>(() => {
+    const owner = user.role === 'owner';
+    const granted = owner || user.updateCheckBackendEnabled === true;
+    const enabled = systemUpdateCheckEnabled && granted;
+    return {
+      userId: user.username,
+      owner,
+      granted,
+      enabled,
+      mode: enabled ? 'backend' : 'local',
+    };
   });
-  const [permissionLoading, setPermissionLoading] = useState(true);
+  const permissionLoading = false;
   const [saving, setSaving] = useState<Tab | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadPermission = async () => {
-      try {
-        const response = await fetch('/api/admin/settings/update-check', {
-          cache: 'no-store',
-        });
-        const data = await response.json();
-        const current = Array.isArray(data.users)
-          ? data.users.find(
-              (entry: PermissionResponse) => entry.userId === user.username,
-            )
-          : null;
-        if (!cancelled && current) setPermission(current);
-      } catch {
-        // 追更授权读取失败时保持本地模式，不影响其他用户配置。
-      } finally {
-        if (!cancelled) setPermissionLoading(false);
-      }
-    };
-    void loadPermission();
-    return () => {
-      cancelled = true;
-    };
-  }, [user.username]);
 
   const availableSources = useMemo(
     () => sources.filter((source) => !source.disabled),
@@ -249,6 +228,7 @@ export default function UserPermissionSettingsModal({
         enabled: systemUpdateCheckEnabled && granted,
         mode: systemUpdateCheckEnabled && granted ? 'backend' : 'local',
       }));
+      await onRefresh();
       setMessage(
         permission.granted
           ? '已关闭后端追更计算授权'

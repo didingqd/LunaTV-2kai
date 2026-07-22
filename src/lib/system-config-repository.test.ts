@@ -43,4 +43,45 @@ describe('AdminSystemConfigRepository', () => {
     await expect(repository.getUpdateCheckConfig()).resolves.toEqual(expected);
     expect(stored.ConfigFile).toBe('preserved');
   });
+
+  it('reads authorized users from AdminConfig UserConfig', async () => {
+    const config = {
+      UserConfig: {
+        Users: [
+          { username: 'owner', role: 'owner' },
+          {
+            username: 'alice',
+            role: 'user',
+            updateCheckBackendEnabled: true,
+          },
+          { username: 'bob', role: 'admin' },
+        ],
+      },
+    } as AdminConfig;
+    const repository = new AdminSystemConfigRepository(
+      {
+        getAdminConfig: async () => config,
+        saveAdminConfig: async () => undefined,
+      },
+      async () => config,
+    );
+    const previousOwner = process.env.USERNAME;
+    process.env.USERNAME = 'owner';
+
+    await expect(repository.isUserUpdateCheckAllowed('owner')).resolves.toBe(
+      true,
+    );
+    await expect(repository.isUserUpdateCheckAllowed('alice')).resolves.toBe(
+      true,
+    );
+    await expect(repository.isUserUpdateCheckAllowed('bob')).resolves.toBe(
+      false,
+    );
+    await expect(repository.listUpdateCheckEnabledUserIds()).resolves.toEqual([
+      'alice',
+    ]);
+
+    if (previousOwner === undefined) delete process.env.USERNAME;
+    else process.env.USERNAME = previousOwner;
+  });
 });

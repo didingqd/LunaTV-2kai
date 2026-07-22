@@ -8,7 +8,6 @@ import { UpdateCheckScheduler } from './update-check-scheduler';
 import type { UpdateCheckTask } from './update-check-types';
 import type { UpdateCheckTaskRepository } from './update-check-repository';
 import type { SystemConfig } from './admin.types';
-import type { UpdateCheckUserPermissionRepository } from './update-check-permission-repository';
 
 const enabledConfig: SystemConfig = {
   updateCheckBackendEnabled: true,
@@ -20,12 +19,9 @@ const enabledConfig: SystemConfig = {
 
 function permissionsFor(
   ...userIds: string[]
-): UpdateCheckUserPermissionRepository {
+) {
   return {
-    get: async () => null,
-    getAll: async () => [],
-    save: async () => undefined,
-    listEnabledUserIds: async () => userIds,
+    listUpdateCheckEnabledUserIds: async () => userIds,
   };
 }
 

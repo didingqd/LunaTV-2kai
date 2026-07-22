@@ -9,11 +9,8 @@ import {
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
+  type UpdateCheckUserAccessReader,
 } from './system-config-repository';
-import {
-  updateCheckUserPermissionRepository,
-  type UpdateCheckUserPermissionRepository,
-} from './update-check-permission-repository';
 
 export interface UpdateCheckSchedulerOptions {
   limit?: number;
@@ -25,7 +22,10 @@ export class UpdateCheckScheduler {
     private readonly tasks: UpdateCheckTaskRepository = new CachedUpdateCheckTaskRepository(),
     private readonly service: UpdateCheckService = updateCheckService,
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
-    private readonly permissions: UpdateCheckUserPermissionRepository = updateCheckUserPermissionRepository,
+    private readonly permissions: Pick<
+      UpdateCheckUserAccessReader,
+      'listUpdateCheckEnabledUserIds'
+    > = systemConfigRepository,
   ) {}
 
   async run(options: UpdateCheckSchedulerOptions = {}) {
@@ -43,7 +43,7 @@ export class UpdateCheckScheduler {
     );
     const dueTasks = await this.tasks.listDue(now, limit);
     const authorizedUsers = new Set(
-      await this.permissions.listEnabledUserIds(),
+      await this.permissions.listUpdateCheckEnabledUserIds(),
     );
     const ownerId = process.env.USERNAME;
     if (ownerId) authorizedUsers.add(ownerId);

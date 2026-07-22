@@ -7,6 +7,8 @@ import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { normalizeUpdateCheckSystemConfig } from '@/lib/system-config-repository';
+import { updateCheckPermissionService } from '@/lib/update-check-permission-service';
 
 export const runtime = 'nodejs';
 
@@ -90,7 +92,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const previousConfig = await getConfig();
     const newConfig: AdminConfig = await request.json();
+    newConfig.SystemConfig = normalizeUpdateCheckSystemConfig(
+      newConfig.SystemConfig,
+    );
 
     // 保存新配置
     await db.saveAdminConfig(newConfig);
@@ -98,13 +104,22 @@ export async function POST(request: NextRequest) {
     // 清除缓存，强制下次重新从数据库读取
     clearConfigCache();
 
+    if (
+      previousConfig.SystemConfig?.updateCheckBackendEnabled !==
+      newConfig.SystemConfig.updateCheckBackendEnabled
+    ) {
+      await updateCheckPermissionService.onSystemConfigChanged(
+        newConfig.SystemConfig.updateCheckBackendEnabled,
+      );
+    }
+
     // 🔥 刷新所有页面的缓存，使新配置立即生效（无需重启Docker）
     revalidatePath('/', 'layout');
 
     // 🔥 添加 no-cache headers，防止 Docker 环境下 Next.js Router Cache 问题
     // 参考：https://github.com/vercel/next.js/issues/61184
     return NextResponse.json(
-      { success: true },
+      { success: true, Config: newConfig },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

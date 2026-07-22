@@ -3,6 +3,8 @@
 import { CheckCircle, LoaderCircle, Save, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { AdminConfig } from '@/lib/admin.types';
+
 interface UpdateCheckUserAccess {
   userId: string;
   owner: boolean;
@@ -41,6 +43,8 @@ const CRON_INTERVAL_OPTIONS = [
 
 export default function UpdateCheckConfig() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
+  const [canEditSystemConfig, setCanEditSystemConfig] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
@@ -50,12 +54,37 @@ export default function UpdateCheckConfig() {
   } | null>(null);
   const requestSequence = useRef(0);
 
-  const applyServerSettings = useCallback(
-    (data: Partial<UpdateCheckSettings>) => {
+  const applyAdminConfig = useCallback(
+    (config: AdminConfig, role?: string) => {
+      const systemConfig = config.SystemConfig;
+      const enabled = systemConfig?.updateCheckBackendEnabled === true;
+      setAdminConfig(config);
+      if (role) setCanEditSystemConfig(role === 'owner');
       setSettings({
-        ...DEFAULT_SETTINGS,
-        ...data,
-        users: Array.isArray(data.users) ? data.users : [],
+        enabled,
+        updateCheckCronInterval:
+          systemConfig?.updateCheckCronInterval ??
+          DEFAULT_SETTINGS.updateCheckCronInterval,
+        batchSize:
+          systemConfig?.updateCheckBatchSize ?? DEFAULT_SETTINGS.batchSize,
+        maxUsers:
+          systemConfig?.updateCheckMaxUsers ?? DEFAULT_SETTINGS.maxUsers,
+        maxFollowPerUser:
+          systemConfig?.updateCheckMaxFollowPerUser ??
+          DEFAULT_SETTINGS.maxFollowPerUser,
+        users: config.UserConfig.Users.map((user) => {
+          const owner = user.role === 'owner';
+          const granted = owner || user.updateCheckBackendEnabled === true;
+          return {
+            userId: user.username,
+            owner,
+            granted,
+            enabled: enabled && granted,
+            mode: enabled && granted ? 'backend' : 'local',
+            updatedAt: user.updateCheckPermissionUpdatedAt ?? null,
+            operator: user.updateCheckPermissionOperator ?? null,
+          };
+        }),
       });
     },
     [],
@@ -66,12 +95,14 @@ export default function UpdateCheckConfig() {
       const requestId = ++requestSequence.current;
       if (showLoading) setLoading(true);
       try {
-        const response = await fetch('/api/admin/settings/update-check', {
+        const response = await fetch('/api/admin/config', {
           cache: 'no-store',
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '读取追更配置失败');
-        if (requestId === requestSequence.current) applyServerSettings(data);
+        if (requestId === requestSequence.current) {
+          applyAdminConfig(data.Config, data.Role);
+        }
       } catch (error) {
         if (requestId === requestSequence.current) {
           setMessage({
@@ -85,7 +116,7 @@ export default function UpdateCheckConfig() {
         }
       }
     },
-    [applyServerSettings],
+    [applyAdminConfig],
   );
 
   useEffect(() => {
@@ -96,21 +127,26 @@ export default function UpdateCheckConfig() {
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch('/api/admin/settings/update-check', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enabled: settings.enabled,
+      if (!adminConfig) throw new Error('管理员配置尚未加载');
+      const updatedConfig: AdminConfig = {
+        ...adminConfig,
+        SystemConfig: {
+          updateCheckBackendEnabled: settings.enabled,
           updateCheckCronInterval: settings.updateCheckCronInterval,
-          batchSize: settings.batchSize,
-          maxUsers: settings.maxUsers,
-          maxFollowPerUser: settings.maxFollowPerUser,
-        }),
+          updateCheckBatchSize: settings.batchSize,
+          updateCheckMaxUsers: settings.maxUsers,
+          updateCheckMaxFollowPerUser: settings.maxFollowPerUser,
+        },
+      };
+      const response = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedConfig),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '保存追更配置失败');
       requestSequence.current += 1;
-      applyServerSettings(data);
+      applyAdminConfig(data.Config ?? updatedConfig);
       setMessage({ type: 'success', text: '追更后台计算配置已保存' });
     } catch (error) {
       setMessage({
@@ -195,13 +231,14 @@ export default function UpdateCheckConfig() {
           role='switch'
           aria-checked={settings.enabled}
           aria-label='后端追更计算'
+          disabled={!canEditSystemConfig}
           onClick={() =>
             setSettings((current) => ({
               ...current,
               enabled: !current.enabled,
             }))
           }
-          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             settings.enabled ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
           }`}
         >
@@ -266,7 +303,7 @@ export default function UpdateCheckConfig() {
 
       <button
         type='button'
-        disabled={saving}
+        disabled={saving || !canEditSystemConfig}
         onClick={saveSettings}
         className='inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
       >

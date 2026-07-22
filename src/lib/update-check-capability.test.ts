@@ -2,7 +2,6 @@
 
 import type { SystemConfig } from './admin.types';
 import { UpdateCheckCapabilityService } from './update-check-capability';
-import type { UpdateCheckUserPermissionRepository } from './update-check-permission-repository';
 
 const config: SystemConfig = {
   updateCheckBackendEnabled: true,
@@ -14,17 +13,9 @@ const config: SystemConfig = {
 
 function permissionRepository(enabledUsers: string[]) {
   return {
-    get: async (userId: string) =>
-      enabledUsers.includes(userId)
-        ? {
-            userId,
-            enabled: true,
-            createdAt: 1,
-            updatedAt: 1,
-            operator: 'admin',
-          }
-        : null,
-  } as UpdateCheckUserPermissionRepository;
+    isUserUpdateCheckAllowed: async (userId: string) =>
+      userId === 'owner' || enabledUsers.includes(userId),
+  };
 }
 
 describe('UpdateCheckCapabilityService', () => {
@@ -37,7 +28,6 @@ describe('UpdateCheckCapabilityService', () => {
         }),
       },
       permissionRepository(['alice']),
-      () => 'owner',
     );
 
     await expect(service.getCapability('alice')).resolves.toEqual({
@@ -53,7 +43,6 @@ describe('UpdateCheckCapabilityService', () => {
     const service = new UpdateCheckCapabilityService(
       { getUpdateCheckConfig: async () => config },
       permissionRepository([]),
-      () => 'owner',
     );
 
     await expect(service.getCapability('owner')).resolves.toEqual({
@@ -75,7 +64,6 @@ describe('UpdateCheckCapabilityService', () => {
     const service = new UpdateCheckCapabilityService(
       { getUpdateCheckConfig: async () => config },
       permissionRepository(['alice']),
-      () => 'owner',
     );
 
     await expect(service.getCapability('alice')).resolves.toEqual({

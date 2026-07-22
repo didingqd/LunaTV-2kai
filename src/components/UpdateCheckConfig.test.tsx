@@ -1,16 +1,32 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { AdminConfig } from '@/lib/admin.types';
+
 import UpdateCheckConfig from './UpdateCheckConfig';
 
-const localSettings = {
-  enabled: false,
-  updateCheckCronInterval: 30 * 60 * 1000,
-  batchSize: 100,
-  maxUsers: 1000,
-  maxFollowPerUser: 100,
-  users: [],
-};
 const originalFetch = global.fetch;
+
+function adminConfig(enabled = false, interval = 30 * 60 * 1000) {
+  return {
+    SystemConfig: {
+      updateCheckBackendEnabled: enabled,
+      updateCheckCronInterval: interval,
+      updateCheckBatchSize: 100,
+      updateCheckMaxUsers: 1000,
+      updateCheckMaxFollowPerUser: 100,
+    },
+    UserConfig: {
+      Users: [
+        { username: 'owner', role: 'owner' },
+        {
+          username: 'alice',
+          role: 'user',
+          updateCheckBackendEnabled: true,
+        },
+      ],
+    },
+  } as AdminConfig;
+}
 
 describe('UpdateCheckConfig', () => {
   beforeEach(() => {
@@ -25,17 +41,14 @@ describe('UpdateCheckConfig', () => {
     });
   });
 
-  it('uses the saved server response as the current UI state', async () => {
+  it('loads and saves SystemConfig through the existing admin config API', async () => {
+    const saved = adminConfig(true, 6 * 60 * 60 * 1000);
     const fetchMock = jest
       .fn()
-      .mockResolvedValueOnce(jsonResponse(localSettings))
       .mockResolvedValueOnce(
-        jsonResponse({
-          ...localSettings,
-          enabled: true,
-          updateCheckCronInterval: 6 * 60 * 60 * 1000,
-        }),
-      );
+        jsonResponse({ Role: 'owner', Config: adminConfig() }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ success: true, Config: saved }));
     Object.defineProperty(global, 'fetch', {
       configurable: true,
       writable: true,
@@ -53,14 +66,14 @@ describe('UpdateCheckConfig', () => {
     await waitFor(() =>
       expect(screen.getByText(/仅 owner 和已授权用户/)).toBeInTheDocument(),
     );
-    expect(screen.getByLabelText('Cron 调度周期')).toHaveValue(
-      String(6 * 60 * 60 * 1000),
-    );
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
-      enabled: true,
+    const request = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/config');
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/admin/config');
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('POST');
+    expect(request.SystemConfig).toMatchObject({
+      updateCheckBackendEnabled: true,
       updateCheckCronInterval: 6 * 60 * 60 * 1000,
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

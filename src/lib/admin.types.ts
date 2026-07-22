@@ -63,6 +63,10 @@ export interface AdminConfig {
       tvboxToken?: string; // 用户专属的 TVBox Token
       tvboxEnabledSources?: string[]; // TVBox 可访问的源（为空则返回所有源）
       showAdultContent?: boolean; // 用户级别的成人内容显示控制
+      updateCheckBackendEnabled?: boolean; // 是否授权后端追更计算
+      updateCheckPermissionCreatedAt?: number;
+      updateCheckPermissionUpdatedAt?: number;
+      updateCheckPermissionOperator?: string;
       oidcSub?: string; // OIDC的唯一标识符(sub字段)
       embyConfig?: {
         sources: Array<{
