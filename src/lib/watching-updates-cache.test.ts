@@ -19,11 +19,13 @@ describe('WatchingUpdates scoped cache', () => {
     expect(readScopedWatchingUpdatesCache(userB)).toBeUndefined();
     expect(watchingUpdatesQueryKey(userA)).toEqual([
       'watchingUpdates',
+      'local',
       'online',
       'user-a',
     ]);
     expect(watchingUpdatesQueryKey(userB)).toEqual([
       'watchingUpdates',
+      'local',
       'online',
       'user-b',
     ]);
@@ -40,6 +42,29 @@ describe('WatchingUpdates scoped cache', () => {
       'watchingUpdates',
       'local',
       'local',
+      'local',
+    ]);
+  });
+
+  it('keeps local calculation and backend result caches isolated', () => {
+    const local = onlineScope('user-a');
+    const backend = resolveWatchingUpdatesCacheScope({
+      isLocal: false,
+      username: 'user-a',
+      sourceMode: 'backend',
+    });
+    expect(backend).not.toBeNull();
+
+    writeScopedWatchingUpdatesCache(local, createUpdate(100));
+    writeScopedWatchingUpdatesCache(backend!, createUpdate(200));
+
+    expect(readScopedWatchingUpdatesCache(local)?.data.timestamp).toBe(100);
+    expect(readScopedWatchingUpdatesCache(backend!)?.data.timestamp).toBe(200);
+    expect(watchingUpdatesQueryKey(backend!)).toEqual([
+      'watchingUpdates',
+      'backend',
+      'online',
+      'user-a',
     ]);
   });
 

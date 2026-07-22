@@ -16,9 +16,16 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { watchingFollowsQueryOptions } from './useWatchingFollows';
 import { isLocalWatchingFollowMode } from '@/lib/api/watching-follow';
+import type { WatchingUpdateObservationInput } from '@/lib/api/watching-updates';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   normalizeContentIdentity,
@@ -32,6 +39,11 @@ import {
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
 import {
+  readWatchingUpdateSourceMode,
+  subscribeWatchingUpdateSourceMode,
+  type WatchingUpdateSourceMode,
+} from '@/lib/watching-update-preference';
+import {
   mapWatchingUpdateItem,
   type WatchingUpdate,
   type WatchingUpdateDetail,
@@ -44,8 +56,15 @@ import {
   WATCHING_UPDATES_STALE_TIME,
   watchingUpdatesQueryKey,
   writeScopedWatchingUpdatesCache,
+  type WatchingUpdatesFreshness,
   type WatchingUpdatesCacheScope,
 } from '@/lib/watching-updates-cache';
+import {
+  watchingUpdatesService,
+  type BackendWatchingUpdatesSnapshot,
+  type WatchingUpdatesCapabilityState,
+} from '@/lib/watching-updates-service';
+import { watchingFollowStorageKey } from '@/lib/watching-follow';
 import type { PlayRecord, WatchingFollow } from '@/lib/types';
 
 export type {
@@ -136,6 +155,7 @@ async function checkSingleRecordUpdate(
   newEpisodes: number;
   remainingEpisodes: number;
   latestEpisodes: number;
+  observedLatestEpisode?: number;
   calculation?: ReturnType<typeof calculateWatchingUpdate>;
   detail?: WatchingUpdateDetail;
 }> {
@@ -267,6 +287,7 @@ async function checkSingleRecordUpdate(
       newEpisodes: state.newEpisodes,
       remainingEpisodes: state.remainingEpisodes,
       latestEpisodes: state.protectedTotalEpisodes,
+      observedLatestEpisode: latestEpisodes,
       calculation: state.calculation,
       detail: detailData,
     };
@@ -311,6 +332,13 @@ async function checkSingleRecordUpdate(
  * }
  * ```
  */
+interface LocalWatchingUpdatesPayload {
+  data: WatchingUpdate;
+  observations: WatchingUpdateObservationInput[];
+}
+
+type WatchingUpdatesSyncState = 'idle' | 'syncing' | 'success' | 'error';
+
 export function useWatchingUpdatesQuery(options?: {
   enabled?: boolean;
   forceRefresh?: boolean;
@@ -318,36 +346,95 @@ export function useWatchingUpdatesQuery(options?: {
   const queryClient = useQueryClient();
   const isLocal = isLocalWatchingFollowMode();
   const username = getAuthInfoFromBrowserCookie()?.username;
-  const scope = useMemo(
-    () => resolveWatchingUpdatesCacheScope({ isLocal, username }),
+  const sourceMode = useSyncExternalStore(
+    subscribeWatchingUpdateSourceMode,
+    readWatchingUpdateSourceMode,
+    (): WatchingUpdateSourceMode => 'local',
+  );
+  const localScope = useMemo(
+    () =>
+      resolveWatchingUpdatesCacheScope({
+        isLocal,
+        username,
+        sourceMode: 'local',
+      }),
     [isLocal, username],
   );
-  const queryScope: WatchingUpdatesCacheScope = scope ?? {
+  const backendScope = useMemo(
+    () =>
+      resolveWatchingUpdatesCacheScope({
+        isLocal,
+        username,
+        sourceMode: 'backend',
+      }),
+    [isLocal, username],
+  );
+  const localQueryScope: WatchingUpdatesCacheScope = localScope ?? {
     mode: 'online',
     principal: '__anonymous__',
+    sourceMode: 'local',
   };
-  const previousScopeRef = useRef<WatchingUpdatesCacheScope | null>(scope);
-  const initialCache = scope
-    ? readScopedWatchingUpdatesCache(scope)
+  const backendQueryScope: WatchingUpdatesCacheScope = backendScope ?? {
+    mode: 'online',
+    principal: '__anonymous__',
+    sourceMode: 'backend',
+  };
+  const previousScopesRef = useRef<{
+    local: WatchingUpdatesCacheScope | null;
+    backend: WatchingUpdatesCacheScope | null;
+  }>({ local: localScope, backend: backendScope });
+  const localInitialCache = localScope
+    ? readScopedWatchingUpdatesCache(localScope)
+    : undefined;
+  const backendInitialCache = backendScope
+    ? readScopedWatchingUpdatesCache(backendScope)
     : undefined;
 
   useEffect(() => {
-    const previousScope = previousScopeRef.current;
-    if (
-      previousScope &&
-      (!scope || !sameWatchingUpdatesCacheScope(previousScope, scope))
-    ) {
-      queryClient.removeQueries({
-        queryKey: watchingUpdatesQueryKey(previousScope),
-        exact: true,
-      });
+    const previous = previousScopesRef.current;
+    for (const [oldScope, nextScope] of [
+      [previous.local, localScope],
+      [previous.backend, backendScope],
+    ] as const) {
+      if (
+        oldScope &&
+        (!nextScope || !sameWatchingUpdatesCacheScope(oldScope, nextScope))
+      ) {
+        queryClient.removeQueries({
+          queryKey: watchingUpdatesQueryKey(oldScope),
+          exact: true,
+        });
+      }
     }
-    previousScopeRef.current = scope;
-  }, [queryClient, scope]);
+    previousScopesRef.current = { local: localScope, backend: backendScope };
+  }, [backendScope, localScope, queryClient]);
 
-  return useQuery({
-    queryKey: watchingUpdatesQueryKey(queryScope),
-    queryFn: async (): Promise<WatchingUpdate> => {
+  const capabilityQuery = useQuery({
+    queryKey: [
+      'watchingUpdatesCapability',
+      isLocal ? 'local' : username || '__anonymous__',
+    ],
+    queryFn: () => watchingUpdatesService.resolveMode('backend'),
+    enabled: options?.enabled !== false && sourceMode === 'backend',
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    retry: false,
+  });
+  const capabilityResolution = capabilityQuery.data;
+  const backendAllowed =
+    sourceMode === 'backend' &&
+    capabilityResolution?.effectiveMode === 'backend';
+  const capabilityPending =
+    sourceMode === 'backend' &&
+    capabilityQuery.isPending &&
+    !capabilityResolution;
+  const shouldRunLocal =
+    sourceMode === 'local' ||
+    (sourceMode === 'backend' && !capabilityPending);
+
+  const localQuery = useQuery({
+    queryKey: watchingUpdatesQueryKey(localQueryScope),
+    queryFn: async (): Promise<LocalWatchingUpdatesPayload> => {
       console.log('🔄 [追番更新] 开始检查追番更新...');
 
       // 在 queryFn 内部获取共享事实，确保检测使用最新缓存。
@@ -396,8 +483,10 @@ export function useWatchingUpdatesQuery(options?: {
       );
 
       let updatedCount = 0;
+      let successfulChecks = 0;
       const continueWatchingCount = 0;
       const newReleasesCount = 0;
+      const observations: WatchingUpdateObservationInput[] = [];
       const updatedSeries: WatchingUpdate['updatedSeries'] = [];
 
       const updatePromises = candidates.map(async ({ follow, record }) => {
@@ -406,6 +495,17 @@ export function useWatchingUpdatesQuery(options?: {
             { follow, record },
             completionThreshold,
           );
+          if (updateInfo.observedLatestEpisode) {
+            successfulChecks += 1;
+            observations.push({
+              followId: watchingFollowStorageKey(follow.source, follow.id),
+              source: follow.source,
+              resourceId: follow.id,
+              latestEpisode: updateInfo.observedLatestEpisode,
+              observedAt: Date.now(),
+              clientId: 'web',
+            });
+          }
           if (
             !updateInfo.hasNewEpisode ||
             !updateInfo.calculation ||
@@ -430,37 +530,33 @@ export function useWatchingUpdatesQuery(options?: {
       });
 
       await Promise.all(updatePromises);
+      if (
+        sourceMode === 'backend' &&
+        candidates.length > 0 &&
+        successfulChecks === 0
+      ) {
+        throw new Error('All local Watching Updates checks failed');
+      }
 
-      // 🔧 修复：对 updatedSeries 进行排序，确保每次顺序一致，防止卡片闪烁
-      // 排序规则：
-      // 1. 新上映的排在最前面
-      // 2. 有新剧集的排在中间
-      // 3. 需要继续观看的排在后面
-      // 4. 相同类型按标题字母顺序排序
       updatedSeries.sort((a, b) => {
-        // 优先级1: 新上映的排在最前面
         if (a.hasNewRelease !== b.hasNewRelease) {
           return a.hasNewRelease ? -1 : 1;
         }
-        // 优先级2: 有新剧集的排在前面
         if (a.hasNewEpisode !== b.hasNewEpisode) {
           return a.hasNewEpisode ? -1 : 1;
         }
-        // 优先级3: 需要继续观看的排在后面
         if (a.hasContinueWatching !== b.hasContinueWatching) {
           return a.hasContinueWatching ? -1 : 1;
         }
-        // 优先级4: 按标题排序
         return a.title.localeCompare(b.title, 'zh-CN');
       });
 
       const hasUpdates = updatedCount > 0;
-
       console.log(
         `✅ [追番更新] 检查完成: ${hasUpdates ? `发现${newReleasesCount}部新上映，${updatedCount}部剧集有新集数更新，${continueWatchingCount}部剧集需要继续观看` : '暂无更新'}`,
       );
 
-      const result = {
+      const result: WatchingUpdate = {
         hasUpdates,
         timestamp: Date.now(),
         updatedCount,
@@ -469,33 +565,142 @@ export function useWatchingUpdatesQuery(options?: {
         updatedSeries,
       };
 
-      // 持久化到 localStorage（兼容旧实现的缓存机制）
       try {
-        if (scope) {
-          writeScopedWatchingUpdatesCache(scope, result);
-          console.log('[追番更新] 结果已保存到 localStorage');
+        if (localScope) {
+          writeScopedWatchingUpdatesCache(localScope, result);
+          console.log('[追番更新] 本地计算结果已保存到 localStorage');
         }
       } catch (error) {
         console.warn('[追番更新] 保存到 localStorage 失败:', error);
       }
 
-      return result;
+      return { data: result, observations };
     },
-    // 30分钟缓存，避免频繁检查
-    staleTime: options?.forceRefresh ? 0 : WATCHING_UPDATES_STALE_TIME,
+    staleTime:
+      backendAllowed || options?.forceRefresh
+        ? 0
+        : WATCHING_UPDATES_STALE_TIME,
     gcTime: 60 * 60 * 1000,
-    // 30分钟自动刷新（后台定时检查）
     refetchInterval: 30 * 60 * 1000,
-    // 只在窗口获得焦点时才自动刷新
     refetchIntervalInBackground: false,
-    // 从 localStorage 读取初始数据（页面刷新后仍能显示）
-    initialData: initialCache?.data,
-    initialDataUpdatedAt: initialCache?.timestamp,
-    // 只在启用时执行
-    enabled: options?.enabled !== false && scope !== null,
-    // 不自动重试，避免过多请求
+    initialData: localInitialCache
+      ? { data: localInitialCache.data, observations: [] }
+      : undefined,
+    initialDataUpdatedAt: localInitialCache?.timestamp,
+    enabled:
+      options?.enabled !== false && shouldRunLocal && localScope !== null,
     retry: false,
   });
+
+  const backendQuery = useQuery({
+    queryKey: watchingUpdatesQueryKey(backendQueryScope),
+    queryFn: async (): Promise<BackendWatchingUpdatesSnapshot> => {
+      const snapshot = await watchingUpdatesService.getBackendResults();
+      if (backendScope) {
+        writeScopedWatchingUpdatesCache(
+          backendScope,
+          snapshot.data,
+          window.localStorage,
+          snapshot.freshness,
+        );
+      }
+      return snapshot;
+    },
+    enabled:
+      options?.enabled !== false && backendAllowed && backendScope !== null,
+    staleTime: 0,
+    gcTime: 60 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
+    refetchIntervalInBackground: false,
+    initialData: backendInitialCache
+      ? {
+          data: backendInitialCache.data,
+          freshness: backendInitialCache.freshness,
+        }
+      : undefined,
+    initialDataUpdatedAt: backendInitialCache?.timestamp,
+    retry: false,
+  });
+
+  const [syncState, setSyncState] =
+    useState<WatchingUpdatesSyncState>('idle');
+  const lastSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const payload = localQuery.data;
+    if (!backendAllowed || !payload || payload.observations.length === 0) return;
+    const signature = payload.observations
+      .map(
+        (observation) =>
+          `${observation.followId}:${observation.latestEpisode}:${observation.observedAt}`,
+      )
+      .join('|');
+    if (lastSyncedRef.current === signature) return;
+    lastSyncedRef.current = signature;
+    let cancelled = false;
+    setSyncState('syncing');
+    void watchingUpdatesService
+      .syncObservations(payload.observations)
+      .then(async () => {
+        if (cancelled) return;
+        setSyncState('success');
+        await queryClient.invalidateQueries({
+          queryKey: watchingUpdatesQueryKey(backendQueryScope),
+          exact: true,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSyncState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    backendAllowed,
+    backendQueryScope,
+    localQuery.data,
+    queryClient,
+  ]);
+
+  const useBackendQuery = backendAllowed && !backendQuery.isError;
+  const activeQuery = useBackendQuery ? backendQuery : localQuery;
+  let data = localQuery.data?.data;
+  let effectiveSourceMode: WatchingUpdateSourceMode = 'local';
+  let freshness: WatchingUpdatesFreshness = localQuery.isError
+    ? 'error'
+    : localQuery.isFetchedAfterMount
+      ? 'fresh'
+      : localInitialCache?.freshness ?? 'fresh';
+
+  if (useBackendQuery) {
+    data = backendQuery.data?.data;
+    effectiveSourceMode = 'backend';
+    freshness = backendQuery.data?.freshness ?? 'stale';
+  } else if (backendAllowed && backendQuery.isError) {
+    data = localQuery.data?.data ?? backendQuery.data?.data;
+    freshness = 'error';
+  } else if (
+    sourceMode === 'backend' &&
+    capabilityResolution?.capabilityState === 'error'
+  ) {
+    freshness = 'error';
+  }
+
+  const capabilityState: WatchingUpdatesCapabilityState =
+    sourceMode === 'local'
+      ? 'idle'
+      : capabilityPending
+        ? 'checking'
+        : capabilityResolution?.capabilityState ?? 'error';
+
+  return {
+    ...activeQuery,
+    data: capabilityPending ? undefined : data,
+    sourceMode,
+    effectiveSourceMode,
+    capabilityState,
+    freshness,
+    syncState,
+  };
 }
 
 /**
