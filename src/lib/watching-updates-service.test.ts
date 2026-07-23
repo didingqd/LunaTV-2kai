@@ -75,6 +75,7 @@ describe('WatchingUpdatesService', () => {
           currentEpisode: 8,
           newEpisodes: 2,
           remainingEpisodes: 4,
+          detectedAt: 1500,
         }),
       ],
     });
@@ -92,6 +93,7 @@ function createResult(): UpdateResult {
     watchedEpisode: 8,
     unwatchedCount: 4,
     hasUpdate: true,
+    detectedAt: 1500,
     checkedAt: 2000,
     expireAt: 3000,
     status: 'fresh',

@@ -68,4 +68,24 @@ describe('watching update results capability', () => {
       results: [],
     });
   });
+
+  it('returns detectedAt from a backend UpdateResult', async () => {
+    getCapability.mockResolvedValue({
+      enabled: true,
+      backendEnabled: true,
+      userEnabled: true,
+      mode: 'backend',
+    });
+    getResults.mockResolvedValue([{ checkedAt: 2000, detectedAt: 1500 }]);
+
+    const response = await GET(
+      new NextRequest('http://localhost/api/watching-updates/results'),
+    );
+    const body = await response.json();
+
+    expect(body.generatedAt).toBe(2000);
+    expect(body.results).toEqual([
+      expect.objectContaining({ detectedAt: 1500 }),
+    ]);
+  });
 });

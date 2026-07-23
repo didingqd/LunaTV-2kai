@@ -302,6 +302,17 @@ export class UpdateCheckService {
     });
     const followId = watchingFollowStorageKey(follow.source, follow.id);
     const previous = await this.results.get(userId, followId);
+    const newEpisodes = calculation.newEpisodes;
+    const previousNewEpisodes = Math.max(
+      0,
+      previous?.metadata.releasedEpisodeCount ?? 0,
+    );
+    const detectedAt = resolveDetectedAt({
+      previous,
+      previousNewEpisodes,
+      newEpisodes,
+      checkedAt,
+    });
     const result: UpdateResult = {
       userId,
       followId,
@@ -314,6 +325,7 @@ export class UpdateCheckService {
       watchedEpisode: calculation.watchedEpisodes,
       unwatchedCount: calculation.remainingEpisodes,
       hasUpdate: calculation.hasUpdate,
+      ...(detectedAt === undefined ? {} : { detectedAt }),
       checkedAt,
       expireAt: checkedAt + DEFAULT_UPDATE_CHECK_EXPIRE_MS,
       status: 'fresh',
@@ -323,7 +335,7 @@ export class UpdateCheckService {
         completionThreshold: DEFAULT_WATCH_COMPLETION_THRESHOLD,
         baselineEpisode: calculation.baselineEpisodes,
         effectiveLatestEpisode: calculation.latestEpisodes,
-        releasedEpisodeCount: calculation.newEpisodes,
+        releasedEpisodeCount: newEpisodes,
         sourceName: providerMetadata?.sourceName ?? record.source_name,
         cover: providerMetadata?.cover ?? follow.cover ?? record.cover,
         year: providerMetadata?.year ?? follow.year ?? record.year,
@@ -479,6 +491,26 @@ export class UpdateCheckService {
   private async isBackendEnabled(userId: string): Promise<boolean> {
     return (await this.capability.getCapability(userId)).enabled;
   }
+}
+
+function resolveDetectedAt({
+  previous,
+  previousNewEpisodes,
+  newEpisodes,
+  checkedAt,
+}: {
+  previous: UpdateResult | null;
+  previousNewEpisodes: number;
+  newEpisodes: number;
+  checkedAt: number;
+}): number | undefined {
+  if (newEpisodes <= 0) return undefined;
+  const previousDetectedAt =
+    typeof previous?.detectedAt === 'number' ? previous.detectedAt : undefined;
+  if (previousDetectedAt !== undefined && newEpisodes <= previousNewEpisodes) {
+    return previousDetectedAt;
+  }
+  return checkedAt;
 }
 
 export const updateCheckService = new UpdateCheckService();

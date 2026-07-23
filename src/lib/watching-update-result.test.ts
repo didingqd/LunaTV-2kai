@@ -28,6 +28,25 @@ describe('WatchingUpdate result mapping', () => {
     expect(item.unwatchedEpisodes).toBe(0);
   });
 
+  it('maps and normalizes optional detectedAt', () => {
+    const item = mapWatchingUpdateItem({
+      follow: createFollow(),
+      record: createRecord(),
+      detail: {},
+      calculation: createCalculation(),
+      detectedAt: 1234,
+    });
+
+    expect(item.detectedAt).toBe(1234);
+    expect(
+      normalizeWatchingUpdate({
+        hasUpdates: true,
+        timestamp: 1,
+        updatedSeries: [{ ...item, detectedAt: '2345' }],
+      })?.updatedSeries[0].detectedAt,
+    ).toBe(2345);
+  });
+
   it('maps record and detail dates to their separate result fields', () => {
     const item = mapWatchingUpdateItem({
       follow: createFollow(),
@@ -107,6 +126,7 @@ describe('WatchingUpdate result mapping', () => {
           releasedEpisodes: 99,
           unwatchedEpisodes: 98,
           completed: true,
+          detectedAt: 1234,
           releaseDate: '2024-01-01',
         },
       ],
@@ -128,6 +148,7 @@ describe('WatchingUpdate result mapping', () => {
       releasedEpisodes: 2,
       unwatchedEpisodes: 2,
       completed: false,
+      detectedAt: 1234,
       releaseDate: '2024-01-01',
     });
     expect(normalized?.updatedSeries[0].detailDate).toBeUndefined();

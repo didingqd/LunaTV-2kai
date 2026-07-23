@@ -31,6 +31,8 @@ export interface UpdateResult {
   watchedEpisode: number;
   unwatchedCount: number;
   hasUpdate: boolean;
+  /** Time when the currently-unwatched update was first confirmed. */
+  detectedAt?: number;
   checkedAt: number;
   expireAt: number;
   status: UpdateResultStatus;

@@ -27,7 +27,7 @@ describe('watching update Observation sync', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('rejects UpdateResult fields instead of accepting them as an Observation', async () => {
-    const response = await POST(createRequest({ unwatchedCount: 3 }));
+    const response = await POST(createRequest({ detectedAt: 1234 }));
 
     expect(response.status).toBe(400);
     expect(processObservation).not.toHaveBeenCalled();

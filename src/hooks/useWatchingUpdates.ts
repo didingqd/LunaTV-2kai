@@ -49,6 +49,11 @@ import {
   type WatchingUpdateDetail,
 } from '@/lib/watching-update-result';
 import {
+  sortWatchingUpdates,
+  type WatchingUpdateSortField,
+  type WatchingUpdateSortOrder,
+} from '@/lib/watching-update-sorter';
+import {
   readScopedWatchingUpdatesCache,
   resolveWatchingUpdatesCacheScope,
   sameWatchingUpdatesCacheScope,
@@ -342,6 +347,8 @@ type WatchingUpdatesSyncState = 'idle' | 'syncing' | 'success' | 'error';
 export function useWatchingUpdatesQuery(options?: {
   enabled?: boolean;
   forceRefresh?: boolean;
+  sortField?: WatchingUpdateSortField;
+  sortOrder?: WatchingUpdateSortOrder;
 }) {
   const queryClient = useQueryClient();
   const isLocal = isLocalWatchingFollowMode();
@@ -429,8 +436,7 @@ export function useWatchingUpdatesQuery(options?: {
     capabilityQuery.isPending &&
     !capabilityResolution;
   const shouldRunLocal =
-    sourceMode === 'local' ||
-    (sourceMode === 'backend' && !capabilityPending);
+    sourceMode === 'local' || (sourceMode === 'backend' && !capabilityPending);
 
   const localQuery = useQuery({
     queryKey: watchingUpdatesQueryKey(localQueryScope),
@@ -488,6 +494,12 @@ export function useWatchingUpdatesQuery(options?: {
       const newReleasesCount = 0;
       const observations: WatchingUpdateObservationInput[] = [];
       const updatedSeries: WatchingUpdate['updatedSeries'] = [];
+      const previousItems = localScope
+        ? (readScopedWatchingUpdatesCache(localScope)?.data.updatedSeries ?? [])
+        : [];
+      const previousItemsByIdentity = new Map(
+        previousItems.map((item) => [item.identityKey, item]),
+      );
 
       const updatePromises = candidates.map(async ({ follow, record }) => {
         try {
@@ -513,12 +525,23 @@ export function useWatchingUpdatesQuery(options?: {
           ) {
             return null;
           }
-          const seriesInfo = mapWatchingUpdateItem({
+          const mappedItem = mapWatchingUpdateItem({
             follow,
             record,
             detail: updateInfo.detail,
             calculation: updateInfo.calculation,
           });
+          const previousItem = previousItemsByIdentity.get(
+            mappedItem.identityKey,
+          );
+          const seriesInfo = {
+            ...mappedItem,
+            detectedAt: resolveLocalDetectedAt(
+              previousItem,
+              mappedItem.newEpisodes,
+              Date.now(),
+            ),
+          };
 
           updatedSeries.push(seriesInfo);
           if (updateInfo.hasNewEpisode) updatedCount++;
@@ -537,19 +560,6 @@ export function useWatchingUpdatesQuery(options?: {
       ) {
         throw new Error('All local Watching Updates checks failed');
       }
-
-      updatedSeries.sort((a, b) => {
-        if (a.hasNewRelease !== b.hasNewRelease) {
-          return a.hasNewRelease ? -1 : 1;
-        }
-        if (a.hasNewEpisode !== b.hasNewEpisode) {
-          return a.hasNewEpisode ? -1 : 1;
-        }
-        if (a.hasContinueWatching !== b.hasContinueWatching) {
-          return a.hasContinueWatching ? -1 : 1;
-        }
-        return a.title.localeCompare(b.title, 'zh-CN');
-      });
 
       const hasUpdates = updatedCount > 0;
       console.log(
@@ -577,9 +587,7 @@ export function useWatchingUpdatesQuery(options?: {
       return { data: result, observations };
     },
     staleTime:
-      backendAllowed || options?.forceRefresh
-        ? 0
-        : WATCHING_UPDATES_STALE_TIME,
+      backendAllowed || options?.forceRefresh ? 0 : WATCHING_UPDATES_STALE_TIME,
     gcTime: 60 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
     refetchIntervalInBackground: false,
@@ -622,12 +630,12 @@ export function useWatchingUpdatesQuery(options?: {
     retry: false,
   });
 
-  const [syncState, setSyncState] =
-    useState<WatchingUpdatesSyncState>('idle');
+  const [syncState, setSyncState] = useState<WatchingUpdatesSyncState>('idle');
   const lastSyncedRef = useRef<string | null>(null);
   useEffect(() => {
     const payload = localQuery.data;
-    if (!backendAllowed || !payload || payload.observations.length === 0) return;
+    if (!backendAllowed || !payload || payload.observations.length === 0)
+      return;
     const signature = payload.observations
       .map(
         (observation) =>
@@ -654,12 +662,7 @@ export function useWatchingUpdatesQuery(options?: {
     return () => {
       cancelled = true;
     };
-  }, [
-    backendAllowed,
-    backendQueryScope,
-    localQuery.data,
-    queryClient,
-  ]);
+  }, [backendAllowed, backendQueryScope, localQuery.data, queryClient]);
 
   const useBackendQuery = backendAllowed && !backendQuery.isError;
   const activeQuery = useBackendQuery ? backendQuery : localQuery;
@@ -669,7 +672,7 @@ export function useWatchingUpdatesQuery(options?: {
     ? 'error'
     : localQuery.isFetchedAfterMount
       ? 'fresh'
-      : localInitialCache?.freshness ?? 'fresh';
+      : (localInitialCache?.freshness ?? 'fresh');
 
   if (useBackendQuery) {
     data = backendQuery.data?.data;
@@ -690,17 +693,45 @@ export function useWatchingUpdatesQuery(options?: {
       ? 'idle'
       : capabilityPending
         ? 'checking'
-        : capabilityResolution?.capabilityState ?? 'error';
+        : (capabilityResolution?.capabilityState ?? 'error');
+  const sortedData = useMemo(
+    () =>
+      data
+        ? {
+            ...data,
+            updatedSeries: sortWatchingUpdates(data.updatedSeries, {
+              field: options?.sortField ?? 'name',
+              order: options?.sortOrder,
+            }),
+          }
+        : data,
+    [data, options?.sortField, options?.sortOrder],
+  );
 
   return {
     ...activeQuery,
-    data: capabilityPending ? undefined : data,
+    data: capabilityPending ? undefined : sortedData,
     sourceMode,
     effectiveSourceMode,
     capabilityState,
     freshness,
     syncState,
   };
+}
+
+export function resolveLocalDetectedAt(
+  previous: WatchingUpdate['updatedSeries'][number] | undefined,
+  newEpisodes: number,
+  detectedAt: number,
+): number | undefined {
+  if (newEpisodes <= 0) return undefined;
+  if (
+    typeof previous?.detectedAt === 'number' &&
+    newEpisodes <= previous.newEpisodes
+  ) {
+    return previous.detectedAt;
+  }
+  return detectedAt;
 }
 
 /**

@@ -86,6 +86,45 @@ describe('WatchingUpdates scoped cache', () => {
 
     expect(readScopedWatchingUpdatesCache(scope)?.timestamp).toBe(123456);
   });
+
+  it('restores detectedAt from the scoped local cache', () => {
+    const scope = onlineScope('user-a');
+    writeScopedWatchingUpdatesCache(scope, {
+      ...createUpdate(123456),
+      hasUpdates: true,
+      updatedCount: 1,
+      updatedSeries: [
+        {
+          title: 'Cached update',
+          sourceName: 'Source A',
+          source_name: 'Source A',
+          year: '',
+          cover: '',
+          identityKey: '["source-a","video-1"]',
+          source: 'source-a',
+          id: 'video-1',
+          sourceKey: 'source-a',
+          videoId: 'video-1',
+          currentEpisode: 1,
+          totalEpisodes: 4,
+          hasNewEpisode: true,
+          hasContinueWatching: false,
+          hasNewRelease: false,
+          newEpisodes: 3,
+          remainingEpisodes: 3,
+          releasedEpisodes: 3,
+          unwatchedEpisodes: 3,
+          latestEpisodes: 4,
+          completed: false,
+          detectedAt: 120000,
+        },
+      ],
+    });
+
+    expect(
+      readScopedWatchingUpdatesCache(scope)?.data.updatedSeries[0].detectedAt,
+    ).toBe(120000);
+  });
 });
 
 function onlineScope(username: string) {

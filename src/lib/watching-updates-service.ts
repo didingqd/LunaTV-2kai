@@ -98,8 +98,7 @@ export function mapUpdateResults(
   const updatedSeries = results
     .filter((result) => result.hasUpdate)
     .map(mapUpdateResultItem)
-    .filter((item): item is WatchingUpdateItem => item !== null)
-    .sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'));
+    .filter((item): item is WatchingUpdateItem => item !== null);
   const freshness: WatchingUpdatesFreshness = results.some(
     (result) => result.status === 'error',
   )
@@ -161,6 +160,12 @@ function mapUpdateResultItem(result: UpdateResult): WatchingUpdateItem | null {
     unwatchedEpisodes: remainingEpisodes,
     latestEpisodes,
     completed: result.watchedEpisode >= latestEpisodes,
+    detectedAt:
+      typeof result.detectedAt === 'number' &&
+      Number.isFinite(result.detectedAt) &&
+      result.detectedAt > 0
+        ? Math.floor(result.detectedAt)
+        : undefined,
   };
 }
 

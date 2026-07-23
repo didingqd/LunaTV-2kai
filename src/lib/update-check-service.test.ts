@@ -124,6 +124,7 @@ class MemoryFacts implements UpdateFactsRepository {
 
 describe('UpdateCheckService', () => {
   let latestEpisode = 12;
+  let now = 1000;
   let shouldFail = false;
   let results: MemoryResults;
   let observations: MemoryObservations;
@@ -133,6 +134,7 @@ describe('UpdateCheckService', () => {
 
   beforeEach(async () => {
     latestEpisode = 12;
+    now = 1000;
     shouldFail = false;
     results = new MemoryResults();
     observations = new MemoryObservations();
@@ -170,9 +172,68 @@ describe('UpdateCheckService', () => {
           updateCheckMaxFollowPerUser: 100,
         }),
       },
-      now: () => 1000,
+      now: () => now,
     });
     await service.onFollowCreated(follow, 'alice');
+  });
+
+  it('sets detectedAt when an update is first confirmed', async () => {
+    const task = [...tasks.values.values()][0];
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.releasedEpisodeCount).toBe(2);
+    expect(result?.detectedAt).toBe(1000);
+  });
+
+  it('keeps detectedAt when the update count is unchanged', async () => {
+    const task = [...tasks.values.values()][0];
+    await service.checkTask(task);
+    now = 2000;
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.releasedEpisodeCount).toBe(2);
+    expect(result?.detectedAt).toBe(1000);
+  });
+
+  it('refreshes detectedAt when the update count increases', async () => {
+    const task = [...tasks.values.values()][0];
+    await service.checkTask(task);
+    latestEpisode = 14;
+    now = 2000;
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.releasedEpisodeCount).toBe(4);
+    expect(result?.detectedAt).toBe(2000);
+  });
+
+  it('clears detectedAt after playback catches up', async () => {
+    const task = [...tasks.values.values()][0];
+    await service.checkTask(task);
+    latestEpisode = 10;
+    now = 2000;
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.releasedEpisodeCount).toBe(0);
+    expect(result?.detectedAt).toBeUndefined();
+  });
+
+  it('creates a new detectedAt when updates return after being cleared', async () => {
+    const task = [...tasks.values.values()][0];
+    await service.checkTask(task);
+    latestEpisode = 10;
+    now = 2000;
+    await service.checkTask(task);
+    latestEpisode = 12;
+    now = 3000;
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.releasedEpisodeCount).toBe(2);
+    expect(result?.detectedAt).toBe(3000);
   });
 
   it('allows a successful lower episode observation to replace the previous result', async () => {

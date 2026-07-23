@@ -9,7 +9,10 @@ import { writeWatchingUpdateSourceMode } from '@/lib/watching-update-preference'
 import type { WatchingUpdate } from '@/lib/watching-update-result';
 import { watchingUpdatesService } from '@/lib/watching-updates-service';
 
-import { useWatchingUpdatesQuery } from './useWatchingUpdates';
+import {
+  resolveLocalDetectedAt,
+  useWatchingUpdatesQuery,
+} from './useWatchingUpdates';
 
 jest.mock('@/lib/auth', () => ({
   getAuthInfoFromBrowserCookie: jest.fn(() => ({ username: 'alice' })),
@@ -106,9 +109,44 @@ describe('useWatchingUpdates backend adaptation', () => {
         'newEpisodes',
         'remainingEpisodes',
         'baselineEpisode',
+        'detectedAt',
       ]),
     );
     expect(result.current.effectiveSourceMode).toBe('backend');
+  });
+
+  it('keeps a local detectedAt when cached newEpisodes are unchanged', async () => {
+    const cached = backendUpdate();
+    cached.updatedSeries[0].detectedAt = 1500;
+    cached.updatedSeries[0].newEpisodes = 2;
+    window.localStorage.setItem(
+      'moontv_watching_updates_follow_v2:online:alice',
+      JSON.stringify({
+        version: 2,
+        mode: 'online',
+        principal: 'alice',
+        sourceMode: 'local',
+        timestamp: 1500,
+        freshness: 'fresh',
+        data: cached,
+      }),
+    );
+
+    const { result } = renderUpdatesHook();
+
+    await waitFor(() => expect(result.current.data?.updatedCount).toBe(1));
+    expect(result.current.data?.updatedSeries[0].detectedAt).toBe(1500);
+  });
+
+  it('applies local detectedAt lifecycle rules without using Observation fields', () => {
+    const previous = backendUpdate().updatedSeries[0];
+    previous.detectedAt = 1000;
+    previous.newEpisodes = 2;
+
+    expect(resolveLocalDetectedAt(undefined, 2, 1000)).toBe(1000);
+    expect(resolveLocalDetectedAt(previous, 2, 2000)).toBe(1000);
+    expect(resolveLocalDetectedAt(previous, 4, 3000)).toBe(3000);
+    expect(resolveLocalDetectedAt(previous, 0, 4000)).toBeUndefined();
   });
 
   it('falls back to local when capability fails', async () => {
@@ -277,6 +315,7 @@ function backendUpdate(): WatchingUpdate {
         unwatchedEpisodes: 4,
         latestEpisodes: 12,
         completed: false,
+        detectedAt: 1800,
       },
     ],
   };

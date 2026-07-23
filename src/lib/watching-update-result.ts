@@ -27,6 +27,7 @@ export interface WatchingUpdateItem {
   unwatchedEpisodes: number;
   latestEpisodes: number;
   completed: boolean;
+  detectedAt?: number;
   remarks?: string;
   releaseDate?: string;
   detailDate?: string;
@@ -62,11 +63,13 @@ export function mapWatchingUpdateItem({
   record,
   detail,
   calculation,
+  detectedAt,
 }: {
   follow: WatchingFollow;
   record: WatchingUpdateRecord;
   detail: WatchingUpdateDetail;
   calculation: WatchingUpdateCalculationResult;
+  detectedAt?: number;
 }): WatchingUpdateItem {
   const identity = resolveContentIdentity(follow);
   if (!identity) throw new Error('WatchingUpdate identity is invalid');
@@ -109,6 +112,7 @@ export function mapWatchingUpdateItem({
     unwatchedEpisodes,
     latestEpisodes: calculation.latestEpisodes,
     completed: calculation.watchedEpisodes >= calculation.latestEpisodes,
+    detectedAt,
     remarks: optionalString(record.remarks),
     releaseDate: optionalString(record.releaseDate),
     detailDate: optionalString(detail.releaseDate),
@@ -198,6 +202,7 @@ export function normalizeWatchingUpdateItem(
     unwatchedEpisodes: remainingEpisodes,
     latestEpisodes,
     completed: currentEpisode >= latestEpisodes,
+    detectedAt: optionalTimestamp(raw.detectedAt),
     remarks: optionalString(raw.remarks),
     releaseDate: optionalString(raw.releaseDate),
     detailDate: optionalString(raw.detailDate),
@@ -216,6 +221,16 @@ function optionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   return normalized || undefined;
+}
+
+function optionalTimestamp(value: unknown): number | undefined {
+  const timestamp =
+    typeof value === 'number'
+      ? value
+      : Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? Math.floor(timestamp)
+    : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
