@@ -80,6 +80,53 @@ export class UpdateCheckPermissionService {
     return permission;
   }
 
+  async setPermissions(
+    userIds: string[],
+    enabled: boolean,
+    operator: string,
+  ): Promise<UpdateCheckUserPermission[]> {
+    const config = await this.store.getAdminConfig();
+    const ownerId = this.ownerId();
+    const users = userIds.map((userId) => {
+      const user = config.UserConfig.Users.find(
+        (candidate) => candidate.username === userId,
+      );
+      if (!user) throw new Error('USER_NOT_FOUND');
+      if (userId === ownerId || user.role === 'owner') {
+        if (!enabled) throw new Error('OWNER_PERMISSION_IMPLICIT');
+        return null;
+      }
+
+      const timestamp = this.now();
+      const permission: UpdateCheckUserPermission = {
+        userId,
+        enabled,
+        createdAt: user.updateCheckPermissionCreatedAt ?? timestamp,
+        updatedAt: timestamp,
+        operator,
+      };
+      user.updateCheckBackendEnabled = enabled;
+      user.updateCheckPermissionCreatedAt = permission.createdAt;
+      user.updateCheckPermissionUpdatedAt = permission.updatedAt;
+      user.updateCheckPermissionOperator = operator;
+      return permission;
+    });
+
+    const changed = users.filter(
+      (permission): permission is UpdateCheckUserPermission =>
+        permission !== null,
+    );
+    if (changed.length > 0) await this.store.saveAdminConfig(config);
+    await Promise.all(
+      changed.map((permission) =>
+        permission.enabled
+          ? this.checks.onUserPermissionEnabled(permission.userId)
+          : this.checks.onUserPermissionDisabled(permission.userId),
+      ),
+    );
+    return changed;
+  }
+
   async isUserAllowed(userId: string): Promise<boolean> {
     if (userId === this.ownerId()) return true;
     const config = await this.store.getAdminConfig();

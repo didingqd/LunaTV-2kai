@@ -541,11 +541,9 @@ export default function UserPermissionSettingsModal({
                   {!permission.owner && (
                     <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
                       当前状态：
-                      {selectedUpdateCheckBackend ? '已授权' : '未授权'}
+                      {permission.granted ? '已授权' : '未授权'}
                       ，实际模式：
-                      {systemUpdateCheckEnabled && selectedUpdateCheckBackend
-                        ? '后端计算'
-                        : '本地计算'}
+                      {permission.mode === 'backend' ? '后端计算' : '本地计算'}
                     </p>
                   )}
                 </div>

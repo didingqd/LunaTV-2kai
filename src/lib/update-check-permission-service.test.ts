@@ -94,4 +94,44 @@ describe('UpdateCheckPermissionService AdminConfig storage', () => {
     expect(onUserPermissionDisabled).toHaveBeenCalledWith('owner');
     expect(onUserPermissionDisabled).toHaveBeenCalledWith('alice');
   });
+
+  it('persists a batch of user permissions in one config save', async () => {
+    const config = adminConfig();
+    config.UserConfig.Users.push({ username: 'bob', role: 'user' });
+    const { store, save } = configStore(config);
+    const onUserPermissionEnabled = jest.fn(async () => undefined);
+    const service = new UpdateCheckPermissionService(
+      store,
+      systemConfig,
+      {
+        onUserPermissionEnabled,
+        onUserPermissionDisabled: async () => undefined,
+      },
+      () => 1000,
+      () => 'owner',
+    );
+
+    const permissions = await service.setPermissions(
+      ['alice', 'bob'],
+      true,
+      'admin',
+    );
+
+    expect(permissions).toHaveLength(2);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(onUserPermissionEnabled).toHaveBeenCalledWith('alice');
+    expect(onUserPermissionEnabled).toHaveBeenCalledWith('bob');
+    expect(config.UserConfig.Users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          username: 'alice',
+          updateCheckBackendEnabled: true,
+        }),
+        expect.objectContaining({
+          username: 'bob',
+          updateCheckBackendEnabled: true,
+        }),
+      ]),
+    );
+  });
 });

@@ -5,23 +5,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AdminConfig } from '@/lib/admin.types';
 
-interface UpdateCheckUserAccess {
-  userId: string;
-  owner: boolean;
-  granted: boolean;
-  enabled: boolean;
-  mode: 'backend' | 'local';
-  updatedAt: number | null;
-  operator: string | null;
-}
-
 interface UpdateCheckSettings {
   enabled: boolean;
   updateCheckCronInterval: number;
   batchSize: number;
   maxUsers: number;
   maxFollowPerUser: number;
-  users: UpdateCheckUserAccess[];
 }
 
 const DEFAULT_SETTINGS: UpdateCheckSettings = {
@@ -30,7 +19,6 @@ const DEFAULT_SETTINGS: UpdateCheckSettings = {
   batchSize: 100,
   maxUsers: 1000,
   maxFollowPerUser: 100,
-  users: [],
 };
 
 const CRON_INTERVAL_OPTIONS = [
@@ -47,7 +35,6 @@ export default function UpdateCheckConfig() {
   const [canEditSystemConfig, setCanEditSystemConfig] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [updatingUser, setUpdatingUser] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -70,19 +57,6 @@ export default function UpdateCheckConfig() {
       maxFollowPerUser:
         systemConfig?.updateCheckMaxFollowPerUser ??
         DEFAULT_SETTINGS.maxFollowPerUser,
-      users: config.UserConfig.Users.map((user) => {
-        const owner = user.role === 'owner';
-        const granted = owner || user.updateCheckBackendEnabled === true;
-        return {
-          userId: user.username,
-          owner,
-          granted,
-          enabled: enabled && granted,
-          mode: enabled && granted ? 'backend' : 'local',
-          updatedAt: user.updateCheckPermissionUpdatedAt ?? null,
-          operator: user.updateCheckPermissionOperator ?? null,
-        };
-      }),
     });
   }, []);
 
@@ -151,35 +125,6 @@ export default function UpdateCheckConfig() {
       });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const updateUserPermission = async (userId: string, enabled: boolean) => {
-    setUpdatingUser(userId);
-    setMessage(null);
-    try {
-      const response = await fetch(
-        '/api/admin/settings/update-check/permissions',
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, enabled }),
-        },
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '更新用户授权失败');
-      setMessage({
-        type: 'success',
-        text: enabled ? `已授权 ${userId}` : `已关闭 ${userId} 的后端计算`,
-      });
-      await loadSettings(false);
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text: error instanceof Error ? error.message : '更新用户授权失败',
-      });
-    } finally {
-      setUpdatingUser(null);
     }
   };
 
@@ -313,75 +258,6 @@ export default function UpdateCheckConfig() {
         )}
         保存配置
       </button>
-
-      <div>
-        <h4 className='font-medium text-gray-900 dark:text-gray-100'>
-          用户授权
-        </h4>
-        <div className='mt-3 overflow-x-auto'>
-          <table className='w-full min-w-[560px] text-left text-sm'>
-            <thead className='border-b border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'>
-              <tr>
-                <th className='px-3 py-2 font-medium'>用户名</th>
-                <th className='px-3 py-2 font-medium'>当前状态</th>
-                <th className='px-3 py-2 text-right font-medium'>操作</th>
-              </tr>
-            </thead>
-            <tbody className='divide-y divide-gray-100 dark:divide-gray-700/70'>
-              {settings.users.map((user) => (
-                <tr key={user.userId}>
-                  <td className='px-3 py-3 text-gray-900 dark:text-gray-100'>
-                    {user.userId}
-                    {user.owner && (
-                      <span className='ml-2 text-xs text-gray-500'>
-                        (owner)
-                      </span>
-                    )}
-                  </td>
-                  <td className='px-3 py-3'>
-                    <span
-                      className={
-                        user.enabled
-                          ? 'text-green-700 dark:text-green-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }
-                    >
-                      {user.enabled ? '后端计算' : '本地计算'}
-                    </span>
-                    {!settings.enabled && user.granted && !user.owner && (
-                      <span className='ml-2 text-xs text-gray-500'>已授权</span>
-                    )}
-                  </td>
-                  <td className='px-3 py-3 text-right'>
-                    {user.owner ? (
-                      <span className='text-xs text-gray-500'>跟随总开关</span>
-                    ) : (
-                      <button
-                        type='button'
-                        disabled={updatingUser === user.userId}
-                        onClick={() =>
-                          updateUserPermission(user.userId, !user.granted)
-                        }
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-60 ${
-                          user.granted
-                            ? 'bg-red-600 hover:bg-red-700'
-                            : 'bg-green-600 hover:bg-green-700'
-                        }`}
-                      >
-                        {updatingUser === user.userId
-                          ? '处理中'
-                          : user.granted
-                            ? '关闭后端计算'
-                            : '开启后端计算'}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }

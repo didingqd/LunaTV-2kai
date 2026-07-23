@@ -12,19 +12,23 @@ jest.mock('@/lib/config', () => ({
   getConfig: jest.fn(),
 }));
 jest.mock('@/lib/update-check-permission-service', () => ({
-  updateCheckPermissionService: { setPermission: jest.fn() },
+  updateCheckPermissionService: {
+    setPermission: jest.fn(),
+    setPermissions: jest.fn(),
+  },
 }));
 
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { updateCheckPermissionService } from '@/lib/update-check-permission-service';
-import { PUT } from './route';
+import { POST, PUT } from './route';
 
 const getRole = getAdminRoleFromRequest as jest.Mock;
 const getAuth = getAuthInfoFromCookie as jest.Mock;
 const loadConfig = getConfig as jest.Mock;
 const setPermission = updateCheckPermissionService.setPermission as jest.Mock;
+const setPermissions = updateCheckPermissionService.setPermissions as jest.Mock;
 const previousStorageType = process.env.NEXT_PUBLIC_STORAGE_TYPE;
 
 describe('update check user permission route', () => {
@@ -86,6 +90,24 @@ describe('update check user permission route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Owner permission follows the system switch',
     });
+  });
+
+  it('updates a batch of users through the batch endpoint', async () => {
+    setPermissions.mockResolvedValue([{ userId: 'alice', enabled: true }]);
+
+    const response = await POST(
+      new NextRequest(
+        'http://localhost/api/admin/settings/update-check/permissions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIds: ['alice'], enabled: true }),
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(setPermissions).toHaveBeenCalledWith(['alice'], true, 'admin');
   });
 });
 
