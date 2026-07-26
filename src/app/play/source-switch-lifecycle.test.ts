@@ -26,30 +26,44 @@ describe('play page source switch lifecycle', () => {
       path.join(process.cwd(), 'src/app/play/page.tsx'),
       'utf8',
     );
-    const saveStart = pageSource.indexOf('const saveCurrentPlayProgress = async');
+    const saveStart = pageSource.indexOf(
+      'const saveCurrentPlayProgress = async',
+    );
     const saveEnd = pageSource.indexOf('useEffect(() => {', saveStart);
     const saveProgress = pageSource.slice(saveStart, saveEnd);
 
     expect(saveStart).toBeGreaterThanOrEqual(0);
     expect(saveEnd).toBeGreaterThan(saveStart);
-    expect(saveProgress).toContain('pendingSourceSwitchRef.current?.active');
+    expect(saveProgress).toContain('if (pendingSourceSwitchRef.current)');
+    expect(saveProgress).toContain('return;');
     expect(saveProgress).toContain('progressSnapshot.source');
     expect(saveProgress).toContain('progressSnapshot.id');
     expect(saveProgress).not.toContain('source: currentSourceRef.current');
     expect(saveProgress).not.toContain('id: currentIdRef.current');
   });
 
-  it('commits candidate only after player switch success or ready/canplay', () => {
+  it('commits candidate only after player ready/canplay, not switch promise resolve', () => {
     const pageSource = readFileSync(
       path.join(process.cwd(), 'src/app/play/page.tsx'),
       'utf8',
     );
 
     expect(pageSource).toContain('const commitPendingSourceSwitch');
-    expect(pageSource).toContain('commitPendingSourceSwitch();');
     expect(pageSource).toContain("artPlayerRef.current.on('ready'");
     expect(pageSource).toContain("artPlayerRef.current.on('video:canplay'");
     expect(pageSource).toContain("artPlayerRef.current.on('error'");
     expect(pageSource).toContain('rollbackPendingSourceSwitch(err)');
+
+    const switchStart = pageSource.indexOf(
+      'if (artPlayerRef.current && !loading)',
+    );
+    const switchEnd = pageSource.indexOf(
+      'if (artPlayerRef.current) {',
+      switchStart + 1,
+    );
+    const switchPath = pageSource.slice(switchStart, switchEnd);
+
+    expect(switchPath).toContain('switchQuality(videoUrl)');
+    expect(switchPath).not.toContain('commitPendingSourceSwitch();');
   });
 });

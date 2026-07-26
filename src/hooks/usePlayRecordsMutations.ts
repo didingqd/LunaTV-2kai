@@ -26,6 +26,7 @@ import {
   deletePlayRecord,
   clearAllPlayRecords,
   type PlayRecord,
+  type PlayRecordCascadePolicy,
 } from '@/lib/db.client';
 import type { WatchingFollow } from '@/lib/types';
 
@@ -47,6 +48,7 @@ export interface SavePlayRecordParams {
 export interface DeletePlayRecordParams {
   source: string;
   id: string;
+  cascadePolicy?: PlayRecordCascadePolicy;
 }
 
 /**
@@ -109,16 +111,21 @@ export function useSavePlayRecordMutation(): UseMutationResult<
       await queryClient.cancelQueries({ queryKey: ['playRecords'] });
 
       // 2. 保存旧数据用于回滚
-      const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
+      const previousPlayRecords = queryClient.getQueryData<
+        Record<string, PlayRecord>
+      >(['playRecords']);
 
       // 3. 立即更新缓存（乐观更新）
-      queryClient.setQueryData<Record<string, PlayRecord>>(['playRecords'], (old = {}) => {
-        const key = playRecordStorageKey(source, id);
-        return {
-          ...old,
-          [key]: record,
-        };
-      });
+      queryClient.setQueryData<Record<string, PlayRecord>>(
+        ['playRecords'],
+        (old = {}) => {
+          const key = playRecordStorageKey(source, id);
+          return {
+            ...old,
+            [key]: record,
+          };
+        },
+      );
 
       // 4. 返回上下文，用于 onError 回滚
       return { previousPlayRecords };
@@ -180,44 +187,63 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
 
   return useMutation({
     // ========== mutationFn: 实际的 API 调用 ==========
-    mutationFn: async ({ source, id }: DeletePlayRecordParams) => {
-      await deletePlayRecord(source, id);
+    mutationFn: async ({
+      source,
+      id,
+      cascadePolicy,
+    }: DeletePlayRecordParams) => {
+      await deletePlayRecord(source, id, { cascadePolicy });
     },
 
     // ========== onMutate: 乐观更新 ==========
-    onMutate: async ({ source, id }: DeletePlayRecordParams) => {
+    onMutate: async ({ source, id, cascadePolicy }: DeletePlayRecordParams) => {
+      const shouldCascadeResourceData = cascadePolicy !== 'none';
       // 1. 取消进行中的查询
       await queryClient.cancelQueries({ queryKey: ['playRecords'] });
-      await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
+      if (shouldCascadeResourceData) {
+        await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
+      }
 
       // 2. 保存旧数据
-      const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
-      const previousWatchingFollows = queryClient.getQueryData<Record<string, WatchingFollow>>(
-        watchingFollowsQueryKey,
-      );
+      const previousPlayRecords = queryClient.getQueryData<
+        Record<string, PlayRecord>
+      >(['playRecords']);
+      const previousWatchingFollows = shouldCascadeResourceData
+        ? queryClient.getQueryData<Record<string, WatchingFollow>>(
+            watchingFollowsQueryKey,
+          )
+        : undefined;
 
       // 3. 立即从缓存中删除
       const key = playRecordStorageKey(source, id);
-      queryClient.setQueryData<Record<string, PlayRecord>>(['playRecords'], (old = {}) => {
-        const newRecords = { ...old };
-        delete newRecords[key];
-        return newRecords;
-      });
+      queryClient.setQueryData<Record<string, PlayRecord>>(
+        ['playRecords'],
+        (old = {}) => {
+          const newRecords = { ...old };
+          delete newRecords[key];
+          return newRecords;
+        },
+      );
 
       // 同时更新 continueWatching 缓存，避免事件驱动的 invalidate 覆盖乐观更新
       queryClient.setQueryData<(PlayRecord & { key: string })[]>(
         ['playRecords', 'continueWatching'],
-        (old = []) => old.filter(record => record.key !== key)
+        (old = []) => old.filter((record) => record.key !== key),
       );
 
-      queryClient.setQueryData<Record<string, WatchingFollow>>(
-        watchingFollowsQueryKey,
-        (old = {}) => {
-          const next = { ...old };
-          delete next[watchingFollowKey(source, id)];
-          return next;
-        },
-      );
+      if (shouldCascadeResourceData) {
+        // PlayRecord deletion is the resource watching lifecycle root, so user
+        // delete removes Follow/Update by default. Source switch never calls
+        // this mutation; cascadePolicy=none is only a guarded escape hatch.
+        queryClient.setQueryData<Record<string, WatchingFollow>>(
+          watchingFollowsQueryKey,
+          (old = {}) => {
+            const next = { ...old };
+            delete next[watchingFollowKey(source, id)];
+            return next;
+          },
+        );
+      }
 
       return { previousPlayRecords, previousWatchingFollows };
     },
@@ -238,9 +264,11 @@ export function useDeletePlayRecordMutation(): UseMutationResult<
     },
 
     // ========== onSettled: 刷新数据 ==========
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: ['playRecords'] });
-      queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      if (variables.cascadePolicy !== 'none') {
+        queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      }
       queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
     },
   });
@@ -287,10 +315,12 @@ export function useClearPlayRecordsMutation(): UseMutationResult<
       await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
 
       // 2. 保存旧数据
-      const previousPlayRecords = queryClient.getQueryData<Record<string, PlayRecord>>(['playRecords']);
-      const previousWatchingFollows = queryClient.getQueryData<Record<string, WatchingFollow>>(
-        watchingFollowsQueryKey,
-      );
+      const previousPlayRecords = queryClient.getQueryData<
+        Record<string, PlayRecord>
+      >(['playRecords']);
+      const previousWatchingFollows = queryClient.getQueryData<
+        Record<string, WatchingFollow>
+      >(watchingFollowsQueryKey);
 
       // 3. 立即清空所有 playRecords 相关缓存（乐观更新）
       //    必须同时更新 ['playRecords'] 和 ['playRecords', 'continueWatching']
@@ -309,13 +339,15 @@ export function useClearPlayRecordsMutation(): UseMutationResult<
       if (context?.previousPlayRecords) {
         queryClient.setQueryData(['playRecords'], context.previousPlayRecords);
         // 回滚 continueWatching 缓存
-        const recordsArray = Object.entries(context.previousPlayRecords).map(([key, record]) => ({
-          ...record,
-          key,
-        }));
+        const recordsArray = Object.entries(context.previousPlayRecords).map(
+          ([key, record]) => ({
+            ...record,
+            key,
+          }),
+        );
         queryClient.setQueryData(
           ['playRecords', 'continueWatching'],
-          recordsArray.sort((a, b) => b.save_time - a.save_time)
+          recordsArray.sort((a, b) => b.save_time - a.save_time),
         );
       }
       if (context?.previousWatchingFollows) {

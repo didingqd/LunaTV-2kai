@@ -483,6 +483,7 @@ export async function DELETE(request: NextRequest) {
     const username = authInfo.username;
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
+    const cascadeResourceData = searchParams.get('cascade') !== 'none';
 
     if (key) {
       // 如果提供了 key，删除单条播放记录
@@ -511,12 +512,17 @@ export async function DELETE(request: NextRequest) {
       }
 
       await db.deletePlayRecord(username, identity.source, identity.id);
-      await db.deleteWatchingFollow(username, identity.source, identity.id);
-      await updateCheckService.onFollowDeleted(
-        username,
-        identity.source,
-        identity.id,
-      );
+      if (cascadeResourceData) {
+        // PlayRecord is the root of the user's resource watching lifecycle.
+        // User deletion therefore cascades to Follow and WatchingUpdate by
+        // default; source switch never calls this DELETE endpoint.
+        await db.deleteWatchingFollow(username, identity.source, identity.id);
+        await updateCheckService.onFollowDeleted(
+          username,
+          identity.source,
+          identity.id,
+        );
+      }
     } else {
       // 未提供 key，则清空全部播放记录
       // 目前 DbManager 没有对应方法，这里直接遍历删除
@@ -529,19 +535,24 @@ export async function DELETE(request: NextRequest) {
           }
         }),
       );
-      const follows = await db.getAllWatchingFollows(username);
-      await Promise.all(
-        Object.values(follows).map((follow) =>
-          Promise.all([
-            db.deleteWatchingFollow(username, follow.source, follow.id),
-            updateCheckService.onFollowDeleted(
-              username,
-              follow.source,
-              follow.id,
-            ),
-          ]),
-        ),
-      );
+      if (cascadeResourceData) {
+        // Clearing PlayRecords keeps the original product lifecycle and also
+        // clears dependent Follow/Update state unless a guarded caller
+        // explicitly requests cascade=none.
+        const follows = await db.getAllWatchingFollows(username);
+        await Promise.all(
+          Object.values(follows).map((follow) =>
+            Promise.all([
+              db.deleteWatchingFollow(username, follow.source, follow.id),
+              updateCheckService.onFollowDeleted(
+                username,
+                follow.source,
+                follow.id,
+              ),
+            ]),
+          ),
+        );
+      }
     }
 
     const successResponse = { success: true };
