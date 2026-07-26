@@ -3,6 +3,7 @@ import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { playRecordStorageKey } from '@/lib/play-record';
 import {
   calculateWatchingUpdate,
+  resolveWatchCompletionThresholdPreference,
   resolveEffectiveOriginalEpisodes,
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
@@ -201,6 +202,80 @@ describe('WatchingFollow update detection candidates', () => {
         100,
       ),
     ).toBe(8);
+  });
+
+  it('loads Web completion thresholds from the Backend user preference', async () => {
+    const record = createRecord({ index: 8, play_time: 500, total_time: 1000 });
+    const aliceFetcher = jest.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({ watchCompletionThreshold: 50 }),
+        }) as Response,
+    );
+    const bobFetcher = jest.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({ watchCompletionThreshold: 90 }),
+        }) as Response,
+    );
+
+    const aliceThreshold = await resolveWatchCompletionThresholdPreference({
+      username: 'alice',
+      fetcher: aliceFetcher,
+      storage: window.localStorage,
+    });
+    const bobThreshold = await resolveWatchCompletionThresholdPreference({
+      username: 'bob',
+      fetcher: bobFetcher,
+      storage: window.localStorage,
+    });
+
+    expect(aliceFetcher).toHaveBeenCalledWith(
+      '/api/user/watch-completion-threshold',
+      { cache: 'no-store' },
+    );
+    expect(watchedEpisodesForRecord(record, aliceThreshold)).toBe(8);
+    expect(watchedEpisodesForRecord(record, bobThreshold)).toBe(7);
+  });
+
+  it('ignores stale Web completion threshold caches when the API fails', async () => {
+    window.localStorage.setItem('watch_completion_threshold', '50');
+    window.localStorage.setItem(
+      'moontv_watch_completion_threshold_v1:alice',
+      '50',
+    );
+
+    const threshold = await resolveWatchCompletionThresholdPreference({
+      username: 'alice',
+      fetcher: async () =>
+        ({
+          ok: false,
+          json: async () => ({ error: 'failed' }),
+        }) as Response,
+      storage: window.localStorage,
+    });
+
+    expect(threshold).toBe(80);
+    expect(
+      window.localStorage.getItem('watch_completion_threshold'),
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('moontv_watch_completion_threshold_v1:alice'),
+    ).toBeNull();
+  });
+
+  it('keeps anonymous Web completion threshold at 80', async () => {
+    window.localStorage.setItem('watch_completion_threshold', '50');
+
+    const threshold = await resolveWatchCompletionThresholdPreference({
+      username: null,
+      fetcher: jest.fn(),
+      storage: window.localStorage,
+    });
+
+    expect(threshold).toBe(80);
   });
 
   it('maps a legacy source name to the Follow source key', () => {

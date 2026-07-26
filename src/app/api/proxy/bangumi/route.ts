@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getCacheTime, getConfig } from '@/lib/config';
-import {
-  BANGUMI_DATE_ORIGIN,
-  readRemarks,
-  writeRemarks,
-} from '@/lib/video-remarks.server';
+import { BANGUMI_DATE_ORIGIN, updateRemarks } from '@/lib/video-remarks.server';
 
 const CMLIUSSSS_BASE = 'https://img.doubanio.cmliussss.net';
 
@@ -39,18 +35,18 @@ async function saveBangumiDateRemarkIfAllowed(
   const username = getAuthorizedUsername(request, config);
   if (!username) return;
 
-  const remarks = await readRemarks(username);
-  const remarkKey = `bangumi__${bangumiId}`;
-  const existing = remarks[remarkKey];
+  await updateRemarks(username, (remarks) => {
+    const remarkKey = `bangumi__${bangumiId}`;
+    const existing = remarks[remarkKey];
 
-  if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) return;
+    if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) return;
 
-  remarks[remarkKey] = {
-    remark,
-    updatedAt: Date.now(),
-    origin: BANGUMI_DATE_ORIGIN,
-  };
-  await writeRemarks(username, remarks);
+    remarks[remarkKey] = {
+      remark,
+      updatedAt: Date.now(),
+      origin: BANGUMI_DATE_ORIGIN,
+    };
+  });
 }
 
 /**
@@ -90,7 +86,9 @@ export async function GET(request: NextRequest) {
       apiUrl = `${CMLIUSSSS_BASE}/${path}`;
     } else if (apiType === 'corsapi') {
       // 使用 Cloudflare Worker 代理，从 VideoProxyConfig 获取地址
-      const corsApiBase = adminConfig.VideoProxyConfig?.proxyUrl || 'https://corsapi.smone.workers.dev';
+      const corsApiBase =
+        adminConfig.VideoProxyConfig?.proxyUrl ||
+        'https://corsapi.smone.workers.dev';
       apiUrl = `${corsApiBase}/https://api.bgm.tv/${path}`;
     } else if (apiType === 'custom' && apiProxy) {
       const base = apiProxy.endsWith('/') ? apiProxy.slice(0, -1) : apiProxy;

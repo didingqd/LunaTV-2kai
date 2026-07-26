@@ -38,6 +38,12 @@ describe('useWatchingUpdates backend adaptation', () => {
     service.syncObservations.mockResolvedValue(undefined);
     global.fetch = jest.fn(async (input) => {
       const url = String(input);
+      if (url === '/api/user/watch-completion-threshold') {
+        return {
+          ok: true,
+          json: async () => ({ watchCompletionThreshold: 80 }),
+        } as Response;
+      }
       if (url.startsWith('/api/detail')) {
         return {
           ok: true,
@@ -138,6 +144,41 @@ describe('useWatchingUpdates backend adaptation', () => {
     expect(result.current.data?.updatedSeries[0].detectedAt).toBe(1500);
   });
 
+  it('uses the Backend user threshold instead of the legacy localStorage key', async () => {
+    window.localStorage.setItem('watch_completion_threshold', '50');
+    global.fetch = jest.fn(async (input) => {
+      const url = String(input);
+      if (url === '/api/user/watch-completion-threshold') {
+        return {
+          ok: true,
+          json: async () => ({ watchCompletionThreshold: 50 }),
+        } as Response;
+      }
+      if (url.startsWith('/api/detail')) {
+        return {
+          ok: true,
+          json: async () => ({
+            title: 'Local Demo',
+            cover: 'cover.jpg',
+            year: '2026',
+            episodes: Array.from({ length: 12 }, (_, index) => index + 1),
+          }),
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { result } = renderUpdatesHook({
+      record: createRecord({ index: 10, play_time: 500, total_time: 1000 }),
+    });
+
+    await waitFor(() => expect(result.current.data?.updatedCount).toBe(1));
+    expect(result.current.data?.updatedSeries[0]?.newEpisodes).toBe(2);
+    expect(
+      window.localStorage.getItem('watch_completion_threshold'),
+    ).toBeNull();
+  });
+
   it('applies local detectedAt lifecycle rules without using Observation fields', () => {
     const previous = backendUpdate().updatedSeries[0];
     previous.detectedAt = 1000;
@@ -229,7 +270,11 @@ function allowBackend() {
   });
 }
 
-function renderUpdatesHook() {
+function renderUpdatesHook({
+  record = createRecord(),
+}: {
+  record?: PlayRecord;
+} = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -240,7 +285,7 @@ function renderUpdatesHook() {
   });
   queryClient.setQueryData(
     ['playRecords', 'array'],
-    [{ ...createRecord(), key: recordKey }],
+    [{ ...record, key: recordKey }],
   );
   queryClient.setQueryData(
     ['sources', 'map'],
@@ -270,7 +315,7 @@ function createFollow(): WatchingFollow {
   };
 }
 
-function createRecord(): PlayRecord {
+function createRecord(overrides: Partial<PlayRecord> = {}): PlayRecord {
   return {
     title: 'Local Demo',
     source_name: 'Source A',
@@ -282,6 +327,7 @@ function createRecord(): PlayRecord {
     total_time: 1200,
     save_time: 1,
     search_title: 'Local Demo',
+    ...overrides,
   };
 }
 

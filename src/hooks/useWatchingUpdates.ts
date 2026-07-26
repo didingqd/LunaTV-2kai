@@ -34,8 +34,8 @@ import {
 import { getAllPlayRecords } from '@/lib/db.client';
 import {
   calculateWatchingUpdate,
-  loadWatchCompletionThreshold,
   resolveEffectiveOriginalEpisodes,
+  resolveWatchCompletionThresholdPreference,
   watchedEpisodesForRecord,
 } from '@/lib/watching-update-calculation';
 import {
@@ -409,7 +409,6 @@ export function useWatchingUpdatesQuery(options?: {
       ) {
         queryClient.removeQueries({
           queryKey: watchingUpdatesQueryKey(oldScope),
-          exact: true,
         });
       }
     }
@@ -437,9 +436,32 @@ export function useWatchingUpdatesQuery(options?: {
     !capabilityResolution;
   const shouldRunLocal =
     sourceMode === 'local' || (sourceMode === 'backend' && !capabilityPending);
+  const thresholdQuery = useQuery({
+    queryKey: [
+      'watchCompletionThreshold',
+      isLocal ? 'local' : username || '__anonymous__',
+    ],
+    queryFn: () => resolveWatchCompletionThresholdPreference({ username }),
+    enabled:
+      options?.enabled !== false &&
+      shouldRunLocal &&
+      localScope !== null &&
+      !isLocal &&
+      !!username,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const completionThreshold = username ? (thresholdQuery.data ?? 80) : 80;
+  const effectiveLocalInitialCache =
+    username && !isLocal ? undefined : localInitialCache;
+  const localQueryKey = [
+    ...watchingUpdatesQueryKey(localQueryScope),
+    'threshold',
+    completionThreshold,
+  ] as const;
 
   const localQuery = useQuery({
-    queryKey: watchingUpdatesQueryKey(localQueryScope),
+    queryKey: localQueryKey,
     queryFn: async (): Promise<LocalWatchingUpdatesPayload> => {
       console.log('🔄 [追番更新] 开始检查追番更新...');
 
@@ -483,7 +505,6 @@ export function useWatchingUpdatesQuery(options?: {
         playRecordsArray,
         sourceMap,
       );
-      const completionThreshold = loadWatchCompletionThreshold();
       console.log(
         `🎯 [追番更新] 找到 ${candidates.length} 个 WatchingFollow 检测候选`,
       );
@@ -591,12 +612,15 @@ export function useWatchingUpdatesQuery(options?: {
     gcTime: 60 * 60 * 1000,
     refetchInterval: 30 * 60 * 1000,
     refetchIntervalInBackground: false,
-    initialData: localInitialCache
-      ? { data: localInitialCache.data, observations: [] }
+    initialData: effectiveLocalInitialCache
+      ? { data: effectiveLocalInitialCache.data, observations: [] }
       : undefined,
-    initialDataUpdatedAt: localInitialCache?.timestamp,
+    initialDataUpdatedAt: effectiveLocalInitialCache?.timestamp,
     enabled:
-      options?.enabled !== false && shouldRunLocal && localScope !== null,
+      options?.enabled !== false &&
+      shouldRunLocal &&
+      localScope !== null &&
+      (!username || thresholdQuery.isSuccess || thresholdQuery.isError),
     retry: false,
   });
 

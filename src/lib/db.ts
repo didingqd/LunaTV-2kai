@@ -18,10 +18,7 @@ import {
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
-import {
-  parsePlayRecordStorageKey,
-  playRecordStorageKey,
-} from './play-record';
+import { parsePlayRecordStorageKey, playRecordStorageKey } from './play-record';
 import {
   comparePlayRecordIdentity,
   normalizePlayRecordIdentity,
@@ -32,7 +29,10 @@ import {
   migrateStoredWatchingFollow,
   watchingFollowStorageKey,
 } from './watching-follow';
-import { buildContentIdentityKey, compareContentIdentity } from './content-identity';
+import {
+  buildContentIdentityKey,
+  compareContentIdentity,
+} from './content-identity';
 import {
   findFavoriteReminderIdentityEntry,
   normalizeFavoriteReminderRecord,
@@ -84,6 +84,10 @@ function getStorage(): IStorage {
 // 工具函数：生成存储key
 export function generateStorageKey(source: string, id: string): string {
   return `${source}+${id}`;
+}
+
+function userVideoRemarksCacheKey(userName: string): string {
+  return `user:${userName}:video_remarks`;
 }
 
 // 导出便捷方法
@@ -276,9 +280,7 @@ export class DbManager {
         .filter((storedKey) =>
           compareContentIdentity({ key: storedKey }, { source, id }),
         )
-        .map((storedKey) =>
-          this.storage.deleteFavorite(userName, storedKey),
-        ),
+        .map((storedKey) => this.storage.deleteFavorite(userName, storedKey)),
     );
   }
 
@@ -348,9 +350,7 @@ export class DbManager {
         .filter((storedKey) =>
           compareContentIdentity({ key: storedKey }, { source, id }),
         )
-        .map((storedKey) =>
-          this.storage.deleteReminder(userName, storedKey),
-        ),
+        .map((storedKey) => this.storage.deleteReminder(userName, storedKey)),
     );
   }
 
@@ -449,10 +449,7 @@ export class DbManager {
       );
       const legacyFollow = migrateStoredWatchingFollow(legacy);
       if (legacyFollow && comparePlayRecordIdentity(legacyFollow, identity)) {
-        await this.storage.deleteWatchingFollow(
-          userName,
-          identity.legacyKey,
-        );
+        await this.storage.deleteWatchingFollow(userName, identity.legacyKey);
       }
     }
   }
@@ -531,6 +528,10 @@ export class DbManager {
   async deleteUser(userName: string): Promise<void> {
     incrementDbQuery();
     await this.storage.deleteUser(userName);
+    // 用户删除生命周期统一从 DbManager 进入。Remark 仍然保存在通用 cache
+    // `user:${username}:video_remarks` 中，因此这里通过 IStorage.deleteCache
+    // 让 Redis、Kvrocks、Upstash 和 SQLite 共用同一条清理路径。
+    await this.storage.deleteCache(userVideoRemarksCacheKey(userName));
   }
 
   // ---------- 用户相关（新版本 V2，支持 OIDC） ----------

@@ -5,8 +5,10 @@ import { NextRequest } from 'next/server';
 import { buildContentIdentityKey } from '@/lib/content-identity';
 import type { RemarksMap } from '@/lib/video-remarks.server';
 
+let mockUsername = 'alice';
+
 jest.mock('@/lib/auth', () => ({
-  getAuthInfoFromCookie: jest.fn(() => ({ username: 'alice' })),
+  getAuthInfoFromCookie: jest.fn(() => ({ username: mockUsername })),
 }));
 
 jest.mock('@/lib/admin-auth', () => ({
@@ -15,7 +17,12 @@ jest.mock('@/lib/admin-auth', () => ({
 
 jest.mock('@/lib/config', () => ({
   getConfig: jest.fn(async () => ({
-    UserConfig: { Users: [{ username: 'alice', banned: false }] },
+    UserConfig: {
+      Users: [
+        { username: 'alice', banned: false },
+        { username: 'bob', banned: false },
+      ],
+    },
   })),
 }));
 
@@ -37,6 +44,7 @@ import { POST as PUSH } from './admin/remarks/push/route';
 import { db } from '@/lib/db';
 
 const cacheKey = 'user:alice:video_remarks';
+const bobCacheKey = 'user:bob:video_remarks';
 const record = {
   remark: 'legacy',
   updatedAt: 10,
@@ -44,6 +52,12 @@ const record = {
 };
 
 let storedRemarks: RemarksMap;
+let cache: Map<string, RemarksMap>;
+
+function setAliceRemarks(remarks: RemarksMap) {
+  storedRemarks = remarks;
+  cache.set(cacheKey, storedRemarks);
+}
 
 function requestUrl(source: string, id: string, updatedAt?: number): string {
   const params = new URLSearchParams({ source, id });
@@ -54,12 +68,17 @@ function requestUrl(source: string, id: string, updatedAt?: number): string {
 describe('/api/remarks ContentIdentity compatibility', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUsername = 'alice';
     storedRemarks = {};
-    (db.getCache as jest.Mock).mockImplementation(async () => storedRemarks);
+    cache = new Map([[cacheKey, storedRemarks]]);
+    (db.getCache as jest.Mock).mockImplementation(
+      async (key: string) => cache.get(key) ?? {},
+    );
     (db.setCache as jest.Mock).mockImplementation(
       async (key: string, remarks: RemarksMap) => {
-        expect(key).toBe(cacheKey);
-        storedRemarks = { ...remarks };
+        const next = { ...remarks };
+        cache.set(key, next);
+        if (key === cacheKey) storedRemarks = next;
       },
     );
   });
@@ -112,7 +131,7 @@ describe('/api/remarks ContentIdentity compatibility', () => {
   });
 
   it('reads safe legacy data and persists canonical lazy migration', async () => {
-    storedRemarks = { abc__123: record };
+    setAliceRemarks({ abc__123: record });
     const canonicalKey = buildContentIdentityKey('abc', '123');
 
     const response = await GET(new NextRequest(requestUrl('abc', '123')));
@@ -125,10 +144,10 @@ describe('/api/remarks ContentIdentity compatibility', () => {
 
   it('prefers canonical data over legacy data', async () => {
     const canonicalKey = buildContentIdentityKey('abc', '123');
-    storedRemarks = {
+    setAliceRemarks({
       [canonicalKey]: { ...record, remark: 'canonical' },
       abc__123: record,
-    };
+    });
 
     const response = await GET(new NextRequest(requestUrl('abc', '123')));
 
@@ -138,10 +157,10 @@ describe('/api/remarks ContentIdentity compatibility', () => {
 
   it('deletes canonical and confirmed legacy data', async () => {
     const canonicalKey = buildContentIdentityKey('abc', '123');
-    storedRemarks = {
+    setAliceRemarks({
       [canonicalKey]: record,
       abc__123: record,
-    };
+    });
 
     await DELETE(
       new NextRequest(requestUrl('abc', '123', 10), { method: 'DELETE' }),
@@ -152,7 +171,7 @@ describe('/api/remarks ContentIdentity compatibility', () => {
   });
 
   it('does not migrate or delete ambiguous legacy data', async () => {
-    storedRemarks = { a____123: record };
+    setAliceRemarks({ a____123: record });
 
     await GET(new NextRequest(requestUrl('a__', '123')));
     expect(storedRemarks.a____123).toEqual(record);
@@ -186,7 +205,7 @@ describe('/api/remarks ContentIdentity compatibility', () => {
   });
 
   it('uses the adapter when an admin pushes a single legacy remark', async () => {
-    storedRemarks = { abc__123: record };
+    setAliceRemarks({ abc__123: record });
     const canonicalKey = buildContentIdentityKey('abc', '123');
 
     const response = await PUSH(
@@ -202,5 +221,70 @@ describe('/api/remarks ContentIdentity compatibility', () => {
     expect(body.sourceRecords).toBe(1);
     expect(storedRemarks[canonicalKey]).toEqual(record);
     expect(storedRemarks.abc__123).toEqual(record);
+  });
+
+  it('isolates reads and deletes by authenticated user', async () => {
+    await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: 'alice-only',
+          updatedAt: 40,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    mockUsername = 'bob';
+    const bobRead = await GET(new NextRequest(requestUrl('abc', '123')));
+    expect(await bobRead.json()).toMatchObject({ remark: '' });
+    expect(cache.get(bobCacheKey)).toBeUndefined();
+
+    mockUsername = 'alice';
+    await DELETE(
+      new NextRequest(requestUrl('abc', '123', 40), { method: 'DELETE' }),
+    );
+    expect(Object.keys(cache.get(cacheKey) ?? {})).toHaveLength(0);
+  });
+
+  it('serializes concurrent writes so different remark keys are preserved', async () => {
+    const first = POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: 'video2',
+          remark: 'from-device-a',
+          updatedAt: 50,
+          origin: 'manual',
+        }),
+      }),
+    );
+    const second = POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: 'video3',
+          remark: 'from-device-b',
+          updatedAt: 51,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(
+      Object.values(storedRemarks)
+        .map((item) => item.remark)
+        .sort(),
+    ).toEqual(['from-device-a', 'from-device-b']);
   });
 });

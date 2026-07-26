@@ -110,12 +110,13 @@ class MemoryTasks implements UpdateCheckTaskRepository {
 
 class MemoryFacts implements UpdateFactsRepository {
   playRecord: PlayRecord | null = record;
+  watchingFollow: WatchingFollow = follow;
 
   async getWatchingFollow() {
-    return follow;
+    return this.watchingFollow;
   }
   async getAllWatchingFollows() {
-    return { follow };
+    return { follow: this.watchingFollow };
   }
   async getPlayRecord() {
     return this.playRecord;
@@ -131,6 +132,7 @@ describe('UpdateCheckService', () => {
   let tasks: MemoryTasks;
   let facts: MemoryFacts;
   let service: UpdateCheckService;
+  let thresholdByUser: Map<string, number>;
 
   beforeEach(async () => {
     latestEpisode = 12;
@@ -140,6 +142,7 @@ describe('UpdateCheckService', () => {
     observations = new MemoryObservations();
     tasks = new MemoryTasks();
     facts = new MemoryFacts();
+    thresholdByUser = new Map();
     const provider: LatestEpisodeProvider = {
       supports: () => true,
       getLatestEpisode: async () => {
@@ -162,6 +165,10 @@ describe('UpdateCheckService', () => {
           userEnabled: true,
           mode: 'backend',
         }),
+      },
+      completionThreshold: {
+        getWatchCompletionThreshold: async (userId) =>
+          thresholdByUser.get(userId) ?? 80,
       },
       config: {
         getUpdateCheckConfig: async () => ({
@@ -379,5 +386,60 @@ describe('UpdateCheckService', () => {
     expect(observations.values.size).toBe(0);
     expect(results.values.size).toBe(0);
     expect(result).toBeNull();
+  });
+
+  it('uses the default 80 percent completion threshold', async () => {
+    const task = [...tasks.values.values()][0];
+
+    const result = await service.checkTask(task);
+
+    expect(result?.metadata.completionThreshold).toBe(80);
+  });
+
+  it('uses the current user threshold when calculating watched episodes', async () => {
+    thresholdByUser.set('alice', 50);
+    latestEpisode = 9;
+    facts.watchingFollow = { ...follow, originalEpisodes: 7 };
+    facts.playRecord = {
+      ...record,
+      total_episodes: 9,
+      play_time: 500,
+      total_time: 1000,
+    };
+    const task = [...tasks.values.values()][0];
+
+    const result = await service.checkTask(task);
+
+    expect(result?.watchedEpisode).toBe(8);
+    expect(result?.metadata.completionThreshold).toBe(50);
+    expect(result?.metadata.releasedEpisodeCount).toBe(1);
+  });
+
+  it('keeps user completion thresholds isolated', async () => {
+    thresholdByUser.set('alice', 50);
+    thresholdByUser.set('bob', 90);
+    latestEpisode = 9;
+    facts.watchingFollow = { ...follow, originalEpisodes: 7 };
+    facts.playRecord = {
+      ...record,
+      total_episodes: 9,
+      play_time: 500,
+      total_time: 1000,
+    };
+    await service.onFollowCreated(facts.watchingFollow, 'bob');
+    const aliceTask = [...tasks.values.values()].find(
+      (task) => task.userId === 'alice',
+    )!;
+    const bobTask = [...tasks.values.values()].find(
+      (task) => task.userId === 'bob',
+    )!;
+
+    const aliceResult = await service.checkTask(aliceTask);
+    const bobResult = await service.checkTask(bobTask);
+
+    expect(aliceResult?.watchedEpisode).toBe(8);
+    expect(aliceResult?.metadata.completionThreshold).toBe(50);
+    expect(bobResult?.watchedEpisode).toBe(7);
+    expect(bobResult?.metadata.completionThreshold).toBe(90);
   });
 });

@@ -1,7 +1,6 @@
 import type { PlayRecord, WatchingFollow } from './types';
 import {
   calculateWatchingUpdate,
-  DEFAULT_WATCH_COMPLETION_THRESHOLD,
   watchedEpisodesForRecord,
 } from './watching-update-calculation';
 import { watchingFollowStorageKey } from './watching-follow';
@@ -31,6 +30,10 @@ import {
   updateCheckCapabilityService,
   type UpdateCheckCapabilityReader,
 } from './update-check-capability';
+import {
+  watchCompletionThresholdPreference,
+  type WatchCompletionThresholdReader,
+} from './watch-completion-threshold-preference';
 
 export interface UpdateFactsRepository {
   getWatchingFollow(
@@ -56,6 +59,7 @@ export interface UpdateCheckServiceDependencies {
   providers?: LatestEpisodeProviderRegistry;
   config?: UpdateCheckConfigReader;
   capability?: UpdateCheckCapabilityReader;
+  completionThreshold?: WatchCompletionThresholdReader;
   now?: () => number;
 }
 
@@ -84,6 +88,7 @@ export class UpdateCheckService {
   private providers?: LatestEpisodeProviderRegistry;
   private readonly config: UpdateCheckConfigReader;
   private readonly capability: UpdateCheckCapabilityReader;
+  private readonly completionThreshold: WatchCompletionThresholdReader;
   private readonly clock: () => number;
 
   constructor(dependencies: UpdateCheckServiceDependencies = {}) {
@@ -95,6 +100,8 @@ export class UpdateCheckService {
     this.providers = dependencies.providers;
     this.config = dependencies.config ?? systemConfigRepository;
     this.capability = dependencies.capability ?? updateCheckCapabilityService;
+    this.completionThreshold =
+      dependencies.completionThreshold ?? watchCompletionThresholdPreference;
     this.clock = dependencies.now ?? Date.now;
   }
 
@@ -290,9 +297,11 @@ export class UpdateCheckService {
       return null;
     }
 
+    const completionThreshold =
+      await this.completionThreshold.getWatchCompletionThreshold(userId);
     const watchedEpisode = watchedEpisodesForRecord(
       record,
-      DEFAULT_WATCH_COMPLETION_THRESHOLD,
+      completionThreshold,
     );
     const calculation = calculateWatchingUpdate({
       detailEpisodes: latestEpisode,
@@ -332,7 +341,7 @@ export class UpdateCheckService {
       revision: (previous?.revision ?? 0) + 1,
       metadata: {
         algorithmVersion: UPDATE_CHECK_ALGORITHM_VERSION,
-        completionThreshold: DEFAULT_WATCH_COMPLETION_THRESHOLD,
+        completionThreshold,
         baselineEpisode: calculation.baselineEpisodes,
         effectiveLatestEpisode: calculation.latestEpisodes,
         releasedEpisodeCount: newEpisodes,

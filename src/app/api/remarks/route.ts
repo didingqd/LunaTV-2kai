@@ -14,10 +14,10 @@ import {
   MANUAL_ORIGIN,
   deleteRemarkEntries,
   normalizeOrigin,
-  normalizeRecord,
   readRemarks,
   resolveRemarkEntry,
   resolveRemarkWriteKey,
+  updateRemarks,
   writeRemarks,
 } from '@/lib/video-remarks.server';
 
@@ -94,23 +94,32 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const remarks = await readRemarks(user.username);
     const source = request.nextUrl.searchParams.get('source')?.trim() || '';
     const id = request.nextUrl.searchParams.get('id')?.trim() || '';
 
     if (source && id) {
+      const remarks = await readRemarks(user.username);
       const lookup = resolveRemarkEntry(remarks, source, id);
-      if (lookup?.migrated) {
-        await writeRemarks(user.username, remarks);
-      }
-      const record = lookup?.record || {
-        remark: '',
-        updatedAt: 0,
-        origin: MANUAL_ORIGIN,
-      };
+      const record = lookup?.migrated
+        ? await updateRemarks(user.username, (latestRemarks) => {
+            const latestLookup = resolveRemarkEntry(latestRemarks, source, id);
+            return (
+              latestLookup?.record || {
+                remark: '',
+                updatedAt: 0,
+                origin: MANUAL_ORIGIN,
+              }
+            );
+          })
+        : lookup?.record || {
+            remark: '',
+            updatedAt: 0,
+            origin: MANUAL_ORIGIN,
+          };
       return jsonResponse('GET', startTime, startMemory, 200, 0, record);
     }
 
+    const remarks = await readRemarks(user.username);
     return jsonResponse('GET', startTime, startMemory, 200, 0, remarks);
   } catch (err) {
     console.error('获取视频备注失败', err);
@@ -150,58 +159,75 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const remarks = await readRemarks(user.username);
-    const lookup = resolveRemarkEntry(remarks, source, id);
-    const key = resolveRemarkWriteKey(source, id);
-    if (!lookup || !key) {
-      return jsonResponse('POST', startTime, startMemory, 400, requestSize, {
-        error: 'Invalid source or id',
-      });
-    }
-    const existing = lookup.record;
+    const result = await updateRemarks(user.username, (remarks) => {
+      const lookup = resolveRemarkEntry(remarks, source, id);
+      const key = resolveRemarkWriteKey(source, id);
+      if (!lookup || !key) {
+        return {
+          status: 400,
+          payload: { error: 'Invalid source or id' },
+        };
+      }
+      const existing = lookup.record;
 
-    if (lookup.migrated) {
-      await writeRemarks(user.username, remarks);
-    }
+      if (origin === BANGUMI_DATE_ORIGIN) {
+        if (!remark) {
+          return {
+            status: 200,
+            payload: {
+              success: true,
+              record: existing || { remark: '', updatedAt, origin },
+              ignored: true,
+            },
+          };
+        }
 
-    if (origin === BANGUMI_DATE_ORIGIN) {
-      if (!remark) {
-        return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
-          success: true,
-          record: existing || { remark: '', updatedAt, origin },
-          ignored: true,
-        });
+        if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) {
+          return {
+            status: 200,
+            payload: {
+              success: true,
+              record: existing,
+              ignored: true,
+            },
+          };
+        }
       }
 
-      if (existing && existing.origin !== BANGUMI_DATE_ORIGIN) {
-        return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
-          success: true,
-          record: existing,
-          ignored: true,
-        });
+      if (existing && existing.updatedAt > updatedAt) {
+        return {
+          status: 200,
+          payload: {
+            success: true,
+            record: existing,
+            ignored: true,
+          },
+        };
       }
-    }
 
-    if (existing && existing.updatedAt > updatedAt) {
-      return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
-        success: true,
-        record: existing,
-        ignored: true,
-      });
-    }
+      if (remark || origin === MANUAL_ORIGIN) {
+        remarks[key] = { remark, updatedAt, origin };
+      } else {
+        delete remarks[key];
+      }
 
-    if (remark || origin === MANUAL_ORIGIN) {
-      remarks[key] = { remark, updatedAt, origin };
-    } else {
-      delete remarks[key];
-    }
-
-    await writeRemarks(user.username, remarks);
-
-    return jsonResponse('POST', startTime, startMemory, 200, requestSize, {
-      success: true,
-      record: remarks[key] || { remark: '', updatedAt, origin },
+      return {
+        status: 200,
+        payload: {
+          success: true,
+          record: remarks[key] || { remark: '', updatedAt, origin },
+        },
+      };
     });
+
+    return jsonResponse(
+      'POST',
+      startTime,
+      startMemory,
+      result.status,
+      requestSize,
+      result.payload,
+    );
   } catch (err) {
     console.error('保存视频备注失败', err);
     return jsonResponse('POST', startTime, startMemory, 500, 0, {
@@ -228,20 +254,21 @@ export async function DELETE(request: NextRequest) {
     const updatedAtParam = request.nextUrl.searchParams.get('updatedAt');
     const updatedAt = updatedAtParam ? Number(updatedAtParam) : Date.now();
 
-    if (source && id) {
-      const remarks = await readRemarks(user.username);
-      const lookup = resolveRemarkEntry(remarks, source, id);
-      const existing = lookup?.record;
+    await updateRemarks(user.username, (remarks) => {
+      if (source && id) {
+        const lookup = resolveRemarkEntry(remarks, source, id);
+        const existing = lookup?.record;
 
-      if (!existing || existing.updatedAt <= updatedAt) {
-        deleteRemarkEntries(remarks, source, id);
-        await writeRemarks(user.username, remarks);
-      } else if (lookup?.migrated) {
-        await writeRemarks(user.username, remarks);
+        if (!existing || existing.updatedAt <= updatedAt) {
+          deleteRemarkEntries(remarks, source, id);
+        }
+        return;
       }
-    } else {
-      await writeRemarks(user.username, {});
-    }
+
+      Object.keys(remarks).forEach((key) => {
+        delete remarks[key];
+      });
+    });
 
     return jsonResponse('DELETE', startTime, startMemory, 200, 0, {
       success: true,

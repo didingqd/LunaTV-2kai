@@ -106,9 +106,7 @@ export function deleteRemarkEntries(
     identity.migratable &&
     identity.legacyKey !== key
   ) {
-    if (
-      Object.prototype.hasOwnProperty.call(remarks, identity.legacyKey)
-    ) {
+    if (Object.prototype.hasOwnProperty.call(remarks, identity.legacyKey)) {
       delete remarks[identity.legacyKey];
       deleted = true;
     }
@@ -167,6 +165,37 @@ export async function writeRemarks(username: string, remarks: RemarksMap) {
   await db.setCache(remarksCacheKey(username), remarks);
 }
 
+const remarkMutationQueues = new Map<string, Promise<void>>();
+
+export async function updateRemarks<T>(
+  username: string,
+  update: (remarks: RemarksMap) => T | Promise<T>,
+): Promise<T> {
+  const previous = remarkMutationQueues.get(username) ?? Promise.resolve();
+  let releaseCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => current);
+  remarkMutationQueues.set(username, tail);
+
+  await previous.catch(() => undefined);
+
+  try {
+    const remarks = await readRemarks(username);
+    const result = await update(remarks);
+    await writeRemarks(username, remarks);
+    return result;
+  } finally {
+    releaseCurrent();
+    void tail.finally(() => {
+      if (remarkMutationQueues.get(username) === tail) {
+        remarkMutationQueues.delete(username);
+      }
+    });
+  }
+}
+
 export function getConfigUsernames(config: AdminConfig): string[] {
   return Array.from(
     new Set(
@@ -195,31 +224,33 @@ export async function pushManualRemarksToUsers(
   for (const username of targetUsernames) {
     if (username === fromUsername) continue;
 
-    const target = await readRemarks(username);
-    let changed = false;
+    const insertedForUser = await updateRemarks(username, (target) => {
+      let insertedForTarget = 0;
 
-    for (const [key, record] of sourceEntries) {
-      const existing = target[key];
-      if (
-        existing &&
-        existing.origin === MANUAL_ORIGIN &&
-        existing.remark.trim()
-      ) {
-        continue;
+      for (const [key, record] of sourceEntries) {
+        const existing = target[key];
+        if (
+          existing &&
+          existing.origin === MANUAL_ORIGIN &&
+          existing.remark.trim()
+        ) {
+          continue;
+        }
+
+        target[key] = {
+          ...record,
+          updatedAt: Date.now(),
+          origin: MANUAL_ORIGIN,
+        };
+        insertedForTarget++;
       }
 
-      target[key] = {
-        ...record,
-        updatedAt: Date.now(),
-        origin: MANUAL_ORIGIN,
-      };
-      changed = true;
-      insertedRecords++;
-    }
+      return insertedForTarget;
+    });
 
-    if (changed) {
-      await writeRemarks(username, target);
+    if (insertedForUser > 0) {
       updatedUsers++;
+      insertedRecords += insertedForUser;
     }
   }
 
