@@ -51,6 +51,9 @@ const BANGUMI_PREFIX = 'bangumi__';
 let cache: VideoRemarksStorageEnvelope | null = null;
 const syncPromises = new Map<string, Promise<RemarksMap>>();
 let syncListenersInstalled = false;
+let principalWatcherInstalled = false;
+let observedPrincipal: string | null = null;
+let principalWatcherHandle: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
 function resolvePrincipal(): string | null {
@@ -172,6 +175,28 @@ function persistEnvelope(next: VideoRemarksStorageEnvelope) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   }
   listeners.forEach((listener) => listener());
+}
+
+function notifyRemarkListeners() {
+  listeners.forEach((listener) => listener());
+}
+
+function watchPrincipalChanges() {
+  if (principalWatcherInstalled || typeof window === 'undefined') return;
+  principalWatcherInstalled = true;
+  observedPrincipal = resolvePrincipal();
+
+  principalWatcherHandle = window.setInterval(() => {
+    const nextPrincipal = resolvePrincipal();
+    if (nextPrincipal === observedPrincipal) return;
+
+    observedPrincipal = nextPrincipal;
+    notifyRemarkListeners();
+
+    if (nextPrincipal) {
+      syncVideoRemarks().catch(() => {});
+    }
+  }, 1000);
 }
 
 function readPrincipalRemarks(principal: string): RemarksMap {
@@ -331,9 +356,16 @@ export function deleteLocalVideoRemark(source: string, id: string): boolean {
 }
 
 export function subscribeVideoRemarks(listener: () => void) {
+  watchPrincipalChanges();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0 && principalWatcherHandle) {
+      window.clearInterval(principalWatcherHandle);
+      principalWatcherHandle = null;
+      principalWatcherInstalled = false;
+      observedPrincipal = null;
+    }
   };
 }
 
