@@ -53,7 +53,7 @@ const syncPromises = new Map<string, Promise<RemarksMap>>();
 let syncListenersInstalled = false;
 let principalWatcherInstalled = false;
 let observedPrincipal: string | null = null;
-let principalWatcherHandle: ReturnType<typeof setInterval> | null = null;
+let principalWatcherHandle: number | null = null;
 const listeners = new Set<() => void>();
 
 function resolvePrincipal(): string | null {
@@ -353,6 +353,29 @@ export function deleteLocalVideoRemark(source: string, id: string): boolean {
 
   if (deleted) writePrincipalRemarks(principal, next);
   return deleted;
+}
+
+export async function deleteVideoRemark(source: string, id: string) {
+  const principal = resolvePrincipal();
+  const identity = resolveClientRemarkIdentity(source, id);
+  if (!principal || !identity) return false;
+
+  const existing = lookupRemark(readPrincipalRemarks(principal), identity);
+  if (existing && existing.record.origin !== MANUAL_ORIGIN) {
+    return false;
+  }
+
+  deleteLocalVideoRemark(source, id);
+
+  try {
+    await fetch('/api/remarks?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id), {
+      method: 'DELETE',
+    });
+  } catch {
+    // Keep the local deletion; a later sync can reconcile the server state.
+  }
+
+  return true;
 }
 
 export function subscribeVideoRemarks(listener: () => void) {

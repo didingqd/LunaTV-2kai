@@ -51,6 +51,7 @@ import { hasFavoriteReminderIdentity } from '@/lib/favorite-reminder-identity';
 import { processImageUrl, isSeriesCompleted } from '@/lib/utils';
 import {
   getLocalVideoRemark,
+  deleteVideoRemark,
   pushVideoRemarkToAll,
   saveBangumiDateRemarkIfAllowed,
   saveVideoRemark,
@@ -297,8 +298,14 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       const next = window.prompt('备注', customRemark);
       if (next === null) return;
 
-      setCustomRemark(next.trim());
-      saveVideoRemark(favoriteSource, favoriteId, next).catch(() => {});
+      const trimmed = next.trim();
+      setCustomRemark(trimmed);
+      if (!trimmed) {
+        deleteVideoRemark(favoriteSource, favoriteId).catch(() => {});
+        return;
+      }
+
+      saveVideoRemark(favoriteSource, favoriteId, trimmed).catch(() => {});
     }, [favoriteSource, favoriteId, customRemark]);
 
     const handlePushRemark = useCallback(async () => {
