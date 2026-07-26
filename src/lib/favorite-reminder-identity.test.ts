@@ -1,6 +1,7 @@
 import { buildContentIdentityKey } from './content-identity';
 import {
   findFavoriteReminderIdentityEntry,
+  findResourceFavoriteReminderKey,
   hasFavoriteReminderIdentity,
   mapFavoriteReminderIdentityItem,
   normalizeFavoriteReminderRecord,
@@ -84,5 +85,33 @@ describe('Favorite/Reminder ContentIdentity adapter', () => {
     expect(normalized.values).toEqual({ unknown: value });
     expect(normalized.migrations).toEqual([]);
     expect(normalized.changed).toBe(false);
+  });
+
+  it('matches resource favorites only by source and id, not by same title metadata', () => {
+    const sourceAKey = buildContentIdentityKey('source-a', '001');
+    const sourceBKey = buildContentIdentityKey('source-b', '002');
+    const favorites = {
+      [sourceAKey]: { title: '鬼灭', source: 'source-a', id: '001' },
+    };
+
+    // Stage 7.7: this guards the play page favorite matcher from falling back
+    // to title/douban/bangumi metadata. Favoriting A must not mark B as
+    // favorited, and deleting B must not discover A's storage key.
+    expect(
+      findResourceFavoriteReminderKey(favorites, {
+        source: 'source-a',
+        id: '001',
+      }),
+    ).toBe(sourceAKey);
+    expect(
+      findResourceFavoriteReminderKey(favorites, {
+        source: 'source-b',
+        id: '002',
+        title: '鬼灭',
+        doubanId: 123,
+      }),
+    ).toBeNull();
+    expect(favorites[sourceAKey]).toBeDefined();
+    expect(favorites[sourceBKey]).toBeUndefined();
   });
 });

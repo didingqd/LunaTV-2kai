@@ -96,6 +96,17 @@ export function hasFavoriteReminderIdentity(
   return findFavoriteReminderIdentityEntry(values, identityInput) !== null;
 }
 
+export function findResourceFavoriteReminderKey<T>(
+  values: Record<string, T>,
+  identityInput: unknown,
+): string | null {
+  // Stage 7.7: resource state must resolve only from the concrete resource
+  // identity passed by the caller. Metadata fields such as title, doubanId, or
+  // bangumiId are intentionally ignored here so same-title resources from
+  // different sources cannot share Favorite/Reminder state.
+  return findFavoriteReminderIdentityEntry(values, identityInput)?.key ?? null;
+}
+
 export function mapFavoriteReminderIdentityItem<T extends object>(
   key: string,
   value: T,

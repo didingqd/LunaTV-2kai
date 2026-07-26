@@ -243,28 +243,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           : type,
       [isAggregate, actualEpisodes, type],
     );
-    // 修改点：搜索聚合卡片没有 douban_id 时，用标题年份生成稳定收藏标识，避免部分搜索结果无法收藏
-    const searchAggregateFavoriteId = useMemo(() => {
-      if (!(from === 'search' && isAggregate)) return '';
-      const titlePart = actualTitle.trim();
-      if (!titlePart) return '';
-      return [titlePart, actualYear || '', actualSearchType || ''].join('|');
-    }, [from, isAggregate, actualTitle, actualYear, actualSearchType]);
-    // 修改点：搜索聚合卡片优先复用 douban_id 收藏；缺失时退回标题年份标识，保证所有搜索聚合结果都有收藏入口
-    const favoriteSource =
-      actualSource ||
-      (from === 'search' && isAggregate
-        ? actualDoubanId
-          ? 'douban'
-          : 'search_aggregate'
-        : '');
-    const favoriteId =
-      actualId ||
-      (from === 'search' && isAggregate
-        ? actualDoubanId
-          ? actualDoubanId.toString()
-          : searchAggregateFavoriteId
-        : '');
+    const blocksAggregateResourceState = from === 'search' && isAggregate;
+    // Stage 7.7: an aggregate search card is a display group, not a concrete
+    // resource. It must not create Favorite/Reminder/Remark state with a
+    // synthetic aggregate source, metadata source, or any title-derived key;
+    // users must choose a concrete source/id before mutating resource state.
+    const favoriteSource = blocksAggregateResourceState ? '' : actualSource;
+    const favoriteId = blocksAggregateResourceState ? '' : actualId;
 
     useEffect(() => {
       if (!favoriteSource || !favoriteId) {

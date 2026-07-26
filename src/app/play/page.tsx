@@ -60,7 +60,6 @@ import {
 } from '@/lib/outro-skip-hint';
 import {
   deleteFavorite,
-  deletePlayRecord,
   deleteSkipConfig,
   generatePlayRecordStorageKey,
   getAllFavorites,
@@ -76,7 +75,7 @@ import {
   buildContentIdentityKey,
   resolveContentIdentity,
 } from '@/lib/content-identity';
-import { findFavoriteReminderIdentityEntry } from '@/lib/favorite-reminder-identity';
+import { findResourceFavoriteReminderKey } from '@/lib/favorite-reminder-identity';
 import { getDoubanDetails, getDoubanComments, getDoubanActorMovies } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl, VideoSourceTestResult } from '@/lib/utils';
@@ -97,9 +96,26 @@ import {
 } from './hooks/usePlayPagePrefetch';
 
 // 🔧 修改点：复刻源仓库锁定态长按三倍速所需的触点坐标结构
- type LongPressTouchPoint = {
+type LongPressTouchPoint = {
   x: number;
   y: number;
+};
+
+type ActivePlaybackSnapshot = {
+  source: string;
+  id: string;
+  detail: SearchResult;
+  episodeIndex: number;
+  title: string;
+  year: string;
+  cover: string;
+  doubanId: number;
+};
+
+type PendingSourceSwitchTransaction = {
+  token: number;
+  active: ActivePlaybackSnapshot;
+  candidate: ActivePlaybackSnapshot;
 };
 
 // 播放速率持久化
@@ -806,6 +822,76 @@ function PlayPageClient() {
   const videoDoubanIdRef = useRef(videoDoubanId);
   const detailRef = useRef<SearchResult | null>(detail);
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
+  const activePlaybackSnapshotRef = useRef<ActivePlaybackSnapshot | null>(null);
+  const pendingSourceSwitchRef =
+    useRef<PendingSourceSwitchTransaction | null>(null);
+  const sourceSwitchTransactionTokenRef = useRef(0);
+
+  const captureCurrentPlaybackSnapshot = useCallback((): ActivePlaybackSnapshot | null => {
+    if (!currentSourceRef.current || !currentIdRef.current || !detailRef.current) {
+      return null;
+    }
+    return {
+      source: currentSourceRef.current,
+      id: currentIdRef.current,
+      detail: detailRef.current,
+      episodeIndex: currentEpisodeIndexRef.current,
+      title: videoTitleRef.current,
+      year: videoYearRef.current,
+      cover: videoCover,
+      doubanId: videoDoubanIdRef.current,
+    };
+  }, [videoCover]);
+
+  const applyPlaybackSnapshot = useCallback((snapshot: ActivePlaybackSnapshot) => {
+    currentSourceRef.current = snapshot.source;
+    currentIdRef.current = snapshot.id;
+    detailRef.current = snapshot.detail;
+    currentEpisodeIndexRef.current = snapshot.episodeIndex;
+    videoTitleRef.current = snapshot.title;
+    videoYearRef.current = snapshot.year;
+    videoDoubanIdRef.current = snapshot.doubanId;
+
+    setCurrentSource(snapshot.source);
+    setCurrentId(snapshot.id);
+    setDetail(snapshot.detail);
+    setCurrentEpisodeIndex(snapshot.episodeIndex);
+    setVideoTitle(snapshot.title);
+    setVideoYear(snapshot.year);
+    setVideoCover(snapshot.cover);
+    setVideoDoubanId(snapshot.doubanId);
+
+    const rollbackUrl = new URL(window.location.href);
+    rollbackUrl.searchParams.set('source', snapshot.source);
+    rollbackUrl.searchParams.set('id', snapshot.id);
+    rollbackUrl.searchParams.set('year', snapshot.year);
+    rollbackUrl.searchParams.set('index', snapshot.episodeIndex.toString());
+    window.history.replaceState({}, '', rollbackUrl.toString());
+  }, []);
+
+  const commitPendingSourceSwitch = useCallback(() => {
+    const pending = pendingSourceSwitchRef.current;
+    if (!pending) return;
+
+    // Candidate 只有在播放器确认可播放后才成为 active；这时后续保存进度才
+    // 允许使用 B 的 ContentIdentity。
+    activePlaybackSnapshotRef.current = pending.candidate;
+    pendingSourceSwitchRef.current = null;
+    isSourceChangingRef.current = false;
+  }, []);
+
+  const rollbackPendingSourceSwitch = useCallback((reason: unknown) => {
+    const pending = pendingSourceSwitchRef.current;
+    if (!pending) return;
+
+    console.warn('换源失败，恢复旧资源身份:', reason);
+    pendingSourceSwitchRef.current = null;
+    activePlaybackSnapshotRef.current = pending.active;
+    isSourceChangingRef.current = false;
+    setIsVideoLoading(false);
+    applyPlaybackSnapshot(pending.active);
+    toast.error('换源失败，已保留当前资源');
+  }, [applyPlaybackSnapshot]);
 
   // ArtPlayer ref
   const artPlayerRef = useRef<any>(null);
@@ -916,6 +1002,11 @@ function PlayPageClient() {
     currentAudioTrackRef.current = currentAudioTrack;
     seekLayoutModeRef.current = seekLayoutMode;
     seekSecondsRef.current = seekSeconds;
+    if (!pendingSourceSwitchRef.current) {
+      // 没有切源事务时，当前 refs 代表已提交 active；pending 存在时，
+      // React state 可能只是候选 B，不能覆盖 active 快照。
+      activePlaybackSnapshotRef.current = captureCurrentPlaybackSnapshot();
+    }
   }, [
     blockAdEnabled,
     customAdFilterCode,
@@ -934,6 +1025,7 @@ function PlayPageClient() {
     seekLayoutMode,
     seekSeconds,
     skipConfig,
+    captureCurrentPlaybackSnapshot,
   ]);
 
   // 🎬 更新全屏标题层内容（集数变化时）
@@ -4086,23 +4178,12 @@ function PlayPageClient() {
         console.log(`💾 已保存临时播放进度到 sessionStorage: ${tempProgressKey} = ${currentPlayTime.toFixed(2)}s`);
       }
 
-      // 清除前一个历史记录
-      if (currentSourceRef.current && currentIdRef.current) {
-        try {
-          await deletePlayRecord(
-            currentSourceRef.current,
-            currentIdRef.current
-          );
-          console.log('已清除前一个播放记录');
-        } catch (err) {
-          console.error('清除播放记录失败:', err);
-        }
-      }
-
       const newDetail = availableSources.find(
         (source) => source.source === newSource && source.id === newId
       );
       if (!newDetail) {
+        isSourceChangingRef.current = false;
+        setIsVideoLoading(false);
         setError('未找到匹配结果');
         return;
       }
@@ -4146,6 +4227,33 @@ function PlayPageClient() {
 
       // 🔥 由于组件会重新挂载，不再需要设置 resumeTimeRef（进度已保存到 sessionStorage）
       // 组件重新挂载后会自动从 sessionStorage 恢复进度
+
+      const activeSnapshot =
+        pendingSourceSwitchRef.current?.active ||
+        activePlaybackSnapshotRef.current ||
+        captureCurrentPlaybackSnapshot();
+      if (!activeSnapshot) {
+        isSourceChangingRef.current = false;
+        setIsVideoLoading(false);
+        setError('当前播放资源身份无效，无法换源');
+        return;
+      }
+
+      const candidateSnapshot: ActivePlaybackSnapshot = {
+        source: newSource,
+        id: newId,
+        detail: detailToUse,
+        episodeIndex: targetIndex,
+        title: detailToUse.title || newTitle,
+        year: detailToUse.year,
+        cover: detailToUse.poster,
+        doubanId: videoDoubanIdRef.current || detailToUse.douban_id || 0,
+      };
+      pendingSourceSwitchRef.current = {
+        token: ++sourceSwitchTransactionTokenRef.current,
+        active: activeSnapshot,
+        candidate: candidateSnapshot,
+      };
 
       // 更新URL参数（不刷新页面）
       const newUrl = new URL(window.location.href);
@@ -4240,6 +4348,7 @@ function PlayPageClient() {
     } catch (err) {
       // 重置换源标识
       isSourceChangingRef.current = false;
+      rollbackPendingSourceSwitch(err);
 
       // 隐藏换源加载状态
       setIsVideoLoading(false);
@@ -4601,12 +4710,18 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 保存播放进度
   const saveCurrentPlayProgress = async () => {
+    // Source switch pending 时 React state/refs 可能已经指向候选 B，
+    // 但 B 还不是可保存的 active；保存进度必须继续使用事务里的 A 快照。
+    const progressSnapshot =
+      pendingSourceSwitchRef.current?.active ||
+      activePlaybackSnapshotRef.current ||
+      captureCurrentPlaybackSnapshot();
     if (
       !artPlayerRef.current ||
-      !currentSourceRef.current ||
-      !currentIdRef.current ||
-      !videoTitleRef.current ||
-      !detailRef.current?.source_name
+      !progressSnapshot?.source ||
+      !progressSnapshot.id ||
+      !progressSnapshot.title ||
+      !progressSnapshot.detail?.source_name
     ) {
       return;
     }
@@ -4622,39 +4737,39 @@ function PlayPageClient() {
 
     try {
       // 获取现有播放记录以保持原始集数
-      const currentTotalEpisodes = detailRef.current?.episodes.length || 1;
+      const currentTotalEpisodes = progressSnapshot.detail?.episodes.length || 1;
 
       // 尝试从换源列表中获取更准确的 remarks（搜索接口比详情接口更可能有 remarks）
       const sourceFromList = availableSourcesRef.current?.find(
-        s => s.source === currentSourceRef.current && s.id === currentIdRef.current
+        s => s.source === progressSnapshot.source && s.id === progressSnapshot.id
       );
-      const remarksToSave = sourceFromList?.remarks || detailRef.current?.remarks;
+      const remarksToSave = sourceFromList?.remarks || progressSnapshot.detail?.remarks;
 
       savePlayRecordMutation.mutate({
-        source: currentSourceRef.current,
-        id: currentIdRef.current,
+        source: progressSnapshot.source,
+        id: progressSnapshot.id,
         record: {
-          title: videoTitleRef.current,
-          source_name: detailRef.current?.source_name || '',
-          year: detailRef.current?.year,
-          cover: detailRef.current?.poster || '',
-          index: currentEpisodeIndexRef.current + 1,
+          title: progressSnapshot.title,
+          source_name: progressSnapshot.detail?.source_name || '',
+          year: progressSnapshot.detail?.year,
+          cover: progressSnapshot.detail?.poster || '',
+          index: progressSnapshot.episodeIndex + 1,
           total_episodes: currentTotalEpisodes,
           play_time: Math.floor(currentTime),
           total_time: Math.floor(duration),
           save_time: Date.now(),
           search_title: searchTitle,
           remarks: remarksToSave,
-          douban_id: videoDoubanIdRef.current || detailRef.current?.douban_id || undefined,
+          douban_id: progressSnapshot.doubanId || progressSnapshot.detail?.douban_id || undefined,
           type: searchType || undefined,
         },
       });
 
       lastSaveTimeRef.current = Date.now();
       console.log('播放进度已保存:', {
-        title: videoTitleRef.current,
-        episode: currentEpisodeIndexRef.current + 1,
-        year: detailRef.current?.year,
+        title: progressSnapshot.title,
+        episode: progressSnapshot.episodeIndex + 1,
+        year: progressSnapshot.detail?.year,
         progress: `${Math.floor(currentTime)}/${Math.floor(duration)}`,
       });
     } catch (err) {
@@ -4707,52 +4822,21 @@ function PlayPageClient() {
   // 收藏相关
   // ---------------------------------------------------------------------------
 
-  // 在收藏列表中查找匹配的收藏（按 key 精确匹配 + 按 title 模糊匹配）
+  // 在收藏列表中查找匹配的收藏（仅允许当前真实资源 source + id）
   const findMatchedFavoriteKey = useCallback((
     favorites: Record<string, any>,
   ): string | null => {
-    // 1. 精确匹配：当前源 key
-    if (currentSource && currentId) {
-      const current = findFavoriteReminderIdentityEntry(favorites, {
-        source: currentSource,
-        id: currentId,
-      });
-      if (current) return current.key;
-    }
+    // Stage 7.7: playback pages operate on a concrete Resource Identity. The
+    // previous douban/bangumi/title fallback made same-title resources share
+    // favorite state, so only the active source/id can resolve a stored key.
+    if (!currentSource || !currentId) return null;
+    return findResourceFavoriteReminderKey(favorites, {
+      source: currentSource,
+      id: currentId,
+    });
+  }, [currentSource, currentId]);
 
-    // 2. 精确匹配：豆瓣/Bangumi/短剧虚拟源
-    if (videoDoubanId) {
-      const douban = findFavoriteReminderIdentityEntry(favorites, {
-        source: 'douban',
-        id: String(videoDoubanId),
-      });
-      if (douban) return douban.key;
-      const bangumi = findFavoriteReminderIdentityEntry(favorites, {
-        source: 'bangumi',
-        id: String(videoDoubanId),
-      });
-      if (bangumi) return bangumi.key;
-    }
-    if (shortdramaId) {
-      const shortDrama = findFavoriteReminderIdentityEntry(favorites, {
-        source: 'shortdrama',
-        id: shortdramaId,
-      });
-      if (shortDrama) return shortDrama.key;
-    }
-
-    // 3. 按 title 匹配：同一部片在不同源有不同 source+id，用标题兜底
-    const title = videoTitleRef.current;
-    if (title) {
-      for (const [key, fav] of Object.entries(favorites)) {
-        if ((fav as any)?.title === title) return key;
-      }
-    }
-
-    return null;
-  }, [currentSource, currentId, videoDoubanId, shortdramaId]);
-
-  // 每当 source 或 id 变化时检查收藏状态（支持豆瓣/Bangumi等虚拟源）
+  // 每当真实资源 source/id 变化时检查收藏状态
   useEffect(() => {
     if (!currentSource || !currentId) return;
     (async () => {
@@ -4766,9 +4850,9 @@ function PlayPageClient() {
         console.error('检查收藏状态失败:', err);
       }
     })();
-  }, [currentSource, currentId, videoDoubanId, shortdramaId, findMatchedFavoriteKey]);
+  }, [currentSource, currentId, findMatchedFavoriteKey]);
 
-  // 监听收藏数据更新事件（支持豆瓣/Bangumi等虚拟源）
+  // 监听收藏数据更新事件，并只同步当前真实资源 source/id 的状态
   useEffect(() => {
     if (!currentSource || !currentId) return;
 
@@ -4782,9 +4866,9 @@ function PlayPageClient() {
     );
 
     return unsubscribe;
-  }, [currentSource, currentId, videoDoubanId, shortdramaId, findMatchedFavoriteKey]);
+  }, [currentSource, currentId, findMatchedFavoriteKey]);
 
-  // 自动更新收藏的集数和片源信息（支持豆瓣/Bangumi/短剧等虚拟源）
+  // 自动更新当前真实资源收藏的集数和片源信息
   useEffect(() => {
     if (!detail || !currentSource || !currentId) return;
 
@@ -4863,7 +4947,7 @@ function PlayPageClient() {
     };
 
     updateFavoriteData();
-  }, [detail, currentSource, currentId, videoDoubanId, searchTitle]);
+  }, [detail, currentSource, currentId, searchTitle]);
 
   // 切换收藏
   const handleToggleFavorite = async () => {
@@ -5118,6 +5202,7 @@ function PlayPageClient() {
         // 🚀 移除原有的 setTimeout 弹幕加载逻辑，交由 useEffect 统一优化处理
         
         console.log('使用switch方法成功切换视频');
+        commitPendingSourceSwitch();
         return;
       } catch (error) {
         console.warn('Switch方法失败，将重建播放器:', error);
@@ -5944,6 +6029,7 @@ function PlayPageClient() {
       artPlayerRef.current.on('ready', async () => {
         setError(null);
         setPlayerReady(true); // 标记播放器已就绪，启用观影室同步
+        commitPendingSourceSwitch();
 
         // 播放器就绪后同步跳过菜单状态，确保当前视频的开关/时间显示正确
         syncSkipSettingsPanel(skipConfigRef.current);
@@ -6618,6 +6704,8 @@ function PlayPageClient() {
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
       artPlayerRef.current.on('video:canplay', () => {
+        commitPendingSourceSwitch();
+
         // 🔥 重置 video:ended 处理标志，因为这是新视频
         videoEndedHandledRef.current = false;
 
@@ -6766,6 +6854,7 @@ function PlayPageClient() {
       // 监听播放器错误
       artPlayerRef.current.on('error', (err: any) => {
         console.error('播放器错误:', err);
+        rollbackPendingSourceSwitch(err);
         if (artPlayerRef.current.currentTime > 0) {
           return;
         }
