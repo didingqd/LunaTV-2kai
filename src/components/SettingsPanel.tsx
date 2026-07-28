@@ -6,6 +6,7 @@ import { Check, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { memo, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { WatchCompletionThresholdSetting } from './WatchCompletionThresholdSetting';
 import { UserEmbyConfig } from './UserEmbyConfig';
 import { WatchingUpdateModeSetting } from './WatchingUpdateModeSetting';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
@@ -214,6 +215,7 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   function getSettingsUsername() {
     return getAuthInfoFromBrowserCookie()?.username?.trim() || null;
   }
+  const settingsUsername = getSettingsUsername();
 
   // ── Emby config via TanStack Query ────────────────────────────────────────
   const { data: embyConfig = { sources: [] } } = useEmbyConfigQuery(isOpen);
@@ -524,6 +526,15 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
           {/* 设置项 */}
           <div className='space-y-6'>
             <WatchingUpdateModeSetting />
+
+            {settingsUsername && (
+              <>
+                <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+                {/* 修改点：补齐 Web 用户菜单中的观看完成判定入口，实际读取/保存交给 Hook 与 API Client，避免设置页直接访问接口或匿名 localStorage。 */}
+                <WatchCompletionThresholdSetting username={settingsUsername} />
+              </>
+            )}
 
             <div className='border-t border-gray-200 dark:border-gray-700'></div>
 

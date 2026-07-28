@@ -1,10 +1,25 @@
 /* eslint-disable no-console */
 
-import { useQuery, useMutation, useQueryClient, queryOptions } from '@tanstack/react-query';
-import { checkForUpdates, type UpdateStatus } from '@/lib/version_check';
-import type { PlayRecord } from '@/lib/types';
-import { normalizePlayRecordKeys } from '@/lib/play-record';
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+
+import {
+  getWatchCompletionThresholdPreference,
+  saveWatchCompletionThresholdPreference,
+} from '@/lib/api/watch-completion-threshold';
 import { mapFavoriteReminderIdentityItem } from '@/lib/favorite-reminder-identity';
+import { normalizePlayRecordKeys } from '@/lib/play-record';
+import type { PlayRecord } from '@/lib/types';
+import { checkForUpdates, type UpdateStatus } from '@/lib/version_check';
+import {
+  DEFAULT_WATCH_COMPLETION_THRESHOLD,
+  loadWatchCompletionThreshold,
+} from '@/lib/watching-update-calculation';
+import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
 
 // ─── Emby Config Types ──────────────────────────────────────────────────────
 
@@ -50,6 +65,70 @@ export function useEmbyConfigQuery(enabled: boolean) {
   return useQuery({
     ...embyConfigQueryOptions,
     enabled,
+  });
+}
+
+export const watchCompletionThresholdQueryKey = (username: string) =>
+  ['watchCompletionThreshold', username] as const;
+
+/**
+ * Web 设置面板读取用户观看完成阈值的唯一 Hook。
+ * 本次变更把 Settings UI 与 API/localStorage 细节隔离开：组件只消费 query 数据，
+ * 账号级缓存和后端同步由 client service 处理，未登录时保持默认 80 且不会触发匿名请求。
+ */
+export function useWatchCompletionThresholdQuery({
+  enabled,
+  username,
+}: {
+  enabled: boolean;
+  username?: string | null;
+}) {
+  const principal = username?.trim() || null;
+
+  return useQuery({
+    queryKey: watchCompletionThresholdQueryKey(principal ?? '__anonymous__'),
+    queryFn: () =>
+      getWatchCompletionThresholdPreference({ username: principal }),
+    enabled: enabled && !!principal,
+    initialData: () =>
+      principal
+        ? loadWatchCompletionThreshold(principal)
+        : DEFAULT_WATCH_COMPLETION_THRESHOLD,
+    initialDataUpdatedAt: 0,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Web 设置面板保存用户观看完成阈值的唯一 Hook。
+ * 保存成功后同时更新当前账号阈值 query，并让 Watching Update 根查询失效，
+ * 确保本地追更计算下一次读取的是同一份后端用户偏好。
+ */
+export function useSaveWatchCompletionThresholdMutation(
+  username?: string | null,
+) {
+  const queryClient = useQueryClient();
+  const principal = username?.trim() || null;
+
+  return useMutation({
+    mutationFn: (threshold: number) =>
+      saveWatchCompletionThresholdPreference({
+        username: principal,
+        threshold,
+      }),
+    onSuccess: (threshold) => {
+      if (principal) {
+        queryClient.setQueryData(
+          watchCompletionThresholdQueryKey(principal),
+          threshold,
+        );
+        queryClient.invalidateQueries({
+          queryKey: watchCompletionThresholdQueryKey(principal),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: WATCHING_UPDATES_QUERY_ROOT });
+    },
   });
 }
 
