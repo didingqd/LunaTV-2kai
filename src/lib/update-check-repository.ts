@@ -1,4 +1,3 @@
-import { db } from './db';
 import type {
   UpdateCheckTask,
   UpdateObservation,
@@ -109,7 +108,7 @@ async function queuedWrite<T>(
 }
 
 export class CachedUpdateResultRepository implements UpdateResultRepository {
-  constructor(private readonly store: UpdateCacheStore = db) {}
+  constructor(private readonly store: UpdateCacheStore) {}
 
   async getAll(userId: string): Promise<UpdateResult[]> {
     return Object.values(
@@ -150,7 +149,7 @@ export class CachedUpdateResultRepository implements UpdateResultRepository {
 }
 
 export class CachedUpdateObservationRepository implements UpdateObservationRepository {
-  constructor(private readonly store: UpdateCacheStore = db) {}
+  constructor(private readonly store: UpdateCacheStore) {}
 
   async get(
     userId: string,
@@ -189,7 +188,7 @@ export class CachedUpdateObservationRepository implements UpdateObservationRepos
 }
 
 export class CachedUpdateCheckTaskRepository implements UpdateCheckTaskRepository {
-  constructor(private readonly store: UpdateCacheStore = db) {}
+  constructor(private readonly store: UpdateCacheStore) {}
 
   async get(id: string): Promise<UpdateCheckTask | null> {
     const value = await this.store.getCache(taskKey(id));

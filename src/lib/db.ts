@@ -20,6 +20,11 @@ import { UpstashRedisStorage } from './upstash.db';
 import { incrementDbQuery } from './performance-monitor';
 import { parsePlayRecordStorageKey, playRecordStorageKey } from './play-record';
 import {
+  CachedUpdateCheckTaskRepository,
+  CachedUpdateObservationRepository,
+  CachedUpdateResultRepository,
+} from './update-check-repository';
+import {
   comparePlayRecordIdentity,
   normalizePlayRecordIdentity,
   resolvePlayRecordIdentity,
@@ -528,6 +533,15 @@ export class DbManager {
   async deleteUser(userName: string): Promise<void> {
     incrementDbQuery();
     await this.storage.deleteUser(userName);
+    // UpdateCheck state is stored in the generic cache namespace instead of
+    // user data hashes/tables. Keep this cleanup in the DbManager user-delete
+    // lifecycle so every route that deletes a user clears the same scoped
+    // results, observations, and background task state without route logic.
+    await Promise.all([
+      new CachedUpdateResultRepository(this).deleteForUser(userName),
+      new CachedUpdateObservationRepository(this).deleteForUser(userName),
+      new CachedUpdateCheckTaskRepository(this).deleteForUser(userName),
+    ]);
     // 用户删除生命周期统一从 DbManager 进入。Remark 仍然保存在通用 cache
     // `user:${username}:video_remarks` 中，因此这里通过 IStorage.deleteCache
     // 让 Redis、Kvrocks、Upstash 和 SQLite 共用同一条清理路径。

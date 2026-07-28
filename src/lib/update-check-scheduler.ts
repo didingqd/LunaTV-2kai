@@ -1,3 +1,9 @@
+import { db } from './db';
+import {
+  systemConfigRepository,
+  type UpdateCheckConfigReader,
+  type UpdateCheckUserAccessReader,
+} from './system-config-repository';
 import {
   CachedUpdateCheckTaskRepository,
   type UpdateCheckTaskRepository,
@@ -6,11 +12,6 @@ import {
   updateCheckService,
   type UpdateCheckService,
 } from './update-check-service';
-import {
-  systemConfigRepository,
-  type UpdateCheckConfigReader,
-  type UpdateCheckUserAccessReader,
-} from './system-config-repository';
 
 export interface UpdateCheckSchedulerOptions {
   limit?: number;
@@ -19,7 +20,9 @@ export interface UpdateCheckSchedulerOptions {
 
 export class UpdateCheckScheduler {
   constructor(
-    private readonly tasks: UpdateCheckTaskRepository = new CachedUpdateCheckTaskRepository(),
+    private readonly tasks: UpdateCheckTaskRepository = new CachedUpdateCheckTaskRepository(
+      db,
+    ),
     private readonly service: UpdateCheckService = updateCheckService,
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
     private readonly permissions: Pick<

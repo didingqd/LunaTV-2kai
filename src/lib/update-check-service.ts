@@ -93,10 +93,10 @@ export class UpdateCheckService {
 
   constructor(dependencies: UpdateCheckServiceDependencies = {}) {
     this.facts = dependencies.facts ?? db;
-    this.results = dependencies.results ?? new CachedUpdateResultRepository();
+    this.results = dependencies.results ?? new CachedUpdateResultRepository(db);
     this.observations =
-      dependencies.observations ?? new CachedUpdateObservationRepository();
-    this.tasks = dependencies.tasks ?? new CachedUpdateCheckTaskRepository();
+      dependencies.observations ?? new CachedUpdateObservationRepository(db);
+    this.tasks = dependencies.tasks ?? new CachedUpdateCheckTaskRepository(db);
     this.providers = dependencies.providers;
     this.config = dependencies.config ?? systemConfigRepository;
     this.capability = dependencies.capability ?? updateCheckCapabilityService;
