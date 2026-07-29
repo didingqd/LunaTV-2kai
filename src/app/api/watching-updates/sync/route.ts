@@ -1,8 +1,14 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 
-import { updateCheckService } from '@/lib/update-check-service';
 import { updateCheckCapabilityService } from '@/lib/update-check-capability';
+import { updateCheckService } from '@/lib/update-check-service';
+import {
+  createWatchingUpdateCheckLogResult,
+  errorMessage,
+  watchingUpdateCheckLogService,
+} from '@/lib/watching-update-check-log-service';
+import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
 import {
   internalError,
   noStoreJson,
@@ -31,12 +37,69 @@ const syncSchema = z
   .strict();
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  let userId: string | undefined;
+  let body: unknown;
+
+  const recordLog = async ({
+    success,
+    error,
+    checkedCount = 0,
+    successCount = 0,
+    failureCount = 0,
+    results,
+  }: {
+    success: boolean;
+    error?: string;
+    checkedCount?: number;
+    successCount?: number;
+    failureCount?: number;
+    results?: Parameters<
+      typeof createWatchingUpdateCheckLogResult
+    >[0]['results'];
+  }) => {
+    const endedAt = Date.now();
+    const context = getWatchingUpdateCheckLogRequestContext(
+      request,
+      userId,
+      body,
+    );
+    try {
+      await watchingUpdateCheckLogService.record({
+        source: context.source,
+        operation: 'sync',
+        request: context.request,
+        execution: {
+          startedAt,
+          endedAt,
+          durationMs: endedAt - startedAt,
+          success,
+          ...(error ? { error } : {}),
+        },
+        result: createWatchingUpdateCheckLogResult({
+          checkedCount,
+          successCount,
+          failureCount,
+          results,
+        }),
+      });
+    } catch (logError) {
+      console.error('Failed to record watching update check log', logError);
+    }
+  };
+
   try {
     const auth = await requireWatchingFollowUser(request);
     if (auth.response) return auth.response;
+    userId = auth.username;
 
-    const parsed = syncSchema.safeParse(await parseJsonBody(request));
+    body = await parseJsonBody(request);
+    const parsed = syncSchema.safeParse(body);
     if (!parsed.success) {
+      await recordLog({
+        success: false,
+        error: 'Invalid update observation request',
+      });
       return noStoreJson(
         {
           error: 'Invalid update observation request',
@@ -50,6 +113,10 @@ export async function POST(request: NextRequest) {
       auth.username,
     );
     if (!capability.enabled) {
+      await recordLog({
+        success: true,
+        checkedCount: parsed.data.observations.length,
+      });
       return noStoreJson({
         userId: auth.username,
         status: capability.reason,
@@ -82,6 +149,13 @@ export async function POST(request: NextRequest) {
         });
     }
 
+    await recordLog({
+      success: true,
+      checkedCount: parsed.data.observations.length,
+      successCount: accepted.length,
+      failureCount: rejected.length,
+      results: accepted,
+    });
     return noStoreJson({
       userId: auth.username,
       capability,
@@ -90,6 +164,10 @@ export async function POST(request: NextRequest) {
       rejected,
     });
   } catch (error) {
+    await recordLog({
+      success: false,
+      error: errorMessage(error),
+    });
     return internalError(error);
   }
 }

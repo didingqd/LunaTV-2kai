@@ -12,10 +12,15 @@ import {
   updateCheckService,
   type UpdateCheckService,
 } from './update-check-service';
+import type { UpdateCheckTask, UpdateResult } from './update-check-types';
 
 export interface UpdateCheckSchedulerOptions {
   limit?: number;
   now?: number;
+  onTaskComplete?: (value: {
+    task: UpdateCheckTask;
+    result: UpdateResult | null;
+  }) => void | Promise<void>;
 }
 
 export class UpdateCheckScheduler {
@@ -77,6 +82,13 @@ export class UpdateCheckScheduler {
         const result = await this.service.checkTask(task);
         if (result) succeeded += 1;
         else failed += 1;
+        if (options.onTaskComplete) {
+          try {
+            await options.onTaskComplete({ task, result });
+          } catch (error) {
+            console.error('Update check scheduler task callback failed', error);
+          }
+        }
       }
     };
     await Promise.all(
