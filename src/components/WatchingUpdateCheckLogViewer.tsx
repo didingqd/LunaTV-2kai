@@ -436,9 +436,9 @@ export default function WatchingUpdateCheckLogViewer() {
           暂无追更检查日志。
         </div>
       ) : (
-        <div className='overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700'>
+        <div className='max-h-[500px] overflow-auto rounded-lg border border-gray-200 dark:border-gray-700'>
           <table className='min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700'>
-            <thead className='bg-gray-50 dark:bg-gray-900/50'>
+            <thead className='sticky top-0 z-10 bg-gray-50 dark:bg-gray-900'>
               <tr>
                 {[
                   '时间',
