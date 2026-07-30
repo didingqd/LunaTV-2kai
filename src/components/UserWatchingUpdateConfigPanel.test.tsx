@@ -5,43 +5,49 @@ import UserWatchingUpdateConfigPanel from './UserWatchingUpdateConfigPanel';
 const originalFetch = global.fetch;
 
 function configResponse({
-  permission = true,
-  override = null,
+  permission = {
+    enabled: true,
+    allowCustomSchedule: true,
+    allowTriggerLink: false,
+  },
+  userConfig = null,
   cronExpression = '*/30 * * * *',
   timezone = 'UTC',
-  logRetentionCount = 200,
   sources = {
     cron: 'system',
     timezone: 'system',
-    retention: 'system',
   },
 }: {
-  permission?: boolean;
-  override?: {
+  permission?: {
+    enabled: boolean;
+    allowCustomSchedule: boolean;
+    allowTriggerLink: boolean;
+  };
+  userConfig?: {
     cronExpression?: string;
     timezone?: string;
-    logRetentionCount?: number;
   } | null;
   cronExpression?: string;
   timezone?: string;
-  logRetentionCount?: number;
   sources?: {
     cron: 'user' | 'system' | 'default';
     timezone: 'user' | 'system' | 'default';
-    retention: 'user' | 'system' | 'default';
   };
-}) {
+} = {}) {
   return {
     username: 'alice',
     permission,
-    override,
+    userConfig,
     effective: {
-      enabled: permission,
+      enabled: permission.enabled,
       cronExpression,
       timezone,
-      logRetentionCount,
     },
     sources,
+    audit: {
+      updatedAt: 1000,
+      operator: 'owner',
+    },
   };
 }
 
@@ -78,13 +84,11 @@ describe('UserWatchingUpdateConfigPanel', () => {
   });
 
   it('loads the user config from the Management API', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(
-          configResponse({ cronExpression: '0 */6 * * *', timezone: 'UTC' }),
-        ),
-      );
+    const fetchMock = jest.fn().mockResolvedValue(
+      jsonResponse(
+        configResponse({ cronExpression: '0 */6 * * *', timezone: 'UTC' }),
+      ),
+    );
     setFetch(fetchMock);
 
     renderPanel();
@@ -101,12 +105,11 @@ describe('UserWatchingUpdateConfigPanel', () => {
       jest.fn().mockResolvedValue(
         jsonResponse(
           configResponse({
-            override: { cronExpression: '0 */6 * * *' },
+            userConfig: { cronExpression: '0 */6 * * *' },
             cronExpression: '0 */6 * * *',
             sources: {
               cron: 'user',
               timezone: 'system',
-              retention: 'default',
             },
           }),
         ),
@@ -116,22 +119,22 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     expect(await screen.findAllByText('0 */6 * * *')).toHaveLength(2);
-    expect(screen.getByText('用户自定义')).toBeInTheDocument();
+    expect(screen.getByText('User Config')).toBeInTheDocument();
   });
 
   it('displays inherited system values', async () => {
-    setFetch(jest.fn().mockResolvedValue(jsonResponse(configResponse({}))));
+    setFetch(jest.fn().mockResolvedValue(jsonResponse(configResponse())));
 
     renderPanel();
 
-    expect(await screen.findAllByText('未设置')).toHaveLength(3);
-    expect(screen.getAllByText('系统配置')).toHaveLength(3);
+    expect(await screen.findAllByText('Not set')).toHaveLength(2);
+    expect(screen.getAllByText('System Config')).toHaveLength(2);
   });
 
   it('saves a custom cron expression', async () => {
-    const initial = configResponse({});
+    const initial = configResponse();
     const saved = configResponse({
-      override: { cronExpression: '0 */6 * * *' },
+      userConfig: { cronExpression: '0 */6 * * *' },
       cronExpression: '0 */6 * * *',
       sources: { ...initial.sources, cron: 'user' },
     });
@@ -143,7 +146,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const cronGroup = await screen.findByRole('group', {
-      name: 'Cron 配置模式',
+      name: 'Cron config mode',
     });
     fireEvent.click(
       cronGroup.querySelectorAll('button')[1] as HTMLButtonElement,
@@ -151,18 +154,18 @@ describe('UserWatchingUpdateConfigPanel', () => {
     fireEvent.change(screen.getByLabelText('Cron Expression'), {
       target: { value: '0 */6 * * *' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Cron' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectRequest(fetchMock, 1, 'PATCH', {
+    expectConfigRequest(fetchMock, 1, 'PATCH', {
       cronExpression: '0 */6 * * *',
     });
   });
 
   it('saves a custom timezone', async () => {
-    const initial = configResponse({});
+    const initial = configResponse();
     const saved = configResponse({
-      override: { timezone: 'Asia/Tokyo' },
+      userConfig: { timezone: 'Asia/Tokyo' },
       timezone: 'Asia/Tokyo',
       sources: { ...initial.sources, timezone: 'user' },
     });
@@ -174,7 +177,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const timezoneGroup = await screen.findByRole('group', {
-      name: 'Timezone 配置模式',
+      name: 'Timezone config mode',
     });
     fireEvent.click(
       timezoneGroup.querySelectorAll('button')[1] as HTMLButtonElement,
@@ -182,52 +185,22 @@ describe('UserWatchingUpdateConfigPanel', () => {
     fireEvent.change(screen.getByLabelText('IANA Timezone'), {
       target: { value: 'Asia/Tokyo' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存 Timezone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Timezone' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectRequest(fetchMock, 1, 'PATCH', { timezone: 'Asia/Tokyo' });
-  });
-
-  it('saves a custom retention count', async () => {
-    const initial = configResponse({});
-    const saved = configResponse({
-      override: { logRetentionCount: 500 },
-      logRetentionCount: 500,
-      sources: { ...initial.sources, retention: 'user' },
-    });
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(initial))
-      .mockResolvedValueOnce(jsonResponse(saved));
-    setFetch(fetchMock);
-    renderPanel();
-
-    const retentionGroup = await screen.findByRole('group', {
-      name: '日志保留数量 配置模式',
-    });
-    fireEvent.click(
-      retentionGroup.querySelectorAll('button')[1] as HTMLButtonElement,
-    );
-    fireEvent.change(screen.getByLabelText('Log Retention Count'), {
-      target: { value: '500' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '保存 日志保留数量' }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectRequest(fetchMock, 1, 'PATCH', { logRetentionCount: 500 });
+    expectConfigRequest(fetchMock, 1, 'PATCH', { timezone: 'Asia/Tokyo' });
   });
 
   it('clears one user override', async () => {
     const initial = configResponse({
-      override: { cronExpression: '0 */6 * * *' },
+      userConfig: { cronExpression: '0 */6 * * *' },
       cronExpression: '0 */6 * * *',
       sources: {
         cron: 'user',
         timezone: 'system',
-        retention: 'system',
       },
     });
-    const cleared = configResponse({});
+    const cleared = configResponse();
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
@@ -236,28 +209,85 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const cronGroup = await screen.findByRole('group', {
-      name: 'Cron 配置模式',
+      name: 'Cron config mode',
     });
     fireEvent.click(cronGroup.querySelector('button') as HTMLButtonElement);
-    fireEvent.click(screen.getByRole('button', { name: '恢复 Cron 继承' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Cron Override' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectRequest(fetchMock, 1, 'DELETE', { field: 'cronExpression' });
+    expectConfigRequest(fetchMock, 1, 'DELETE', { field: 'cronExpression' });
+  });
+
+  it('shows and saves custom schedule and trigger link limits', async () => {
+    const initial = configResponse({
+      permission: {
+        enabled: true,
+        allowCustomSchedule: true,
+        allowTriggerLink: false,
+      },
+    });
+    const saved = configResponse({
+      permission: {
+        enabled: true,
+        allowCustomSchedule: false,
+        allowTriggerLink: true,
+      },
+    });
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse(saved));
+    setFetch(fetchMock);
+    renderPanel();
+
+    expect(await screen.findByText('Ability Limits')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'Allow user custom schedule' }),
+    );
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow Trigger Link' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save Ability Limits' }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expectConfigRequest(fetchMock, 1, 'PATCH', {
+      allowCustomSchedule: false,
+      allowTriggerLink: true,
+    });
+  });
+
+  it('does not display log retention editing', async () => {
+    setFetch(jest.fn().mockResolvedValue(jsonResponse(configResponse())));
+
+    renderPanel();
+
+    expect(await screen.findByText('User Config Management')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Log Retention Count')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Retention/i)).not.toBeInTheDocument();
   });
 
   it('shows a disabled update-check permission', async () => {
     setFetch(
-      jest
-        .fn()
-        .mockResolvedValue(jsonResponse(configResponse({ permission: false }))),
+      jest.fn().mockResolvedValue(
+        jsonResponse(
+          configResponse({
+            permission: {
+              enabled: false,
+              allowCustomSchedule: true,
+              allowTriggerLink: false,
+            },
+          }),
+        ),
+      ),
     );
 
     renderPanel();
 
+    expect(await screen.findByText('Authorization: Disabled')).toBeInTheDocument();
+    expect(screen.getByText('Effective status: Disabled')).toBeInTheDocument();
     expect(
-      await screen.findByText(/当前授权状态：关闭，最终状态：停用/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: '追更授权' })).not.toBeChecked();
+      screen.getByRole('switch', { name: 'Update-check authorization' }),
+    ).not.toBeChecked();
   });
 });
 
@@ -269,7 +299,7 @@ function setFetch(fetchMock: jest.Mock) {
   });
 }
 
-function expectRequest(
+function expectConfigRequest(
   fetchMock: jest.Mock,
   index: number,
   method: string,

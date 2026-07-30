@@ -23,6 +23,12 @@ function createLogId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function storageIsAvailable(): boolean {
+  return (
+    (process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') !== 'localstorage'
+  );
+}
+
 export function toWatchingUpdateCheckLogUpdates(
   results: UpdateResult[],
 ): WatchingUpdateCheckLogUpdate[] {
@@ -75,18 +81,46 @@ export class WatchingUpdateCheckLogService {
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
   ) {}
 
-  async record(entry: Omit<WatchingUpdateCheckLogEntry, 'id'>): Promise<void> {
-    const retentionCount = await this.getRetentionCount();
-    await this.repository.append(
-      {
-        ...entry,
-        id: createLogId(),
-      },
-      retentionCount,
+  async record(
+    entry: Omit<WatchingUpdateCheckLogEntry, 'id'>,
+    options: { userIds?: string[] } = {},
+  ): Promise<void> {
+    if (!storageIsAvailable()) return;
+    const userIds = uniqueUserIds([
+      entry.request.userId,
+      ...(options.userIds ?? []),
+    ]);
+    if (userIds.length === 0) {
+      await this.repository.appendGlobal(
+        {
+          ...entry,
+          id: createLogId(),
+        },
+        await this.getRetentionCount(),
+      );
+      return;
+    }
+
+    await Promise.all(
+      userIds.map(async (userId) => {
+        await this.repository.appendForUser(
+          userId,
+          {
+            ...entry,
+            id: createLogId(),
+            request: {
+              ...entry.request,
+              userId,
+            },
+          },
+          await this.getRetentionCount(),
+        );
+      }),
     );
   }
 
   async list(query?: WatchingUpdateCheckLogQuery) {
+    if (!storageIsAvailable()) return [];
     const retentionCount = await this.getRetentionCount();
     return this.repository.list(retentionCount, query);
   }
@@ -101,6 +135,16 @@ export class WatchingUpdateCheckLogService {
       return normalizeWatchingUpdateCheckLogRetentionCount(undefined);
     }
   }
+}
+
+function uniqueUserIds(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value?.trim())
+        .filter((value): value is string => !!value),
+    ),
+  );
 }
 
 export const watchingUpdateCheckLogService =

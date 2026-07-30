@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 import type { AdminConfig } from '@/lib/admin.types';
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
+import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
+import { db } from '@/lib/db';
 import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
 import { resolveUserWatchingUpdateConfig } from '@/lib/user-watching-update-config-resolver';
 import {
@@ -23,15 +25,14 @@ const patchSchema = z
   .object({
     cronExpression: z.string().optional(),
     timezone: z.string().optional(),
-    logRetentionCount: z.number().optional(),
+    allowCustomSchedule: z.boolean().optional(),
+    allowTriggerLink: z.boolean().optional(),
   })
   .strict();
 
 const deleteSchema = z
   .object({
-    field: z
-      .enum(['cronExpression', 'timezone', 'logRetentionCount'])
-      .optional(),
+    field: z.enum(['cronExpression', 'timezone']).optional(),
   })
   .strict();
 
@@ -47,6 +48,7 @@ function errorResponse(error: string, status: number) {
 async function authorizeTarget(request: NextRequest, context: RouteContext) {
   const role = await getAdminRoleFromRequest(request);
   if (!role) return { response: errorResponse('Forbidden', 403) };
+  const operator = getAuthInfoFromCookie(request)?.username ?? role;
 
   if (
     (process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') === 'localstorage'
@@ -73,35 +75,95 @@ async function authorizeTarget(request: NextRequest, context: RouteContext) {
     return { response: errorResponse('Forbidden', 403) };
   }
 
-  return { config, user, username };
+  return { config, operator, user, username };
 }
 
 function buildConfigResponse(
   username: string,
   user: AdminUser,
   config: AdminConfig,
-  override: Awaited<
+  userConfig: Awaited<
     ReturnType<
       typeof userWatchingUpdateConfigService.getUserWatchingUpdateConfig
     >
   >,
 ) {
-  const permission = user.updateCheckBackendEnabled === true;
+  const permissionEnabled = user.updateCheckBackendEnabled === true;
+  const allowCustomSchedule = user.allowCustomSchedule !== false;
+  const allowTriggerLink = user.allowTriggerLink === true;
   const resolved = resolveUserWatchingUpdateConfig({
     username,
-    userUpdateCheckBackendEnabled: permission,
+    userUpdateCheckBackendEnabled: permissionEnabled,
+    allowCustomSchedule,
+    allowTriggerLink,
     systemConfig: config.SystemConfig,
-    userConfig: override,
+    userConfig,
   });
-  const { source: sources, ...effective } = resolved;
+  const { source: sources } = resolved;
 
   return {
     username,
-    permission,
-    override,
-    effective,
+    permission: {
+      enabled: permissionEnabled,
+      allowCustomSchedule,
+      allowTriggerLink,
+    },
+    userConfig: userConfig
+      ? {
+          cronExpression: userConfig.cronExpression,
+          timezone: userConfig.timezone,
+        }
+      : null,
+    effective: {
+      enabled: resolved.enabled,
+      cronExpression: resolved.cronExpression,
+      timezone: resolved.timezone,
+    },
     sources,
+    audit: {
+      updatedAt:
+        userConfig?.updatedAt ?? user.updateCheckPermissionUpdatedAt ?? null,
+      operator: userConfig?.operator ?? user.updateCheckPermissionOperator ?? null,
+    },
   };
+}
+
+async function updateUserAbilityPermissions(
+  username: string,
+  operator: string,
+  patch: Pick<
+    z.infer<typeof patchSchema>,
+    'allowCustomSchedule' | 'allowTriggerLink'
+  >,
+) {
+  const hasAllowCustomSchedule = Object.prototype.hasOwnProperty.call(
+    patch,
+    'allowCustomSchedule',
+  );
+  const hasAllowTriggerLink = Object.prototype.hasOwnProperty.call(
+    patch,
+    'allowTriggerLink',
+  );
+  if (!hasAllowCustomSchedule && !hasAllowTriggerLink) return false;
+
+  const config = await getConfig();
+  const user = config.UserConfig.Users.find(
+    (candidate) => candidate.username === username,
+  );
+  if (!user) throw new Error('USER_NOT_FOUND');
+
+  if (hasAllowCustomSchedule) {
+    user.allowCustomSchedule = patch.allowCustomSchedule;
+  }
+  if (hasAllowTriggerLink) {
+    user.allowTriggerLink = patch.allowTriggerLink;
+  }
+  user.updateCheckPermissionUpdatedAt = Date.now();
+  user.updateCheckPermissionOperator = operator;
+
+  await db.saveAdminConfig(config);
+  clearConfigCache();
+  return true;
 }
 
 function mapServiceError(error: unknown, operation: string) {
@@ -131,7 +193,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const access = await authorizeTarget(request, context);
     if ('response' in access) return access.response;
 
-    const override =
+    const userConfig =
       await userWatchingUpdateConfigService.getUserWatchingUpdateConfig(
         access.username,
       );
@@ -140,7 +202,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         access.username,
         access.user,
         access.config,
-        override,
+        userConfig,
       ),
       { headers: noStoreHeaders },
     );
@@ -161,19 +223,45 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return errorResponse('Invalid user watching update config', 400);
     }
 
-    const override =
+    await updateUserAbilityPermissions(
+      access.username,
+      access.operator,
+      parsed.data,
+    );
+
+    const configPatch = {
+      ...(parsed.data.cronExpression !== undefined
+        ? { cronExpression: parsed.data.cronExpression }
+        : {}),
+      ...(parsed.data.timezone !== undefined
+        ? { timezone: parsed.data.timezone }
+        : {}),
+    };
+    const shouldUpdateUserConfig = Object.keys(configPatch).length > 0;
+    if (shouldUpdateUserConfig) {
       await userWatchingUpdateConfigService.updateUserWatchingUpdateConfig(
         access.username,
-        parsed.data,
+        configPatch,
       );
-    clearConfigCache();
-    await updateCheckRuntime.reconcileUser(access.username);
+      clearConfigCache();
+      await updateCheckRuntime.reconcileUser(access.username);
+    }
+
+    const latestConfig = await getConfig();
+    const latestUser = latestConfig.UserConfig.Users.find(
+      (candidate) => candidate.username === access.username,
+    );
+    if (!latestUser) return errorResponse('User not found', 404);
+    const userConfig =
+      await userWatchingUpdateConfigService.getUserWatchingUpdateConfig(
+        access.username,
+      );
     return NextResponse.json(
       buildConfigResponse(
         access.username,
-        access.user,
-        access.config,
-        override,
+        latestUser,
+        latestConfig,
+        userConfig,
       ),
       { headers: noStoreHeaders },
     );

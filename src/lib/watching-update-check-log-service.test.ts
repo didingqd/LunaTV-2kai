@@ -2,6 +2,7 @@
 
 import { WatchingUpdateCheckLogRepository } from './watching-update-check-log-repository';
 import { WatchingUpdateCheckLogService } from './watching-update-check-log-service';
+import type { SystemConfig } from './admin.types';
 import type { WatchingUpdateCheckLogEntry } from './watching-update-check-log-types';
 
 class MemoryLogStore {
@@ -14,21 +15,30 @@ class MemoryLogStore {
   async setCache(key: string, data: unknown): Promise<void> {
     this.values.set(key, data);
   }
+
+  async deleteCache(key: string): Promise<void> {
+    this.values.delete(key);
+  }
 }
 
 function configReader(updateCheckLogRetentionCount: number) {
   return {
-    getUpdateCheckConfig: async () => ({
-      updateCheckBackendEnabled: true,
-      updateCheckSchedulerEnabled: true,
-      updateCheckCronInterval: 30 * 60 * 1000,
-      updateCheckCronExpression: '*/30 * * * *',
-      updateCheckTimezone: 'UTC',
-      updateCheckLogRetentionCount,
-      updateCheckBatchSize: 100,
-      updateCheckMaxUsers: 1000,
-      updateCheckMaxFollowPerUser: 100,
-    }),
+    getUpdateCheckConfig: async () =>
+      systemConfig(updateCheckLogRetentionCount),
+  };
+}
+
+function systemConfig(updateCheckLogRetentionCount: number): SystemConfig {
+  return {
+    updateCheckBackendEnabled: true,
+    updateCheckSchedulerEnabled: true,
+    updateCheckCronInterval: 30 * 60 * 1000,
+    updateCheckCronExpression: '*/30 * * * *',
+    updateCheckTimezone: 'UTC',
+    updateCheckLogRetentionCount,
+    updateCheckBatchSize: 100,
+    updateCheckMaxUsers: 1000,
+    updateCheckMaxFollowPerUser: 100,
   };
 }
 
@@ -85,6 +95,19 @@ function baseLog(index: number): Omit<WatchingUpdateCheckLogEntry, 'id'> {
       failureCount: 0,
       updateFoundCount: 0,
       updates: [],
+    },
+  };
+}
+
+function userLog(
+  index: number,
+  userId: string,
+): Omit<WatchingUpdateCheckLogEntry, 'id'> {
+  return {
+    ...baseLog(index),
+    request: {
+      ...baseLog(index).request,
+      userId,
     },
   };
 }
@@ -149,5 +172,50 @@ describe('WatchingUpdateCheckLogService retention', () => {
     await recordMany(service, 5001);
 
     await expect(service.list({ limit: 5000 })).resolves.toHaveLength(5000);
+  });
+
+  it('uses system retention for physical per-user trimming', async () => {
+    const { service } = createService(50);
+
+    for (let index = 0; index < 60; index += 1) {
+      await service.record(userLog(index, 'alice'));
+    }
+
+    await expect(
+      service.list({ userId: 'alice', limit: 200 }),
+    ).resolves.toHaveLength(50);
+  });
+
+  it('uses system retention for users without reading user overrides', async () => {
+    const { service } = createService(50);
+
+    for (let index = 0; index < 60; index += 1) {
+      await service.record(userLog(index, 'alice'));
+    }
+
+    await expect(
+      service.list({ userId: 'alice', limit: 200 }),
+    ).resolves.toHaveLength(50);
+  });
+
+  it('normalizes invalid system retention for per-user logs', async () => {
+    const { service } = createService(10);
+
+    for (let index = 0; index < 60; index += 1) {
+      await service.record(userLog(index, 'alice'));
+    }
+
+    await expect(
+      service.list({ userId: 'alice', limit: 5000 }),
+    ).resolves.toHaveLength(50);
+  });
+
+  it('writes cron aggregate logs to every provided user partition', async () => {
+    const { service } = createService(200);
+
+    await service.record(baseLog(1), { userIds: ['alice', 'bob'] });
+
+    await expect(service.list({ userId: 'alice' })).resolves.toHaveLength(1);
+    await expect(service.list({ userId: 'bob' })).resolves.toHaveLength(1);
   });
 });

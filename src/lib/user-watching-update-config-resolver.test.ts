@@ -29,11 +29,13 @@ describe('resolveUserWatchingUpdateConfig', () => {
       enabled: true,
       cronExpression: '0 * * * *',
       timezone: 'Europe/Berlin',
-      logRetentionCount: 500,
       source: {
         cron: 'system',
         timezone: 'system',
-        retention: 'system',
+      },
+      permissions: {
+        allowCustomSchedule: true,
+        allowTriggerLink: false,
       },
     });
   });
@@ -52,13 +54,6 @@ describe('resolveUserWatchingUpdateConfig', () => {
     expect(result.source.timezone).toBe('user');
   });
 
-  it('uses a valid user retention count', () => {
-    const result = resolve({ logRetentionCount: 1200 });
-
-    expect(result.logRetentionCount).toBe(1200);
-    expect(result.source.retention).toBe('user');
-  });
-
   it('ignores an invalid user cron and falls back to the system value', () => {
     const result = resolve({ cronExpression: 'abc' });
 
@@ -72,16 +67,6 @@ describe('resolveUserWatchingUpdateConfig', () => {
     expect(result.timezone).toBe('Europe/Berlin');
     expect(result.source.timezone).toBe('system');
   });
-
-  it.each([10, 10000])(
-    'ignores an out-of-range user retention count: %s',
-    (logRetentionCount) => {
-      const result = resolve({ logRetentionCount });
-
-      expect(result.logRetentionCount).toBe(500);
-      expect(result.source.retention).toBe('system');
-    },
-  );
 
   it.each([
     { systemEnabled: false, userEnabled: true, expected: false },
@@ -114,8 +99,63 @@ describe('resolveUserWatchingUpdateConfig', () => {
       enabled: true,
       cronExpression: '0 * * * *',
       timezone: 'Europe/Berlin',
-      logRetentionCount: 500,
+      permissions: {
+        allowCustomSchedule: true,
+        allowTriggerLink: false,
+      },
     });
+  });
+
+  it('reports default permission fields for legacy users', () => {
+    const result = resolveUserWatchingUpdateConfig({
+      username: 'alice',
+      userUpdateCheckBackendEnabled: true,
+      systemConfig,
+    });
+
+    expect(result.permissions).toEqual({
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
+    });
+  });
+
+  it('reports explicit custom schedule and trigger link permissions', () => {
+    const result = resolve(undefined, {
+      allowCustomSchedule: false,
+      allowTriggerLink: true,
+    });
+
+    expect(result.permissions).toEqual({
+      allowCustomSchedule: false,
+      allowTriggerLink: true,
+    });
+  });
+
+  it('does not use allowCustomSchedule to suppress a stored user cron', () => {
+    const result = resolve(
+      { cronExpression: '*/5 * * * *' },
+      { allowCustomSchedule: false },
+    );
+
+    expect(result.cronExpression).toBe('*/5 * * * *');
+    expect(result.source.cron).toBe('user');
+  });
+
+  it('does not use allowCustomSchedule to suppress a stored user timezone', () => {
+    const result = resolve(
+      { timezone: 'Asia/Tokyo' },
+      { allowCustomSchedule: false },
+    );
+
+    expect(result.timezone).toBe('Asia/Tokyo');
+    expect(result.source.timezone).toBe('user');
+  });
+
+  it('ignores legacy user retention fields', () => {
+    const result = resolve({ logRetentionCount: 500 });
+
+    expect(result).not.toHaveProperty('logRetentionCount');
+    expect(result.source).not.toHaveProperty('retention');
   });
 
   it('falls back to defaults with correct sources when all values are invalid', () => {
@@ -138,11 +178,9 @@ describe('resolveUserWatchingUpdateConfig', () => {
     expect(result).toMatchObject({
       cronExpression: '*/30 * * * *',
       timezone: 'UTC',
-      logRetentionCount: 200,
       source: {
         cron: 'default',
         timezone: 'default',
-        retention: 'default',
       },
     });
   });

@@ -13,6 +13,7 @@ export interface SystemConfig {
 export interface UserWatchingUpdateConfig {
   cronExpression?: string;
   timezone?: string;
+  /** @deprecated User-level log retention is ignored; use SystemConfig.updateCheckLogRetentionCount. */
   logRetentionCount?: number;
   triggerLink?: {
     enabled: boolean;
@@ -86,6 +87,8 @@ export interface AdminConfig {
       showAdultContent?: boolean; // 用户级别的成人内容显示控制
       watchCompletionThreshold?: number; // 用户级播放完成判定阈值，默认 80，非法值按读取侧回退
       updateCheckBackendEnabled?: boolean; // 是否授权后端追更计算
+      allowCustomSchedule?: boolean;
+      allowTriggerLink?: boolean;
       updateCheckPermissionCreatedAt?: number;
       updateCheckPermissionUpdatedAt?: number;
       updateCheckPermissionOperator?: string;

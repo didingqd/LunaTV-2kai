@@ -28,12 +28,14 @@ export async function GET(request: NextRequest) {
     undefined,
   ).request;
   const taskResults: UpdateResult[] = [];
+  const taskUserIds = new Set<string>();
 
   try {
     const jobResult = await updateCheckJobRunner.run({
       trigger: 'cron',
       requestedBy: 'vercel',
-      onTaskComplete: ({ result: taskResult }) => {
+      onTaskComplete: ({ task, result: taskResult }) => {
+        taskUserIds.add(task.userId);
         if (taskResult) taskResults.push(taskResult);
       },
     });
@@ -67,23 +69,28 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      await watchingUpdateCheckLogService.record({
-        source: 'cron',
-        operation: 'scheduled-check',
-        request: logRequest,
-        execution: {
-          startedAt: jobResult.startedAt,
-          endedAt: jobResult.finishedAt,
-          durationMs: jobResult.durationMs,
-          success: true,
+      await watchingUpdateCheckLogService.record(
+        {
+          source: 'cron',
+          operation: 'scheduled-check',
+          request: logRequest,
+          execution: {
+            startedAt: jobResult.startedAt,
+            endedAt: jobResult.finishedAt,
+            durationMs: jobResult.durationMs,
+            success: true,
+          },
+          result: createWatchingUpdateCheckLogResult({
+            checkedCount: jobResult.schedulerResult.inspected,
+            successCount: jobResult.schedulerResult.succeeded,
+            failureCount: jobResult.schedulerResult.failed,
+            results: taskResults,
+          }),
         },
-        result: createWatchingUpdateCheckLogResult({
-          checkedCount: jobResult.schedulerResult.inspected,
-          successCount: jobResult.schedulerResult.succeeded,
-          failureCount: jobResult.schedulerResult.failed,
-          results: taskResults,
-        }),
-      });
+        {
+          userIds: Array.from(taskUserIds),
+        },
+      );
     } catch (error) {
       console.error('Failed to record watching update check log', error);
     }

@@ -2,12 +2,19 @@
 
 import { NextRequest } from 'next/server';
 
+import type { AdminConfig } from '@/lib/admin.types';
+
 jest.mock('@/lib/admin-auth', () => ({
   getAdminRoleFromRequest: jest.fn(),
 }));
 jest.mock('@/lib/config', () => ({
   clearConfigCache: jest.fn(),
   getConfig: jest.fn(),
+}));
+jest.mock('@/lib/db', () => ({
+  db: {
+    saveAdminConfig: jest.fn(),
+  },
 }));
 jest.mock('@/lib/scheduler/update-check-runtime', () => ({
   updateCheckRuntime: {
@@ -25,15 +32,17 @@ jest.mock('@/lib/user-watching-update-config-service', () => ({
 
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getConfig } from '@/lib/config';
+import { db } from '@/lib/db';
 import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
 import { userWatchingUpdateConfigService } from '@/lib/user-watching-update-config-service';
 import { DELETE, GET, PATCH } from './route';
 
 const getRole = getAdminRoleFromRequest as jest.Mock;
 const loadConfig = getConfig as jest.Mock;
-const getOverride =
+const saveAdminConfig = db.saveAdminConfig as jest.Mock;
+const getUserConfigOverride =
   userWatchingUpdateConfigService.getUserWatchingUpdateConfig as jest.Mock;
-const updateOverride =
+const updateUserConfigOverride =
   userWatchingUpdateConfigService.updateUserWatchingUpdateConfig as jest.Mock;
 const clearField =
   userWatchingUpdateConfigService.clearUserWatchingUpdateConfigField as jest.Mock;
@@ -54,27 +63,42 @@ const systemConfig = {
   updateCheckMaxFollowPerUser: 100,
 };
 
+function adminConfig(): AdminConfig {
+  return {
+    SystemConfig: systemConfig,
+    UserConfig: {
+      Users: [
+        { username: 'owner', role: 'owner' },
+        { username: 'admin-a', role: 'admin' },
+        {
+          username: 'alice',
+          role: 'user',
+          updateCheckBackendEnabled: true,
+          allowCustomSchedule: false,
+          allowTriggerLink: true,
+          updateCheckPermissionUpdatedAt: 1000,
+          updateCheckPermissionOperator: 'owner',
+        },
+        { username: 'legacy', role: 'user' },
+      ],
+    },
+  } as AdminConfig;
+}
+
 describe('user watching update config Management API', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     process.env.NEXT_PUBLIC_STORAGE_TYPE = 'redis';
     getRole.mockResolvedValue('owner');
-    loadConfig.mockResolvedValue({
-      SystemConfig: systemConfig,
-      UserConfig: {
-        Users: [
-          { username: 'owner', role: 'owner' },
-          { username: 'admin-a', role: 'admin' },
-          {
-            username: 'alice',
-            role: 'user',
-            updateCheckBackendEnabled: true,
-          },
-          { username: 'legacy', role: 'user' },
-        ],
-      },
+    loadConfig.mockImplementation(async () => adminConfig());
+    saveAdminConfig.mockResolvedValue(undefined);
+    updateUserConfigOverride.mockResolvedValue({
+      cronExpression: '0 * * * *',
+      timezone: 'Europe/Berlin',
     });
-    getOverride.mockResolvedValue({
+    clearAll.mockResolvedValue(undefined);
+    reconcileUser.mockResolvedValue(undefined);
+    getUserConfigOverride.mockResolvedValue({
       cronExpression: '0 * * * *',
       timezone: 'Europe/Berlin',
     });
@@ -95,8 +119,12 @@ describe('user watching update config Management API', () => {
     expect(reconcileUser).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
       username: 'alice',
-      permission: true,
-      override: {
+      permission: {
+        enabled: true,
+        allowCustomSchedule: false,
+        allowTriggerLink: true,
+      },
+      userConfig: {
         cronExpression: '0 * * * *',
         timezone: 'Europe/Berlin',
       },
@@ -104,36 +132,40 @@ describe('user watching update config Management API', () => {
         enabled: true,
         cronExpression: '0 * * * *',
         timezone: 'Europe/Berlin',
-        logRetentionCount: 200,
       },
       sources: {
         cron: 'user',
         timezone: 'user',
-        retention: 'system',
+      },
+      audit: {
+        updatedAt: 1000,
+        operator: 'owner',
       },
     });
   });
 
-  it('returns inherited values for a user without an override', async () => {
-    getOverride.mockResolvedValue(null);
+  it('returns inherited values and default ability permissions for legacy users', async () => {
+    getUserConfigOverride.mockResolvedValue(null);
 
     const response = await getUserConfig('legacy');
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       username: 'legacy',
-      permission: false,
-      override: null,
+      permission: {
+        enabled: false,
+        allowCustomSchedule: true,
+        allowTriggerLink: false,
+      },
+      userConfig: null,
       effective: {
         enabled: false,
         cronExpression: '*/30 * * * *',
         timezone: 'UTC',
-        logRetentionCount: 200,
       },
       sources: {
         cron: 'system',
         timezone: 'system',
-        retention: 'system',
       },
     });
   });
@@ -144,7 +176,22 @@ describe('user watching update config Management API', () => {
     const response = await getUserConfig('alice');
 
     expect(response.status).toBe(200);
-    expect(getOverride).toHaveBeenCalledWith('alice');
+    expect(getUserConfigOverride).toHaveBeenCalledWith('alice');
+  });
+
+  it('allows an admin to update an ordinary user config', async () => {
+    getRole.mockResolvedValue('admin');
+    updateUserConfigOverride.mockResolvedValue({ timezone: 'Asia/Tokyo' });
+    getUserConfigOverride.mockResolvedValue({ timezone: 'Asia/Tokyo' });
+
+    const response = await patchUserConfig('alice', {
+      timezone: 'Asia/Tokyo',
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateUserConfigOverride).toHaveBeenCalledWith('alice', {
+      timezone: 'Asia/Tokyo',
+    });
   });
 
   it('forbids an admin from getting another admin config', async () => {
@@ -153,7 +200,19 @@ describe('user watching update config Management API', () => {
     const response = await getUserConfig('admin-a');
 
     expect(response.status).toBe(403);
-    expect(getOverride).not.toHaveBeenCalled();
+    expect(getUserConfigOverride).not.toHaveBeenCalled();
+  });
+
+  it('forbids an admin from updating another admin config', async () => {
+    getRole.mockResolvedValue('admin');
+
+    const response = await patchUserConfig('admin-a', {
+      allowCustomSchedule: false,
+    });
+
+    expect(response.status).toBe(403);
+    expect(saveAdminConfig).not.toHaveBeenCalled();
+    expect(updateUserConfigOverride).not.toHaveBeenCalled();
   });
 
   it('forbids a non-admin user', async () => {
@@ -165,22 +224,60 @@ describe('user watching update config Management API', () => {
     expect(loadConfig).not.toHaveBeenCalled();
   });
 
-  it('saves a valid cron expression through the service', async () => {
-    updateOverride.mockResolvedValue({ cronExpression: '0 */6 * * *' });
+  it('saves ability permissions without reconciling schedules', async () => {
+    getUserConfigOverride.mockResolvedValue(null);
+
+    const response = await patchUserConfig('alice', {
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(saveAdminConfig).toHaveBeenCalledTimes(1);
+    const saved = saveAdminConfig.mock.calls[0][0] as AdminConfig;
+    const alice = saved.UserConfig.Users.find((user) => user.username === 'alice');
+    expect(alice).toMatchObject({
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
+      updateCheckPermissionUpdatedAt: expect.any(Number),
+      updateCheckPermissionOperator: 'owner',
+    });
+    expect(updateUserConfigOverride).not.toHaveBeenCalled();
+    expect(reconcileUser).not.toHaveBeenCalled();
+  });
+
+  it('saves a valid cron expression through the service and reconciles', async () => {
+    updateUserConfigOverride.mockResolvedValue({ cronExpression: '0 */6 * * *' });
+    getUserConfigOverride.mockResolvedValue({ cronExpression: '0 */6 * * *' });
 
     const response = await patchUserConfig('alice', {
       cronExpression: '0 */6 * * *',
     });
 
     expect(response.status).toBe(200);
-    expect(updateOverride).toHaveBeenCalledWith('alice', {
+    expect(updateUserConfigOverride).toHaveBeenCalledWith('alice', {
       cronExpression: '0 */6 * * *',
     });
     expect(reconcileUser).toHaveBeenCalledWith('alice');
   });
 
+  it('saves a valid timezone through the service and reconciles', async () => {
+    updateUserConfigOverride.mockResolvedValue({ timezone: 'Asia/Shanghai' });
+    getUserConfigOverride.mockResolvedValue({ timezone: 'Asia/Shanghai' });
+
+    const response = await patchUserConfig('alice', {
+      timezone: 'Asia/Shanghai',
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateUserConfigOverride).toHaveBeenCalledWith('alice', {
+      timezone: 'Asia/Shanghai',
+    });
+    expect(reconcileUser).toHaveBeenCalledWith('alice');
+  });
+
   it('returns 400 when the service rejects an invalid cron expression', async () => {
-    updateOverride.mockRejectedValue(new Error('INVALID_CRON_EXPRESSION'));
+    updateUserConfigOverride.mockRejectedValue(new Error('INVALID_CRON_EXPRESSION'));
 
     const response = await patchUserConfig('alice', {
       cronExpression: 'invalid',
@@ -190,22 +287,8 @@ describe('user watching update config Management API', () => {
     expect(reconcileUser).not.toHaveBeenCalled();
   });
 
-  it('saves a valid timezone through the service', async () => {
-    updateOverride.mockResolvedValue({ timezone: 'Asia/Shanghai' });
-
-    const response = await patchUserConfig('alice', {
-      timezone: 'Asia/Shanghai',
-    });
-
-    expect(response.status).toBe(200);
-    expect(updateOverride).toHaveBeenCalledWith('alice', {
-      timezone: 'Asia/Shanghai',
-    });
-    expect(reconcileUser).toHaveBeenCalledWith('alice');
-  });
-
   it('returns 400 when the service rejects an invalid timezone', async () => {
-    updateOverride.mockRejectedValue(new Error('INVALID_TIMEZONE'));
+    updateUserConfigOverride.mockRejectedValue(new Error('INVALID_TIMEZONE'));
 
     const response = await patchUserConfig('alice', {
       timezone: 'invalid/timezone',
@@ -214,18 +297,18 @@ describe('user watching update config Management API', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 400 for an out-of-range retention count', async () => {
-    updateOverride.mockRejectedValue(new Error('INVALID_LOG_RETENTION_COUNT'));
-
+  it('rejects logRetentionCount updates at the route schema', async () => {
     const response = await patchUserConfig('alice', {
-      logRetentionCount: 5001,
+      logRetentionCount: 500,
     });
 
     expect(response.status).toBe(400);
+    expect(updateUserConfigOverride).not.toHaveBeenCalled();
+    expect(saveAdminConfig).not.toHaveBeenCalled();
   });
 
-  it('returns the merged override from a partial update', async () => {
-    updateOverride.mockResolvedValue({
+  it('returns the merged userConfig from a partial update', async () => {
+    getUserConfigOverride.mockResolvedValue({
       cronExpression: '0 * * * *',
       timezone: 'Asia/Tokyo',
     });
@@ -236,7 +319,7 @@ describe('user watching update config Management API', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      override: {
+      userConfig: {
         cronExpression: '0 * * * *',
         timezone: 'Asia/Tokyo',
       },
@@ -252,7 +335,7 @@ describe('user watching update config Management API', () => {
     expect(clearAll).toHaveBeenCalledWith('alice');
     expect(clearField).not.toHaveBeenCalled();
     expect(reconcileUser).toHaveBeenCalledWith('alice');
-    await expect(response.json()).resolves.toMatchObject({ override: null });
+    await expect(response.json()).resolves.toMatchObject({ userConfig: null });
   });
 
   it('deletes one override field', async () => {
@@ -266,8 +349,17 @@ describe('user watching update config Management API', () => {
     expect(clearField).toHaveBeenCalledWith('alice', 'cronExpression');
     expect(reconcileUser).toHaveBeenCalledWith('alice');
     await expect(response.json()).resolves.toMatchObject({
-      override: { timezone: 'Europe/Berlin' },
+      userConfig: { timezone: 'Europe/Berlin' },
     });
+  });
+
+  it('rejects deleting logRetentionCount override', async () => {
+    const response = await deleteUserConfig('alice', {
+      field: 'logRetentionCount',
+    });
+
+    expect(response.status).toBe(400);
+    expect(clearField).not.toHaveBeenCalled();
   });
 
   it('returns 404 when the target user does not exist', async () => {

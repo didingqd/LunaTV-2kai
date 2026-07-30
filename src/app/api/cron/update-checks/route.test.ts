@@ -183,7 +183,7 @@ describe('GET /api/cron/update-checks', () => {
   it('passes task results from the JobRunner callback into the cron audit log', async () => {
     runJob.mockImplementation(async ({ onTaskComplete }) => {
       await onTaskComplete?.({
-        task: { id: 'task-1' },
+        task: { id: 'task-1', userId: 'alice' },
         result: { userId: 'alice', followId: 'follow-1' },
       });
       return jobResult();
@@ -202,6 +202,7 @@ describe('GET /api/cron/update-checks', () => {
           results: [{ userId: 'alice', followId: 'follow-1' }],
         }),
       }),
+      { userIds: ['alice'] },
     );
   });
 });
