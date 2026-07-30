@@ -173,7 +173,11 @@ describe('UpdateCheckService', () => {
       config: {
         getUpdateCheckConfig: async () => ({
           updateCheckBackendEnabled: true,
+          updateCheckSchedulerEnabled: true,
           updateCheckCronInterval: 2_000,
+          updateCheckCronExpression: '*/30 * * * *',
+          updateCheckTimezone: 'UTC',
+          updateCheckLogRetentionCount: 200,
           updateCheckBatchSize: 100,
           updateCheckMaxUsers: 1000,
           updateCheckMaxFollowPerUser: 100,

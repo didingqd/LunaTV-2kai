@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { watchingUpdateCheckLogService } from '@/lib/watching-update-check-log-service';
-import type { WatchingUpdateCheckLogSource } from '@/lib/watching-update-check-log-types';
+import {
+  MAX_WATCHING_UPDATE_CHECK_LOG_LIMIT,
+  DEFAULT_WATCHING_UPDATE_CHECK_LOG_LIMIT,
+  type WatchingUpdateCheckLogSource,
+} from '@/lib/watching-update-check-log-types';
 
 export const runtime = 'nodejs';
 
 function parseLimit(value: string | null): number | null {
-  if (value === null) return 200;
+  if (value === null) return DEFAULT_WATCHING_UPDATE_CHECK_LOG_LIMIT;
   const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 200
+  return Number.isInteger(parsed) &&
+    parsed >= 1 &&
+    parsed <= MAX_WATCHING_UPDATE_CHECK_LOG_LIMIT
     ? parsed
     : null;
 }

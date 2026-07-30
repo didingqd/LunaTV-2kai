@@ -101,8 +101,18 @@ export default function UpdateCheckConfig() {
       const updatedConfig: AdminConfig = {
         ...adminConfig,
         SystemConfig: {
+          ...adminConfig.SystemConfig,
           updateCheckBackendEnabled: settings.enabled,
+          updateCheckSchedulerEnabled:
+            adminConfig.SystemConfig?.updateCheckSchedulerEnabled ?? true,
           updateCheckCronInterval: settings.updateCheckCronInterval,
+          updateCheckCronExpression:
+            adminConfig.SystemConfig?.updateCheckCronExpression ??
+            '*/30 * * * *',
+          updateCheckTimezone:
+            adminConfig.SystemConfig?.updateCheckTimezone ?? 'UTC',
+          updateCheckLogRetentionCount:
+            adminConfig.SystemConfig?.updateCheckLogRetentionCount ?? 200,
           updateCheckBatchSize: settings.batchSize,
           updateCheckMaxUsers: settings.maxUsers,
           updateCheckMaxFollowPerUser: settings.maxFollowPerUser,

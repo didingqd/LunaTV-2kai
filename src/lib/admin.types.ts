@@ -1,9 +1,28 @@
 export interface SystemConfig {
   updateCheckBackendEnabled: boolean;
+  updateCheckSchedulerEnabled: boolean;
   updateCheckCronInterval: number;
+  updateCheckCronExpression: string;
+  updateCheckTimezone: string;
+  updateCheckLogRetentionCount: number;
   updateCheckBatchSize: number;
   updateCheckMaxUsers: number;
   updateCheckMaxFollowPerUser: number;
+}
+
+export interface UserWatchingUpdateConfig {
+  cronExpression?: string;
+  timezone?: string;
+  logRetentionCount?: number;
+  triggerLink?: {
+    enabled: boolean;
+    tokenId?: string;
+    createdAt?: number;
+    rotatedAt?: number;
+    expiresAt?: number;
+  };
+  updatedAt?: number;
+  operator?: string;
 }
 
 export interface AdminConfig {
@@ -70,6 +89,7 @@ export interface AdminConfig {
       updateCheckPermissionCreatedAt?: number;
       updateCheckPermissionUpdatedAt?: number;
       updateCheckPermissionOperator?: string;
+      watchingUpdateConfig?: UserWatchingUpdateConfig;
       oidcSub?: string; // OIDC的唯一标识符(sub字段)
       embyConfig?: {
         sources: Array<{

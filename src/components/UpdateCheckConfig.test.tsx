@@ -10,7 +10,11 @@ function adminConfig(enabled = false, interval = 30 * 60 * 1000) {
   return {
     SystemConfig: {
       updateCheckBackendEnabled: enabled,
+      updateCheckSchedulerEnabled: true,
       updateCheckCronInterval: interval,
+      updateCheckCronExpression: '*/30 * * * *',
+      updateCheckTimezone: 'UTC',
+      updateCheckLogRetentionCount: 200,
       updateCheckBatchSize: 100,
       updateCheckMaxUsers: 1000,
       updateCheckMaxFollowPerUser: 100,

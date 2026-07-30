@@ -1,5 +1,9 @@
 import type { UpdateResult } from './update-check-types';
 import {
+  systemConfigRepository,
+  type UpdateCheckConfigReader,
+} from './system-config-repository';
+import {
   watchingUpdateCheckLogRepository,
   type WatchingUpdateCheckLogRepository,
 } from './watching-update-check-log-repository';
@@ -9,6 +13,7 @@ import type {
   WatchingUpdateCheckLogResult,
   WatchingUpdateCheckLogUpdate,
 } from './watching-update-check-log-types';
+import { normalizeWatchingUpdateCheckLogRetentionCount } from './watching-update-check-log-types';
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -67,17 +72,34 @@ export function createWatchingUpdateCheckLogResult({
 export class WatchingUpdateCheckLogService {
   constructor(
     private readonly repository: WatchingUpdateCheckLogRepository = watchingUpdateCheckLogRepository,
+    private readonly config: UpdateCheckConfigReader = systemConfigRepository,
   ) {}
 
   async record(entry: Omit<WatchingUpdateCheckLogEntry, 'id'>): Promise<void> {
-    await this.repository.append({
-      ...entry,
-      id: createLogId(),
-    });
+    const retentionCount = await this.getRetentionCount();
+    await this.repository.append(
+      {
+        ...entry,
+        id: createLogId(),
+      },
+      retentionCount,
+    );
   }
 
-  list(query?: WatchingUpdateCheckLogQuery) {
-    return this.repository.list(query);
+  async list(query?: WatchingUpdateCheckLogQuery) {
+    const retentionCount = await this.getRetentionCount();
+    return this.repository.list(retentionCount, query);
+  }
+
+  private async getRetentionCount(): Promise<number> {
+    try {
+      const config = await this.config.getUpdateCheckConfig();
+      return normalizeWatchingUpdateCheckLogRetentionCount(
+        config.updateCheckLogRetentionCount,
+      );
+    } catch {
+      return normalizeWatchingUpdateCheckLogRetentionCount(undefined);
+    }
   }
 }
 

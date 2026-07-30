@@ -31,7 +31,7 @@ describe('UserPermissionSettingsModal', () => {
     delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
   });
 
-  it('renders four tabs and keeps tabs horizontally scrollable for narrow screens', async () => {
+  it('renders five tabs and keeps tabs horizontally scrollable for narrow screens', async () => {
     render(
       <UserPermissionSettingsModal
         user={user}
@@ -52,6 +52,9 @@ describe('UserPermissionSettingsModal', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('tab', { name: '特殊功能权限' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('tab', { name: '追更系统控制' }),
     ).toBeInTheDocument();
     expect(screen.getByTestId('user-permission-tabs')).toHaveClass(
       'overflow-x-auto',
@@ -77,28 +80,20 @@ describe('UserPermissionSettingsModal', () => {
     expect(screen.getByText('AI 推荐')).toBeInTheDocument();
     expect(screen.getByText('YouTube 搜索')).toBeInTheDocument();
     expect(screen.getByText('成人内容显示')).toBeInTheDocument();
-    expect(screen.getByText('追更后端计算')).toBeInTheDocument();
+    expect(screen.queryByText('追更后端计算')).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /AI 推荐/ })).not.toBeChecked();
     expect(
       screen.getByRole('checkbox', { name: /YouTube 搜索/ }),
     ).not.toBeChecked();
-    await waitFor(() =>
-      expect(screen.getByText(/系统总开关已开启/)).toBeInTheDocument(),
-    );
   });
 
-  it('saves update-check permission with special features', async () => {
+  it('keeps update-check permission out of special features', async () => {
     const fetchMock = global.fetch as jest.Mock;
     const onRefresh = jest.fn().mockResolvedValue(undefined);
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ permission: { userId: 'alice', enabled: true } }),
-      } as Response);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true }),
+    } as Response);
 
     render(
       <UserPermissionSettingsModal
@@ -112,27 +107,14 @@ describe('UserPermissionSettingsModal', () => {
     );
 
     fireEvent.click(await screen.findByRole('tab', { name: '特殊功能权限' }));
-    fireEvent.click(
-      await screen.findByRole('checkbox', { name: /追更后端计算/ }),
-    );
-
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('checkbox', { name: /追更后端计算/ }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '保存特殊功能' }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(/当前状态：已授权，实际模式：本地计算/),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/user');
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      '/api/admin/settings/update-check/permissions',
-    );
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
-      userId: 'alice',
-      enabled: true,
-    });
-    expect(onRefresh).toHaveBeenCalledTimes(2);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

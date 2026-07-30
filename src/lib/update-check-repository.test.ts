@@ -69,4 +69,62 @@ describe('CachedUpdateCheckTaskRepository', () => {
       (await repository.listDue(100, 10)).map((item) => item.userId),
     ).toEqual(['bob']);
   });
+
+  it('lists tasks for one user and all users with tasks', async () => {
+    const repository = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    await repository.save(task('alice', 'later', 300));
+    await repository.save(task('bob', 'only', 200));
+    await repository.save(task('alice', 'earlier', 100));
+
+    await expect(repository.listTasksByUser('alice')).resolves.toEqual([
+      task('alice', 'earlier', 100),
+      task('alice', 'later', 300),
+    ]);
+    await expect(repository.listAllUsersWithTasks()).resolves.toEqual([
+      'alice',
+      'bob',
+    ]);
+  });
+
+  it('finds the earliest next check time', async () => {
+    const repository = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    await expect(repository.findEarliestNextCheckAt()).resolves.toBeNull();
+    await repository.save(task('alice', 'later', 300));
+    await repository.save(task('bob', 'earlier', 100));
+
+    await expect(repository.findEarliestNextCheckAt()).resolves.toBe(100);
+  });
+
+  it('updates only nextCheckAt for all tasks belonging to a user', async () => {
+    const repository = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const alice = {
+      ...task('alice', 'follow-a', 100),
+      attempt: 3,
+      lastSuccessAt: 50,
+      lastErrorAt: 75,
+      lastError: 'provider failed',
+    };
+    const aliceSecond = task('alice', 'follow-b', 200);
+    const bob = task('bob', 'follow-c', 150);
+    await repository.save(alice);
+    await repository.save(aliceSecond);
+    await repository.save(bob);
+
+    await expect(repository.batchUpdateNextCheckAt('alice', 500)).resolves.toBe(
+      2,
+    );
+
+    expect(await repository.get(alice.id)).toEqual({
+      ...alice,
+      nextCheckAt: 500,
+    });
+    expect(await repository.get(aliceSecond.id)).toEqual({
+      ...aliceSecond,
+      nextCheckAt: 500,
+    });
+    expect(await repository.get(bob.id)).toEqual(bob);
+    expect(
+      (await repository.listDue(499, 10)).map((item) => item.userId),
+    ).toEqual(['bob']);
+  });
 });

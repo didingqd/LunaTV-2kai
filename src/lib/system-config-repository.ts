@@ -1,10 +1,24 @@
 import type { AdminConfig, SystemConfig } from './admin.types';
 import { clearConfigCache, getConfig } from './config';
 import { db } from './db';
+import {
+  DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
+  normalizeCronExpression,
+  validateCronExpression,
+} from './scheduler/cron-utils';
+import {
+  DEFAULT_SCHEDULER_TIMEZONE,
+  normalizeTimezone,
+  validateTimezone,
+} from './scheduler/timezone-utils';
 
 export const DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG: SystemConfig = {
   updateCheckBackendEnabled: false,
+  updateCheckSchedulerEnabled: true,
   updateCheckCronInterval: 30 * 60 * 1000,
+  updateCheckCronExpression: DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
+  updateCheckTimezone: DEFAULT_SCHEDULER_TIMEZONE,
+  updateCheckLogRetentionCount: 200,
   updateCheckBatchSize: 100,
   updateCheckMaxUsers: 1000,
   updateCheckMaxFollowPerUser: 100,
@@ -48,11 +62,29 @@ export function normalizeUpdateCheckSystemConfig(
 ): SystemConfig {
   return {
     updateCheckBackendEnabled: value?.updateCheckBackendEnabled === true,
+    updateCheckSchedulerEnabled:
+      value?.updateCheckSchedulerEnabled === undefined
+        ? DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckSchedulerEnabled
+        : value.updateCheckSchedulerEnabled === true,
     updateCheckCronInterval: UPDATE_CHECK_CRON_INTERVAL_OPTIONS.includes(
       value?.updateCheckCronInterval as (typeof UPDATE_CHECK_CRON_INTERVAL_OPTIONS)[number],
     )
       ? (value?.updateCheckCronInterval as number)
       : DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronInterval,
+    updateCheckCronExpression: normalizeCronExpression(
+      value?.updateCheckCronExpression,
+      DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronExpression,
+    ),
+    updateCheckTimezone: normalizeTimezone(
+      value?.updateCheckTimezone,
+      DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckTimezone,
+    ),
+    updateCheckLogRetentionCount: boundedInteger(
+      value?.updateCheckLogRetentionCount,
+      DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckLogRetentionCount,
+      50,
+      5000,
+    ),
     updateCheckBatchSize: boundedInteger(
       value?.updateCheckBatchSize,
       DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckBatchSize,
@@ -74,6 +106,32 @@ export function normalizeUpdateCheckSystemConfig(
   };
 }
 
+export function validateUpdateCheckSystemConfigForSave(
+  value: Partial<SystemConfig> | null | undefined,
+): SystemConfig {
+  const cronExpression =
+    typeof value?.updateCheckCronExpression === 'string'
+      ? value.updateCheckCronExpression.trim().replace(/\s+/g, ' ')
+      : '';
+  const timezone =
+    typeof value?.updateCheckTimezone === 'string'
+      ? value.updateCheckTimezone.trim()
+      : '';
+
+  if (!validateCronExpression(cronExpression)) {
+    throw new Error('Invalid update check cron expression');
+  }
+  if (!validateTimezone(timezone)) {
+    throw new Error('Invalid update check timezone');
+  }
+
+  return {
+    ...normalizeUpdateCheckSystemConfig(value),
+    updateCheckCronExpression: cronExpression,
+    updateCheckTimezone: timezone,
+  };
+}
+
 export class AdminSystemConfigRepository
   implements UpdateCheckConfigReader, UpdateCheckUserAccessReader
 {
@@ -92,7 +150,7 @@ export class AdminSystemConfigRepository
   }
 
   async saveUpdateCheckConfig(value: SystemConfig): Promise<SystemConfig> {
-    const normalized = normalizeUpdateCheckSystemConfig(value);
+    const normalized = validateUpdateCheckSystemConfigForSave(value);
     const config =
       (await this.store.getAdminConfig()) ?? (await this.loadFullConfig());
     config.SystemConfig = normalized;

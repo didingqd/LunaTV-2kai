@@ -3,6 +3,14 @@
 import { unstable_noStore } from 'next/cache';
 
 import { db } from '@/lib/db';
+import {
+  DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
+  normalizeCronExpression,
+} from '@/lib/scheduler/cron-utils';
+import {
+  DEFAULT_SCHEDULER_TIMEZONE,
+  normalizeTimezone,
+} from '@/lib/scheduler/timezone-utils';
 
 import { AdminConfig } from './admin.types';
 import { DEFAULT_USER_AGENT } from './user-agent';
@@ -227,7 +235,11 @@ async function getInitConfig(
     ConfigSubscribtion: subConfig,
     SystemConfig: {
       updateCheckBackendEnabled: false,
+      updateCheckSchedulerEnabled: true,
       updateCheckCronInterval: 30 * 60 * 1000,
+      updateCheckCronExpression: DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
+      updateCheckTimezone: DEFAULT_SCHEDULER_TIMEZONE,
+      updateCheckLogRetentionCount: 200,
       updateCheckBatchSize: 100,
       updateCheckMaxUsers: 1000,
       updateCheckMaxFollowPerUser: 100,
@@ -391,8 +403,18 @@ export async function configSelfCheck(
   adminConfig.SystemConfig = {
     updateCheckBackendEnabled:
       adminConfig.SystemConfig?.updateCheckBackendEnabled ?? false,
+    updateCheckSchedulerEnabled:
+      adminConfig.SystemConfig?.updateCheckSchedulerEnabled ?? true,
     updateCheckCronInterval:
       adminConfig.SystemConfig?.updateCheckCronInterval ?? 30 * 60 * 1000,
+    updateCheckCronExpression: normalizeCronExpression(
+      adminConfig.SystemConfig?.updateCheckCronExpression,
+    ),
+    updateCheckTimezone: normalizeTimezone(
+      adminConfig.SystemConfig?.updateCheckTimezone,
+    ),
+    updateCheckLogRetentionCount:
+      adminConfig.SystemConfig?.updateCheckLogRetentionCount ?? 200,
     updateCheckBatchSize: adminConfig.SystemConfig?.updateCheckBatchSize ?? 100,
     updateCheckMaxUsers: adminConfig.SystemConfig?.updateCheckMaxUsers ?? 1000,
     updateCheckMaxFollowPerUser:
@@ -676,6 +698,7 @@ export async function configSelfCheck(
     enabledApis: originOwnerCfg?.enabledApis || undefined,
     tags: originOwnerCfg?.tags || undefined,
     watchCompletionThreshold: originOwnerCfg?.watchCompletionThreshold,
+    watchingUpdateConfig: originOwnerCfg?.watchingUpdateConfig,
   });
 
   // 采集源去重

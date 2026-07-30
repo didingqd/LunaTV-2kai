@@ -1,6 +1,5 @@
 import { db } from './db';
 import {
-  WATCHING_UPDATE_CHECK_LOG_LIMIT,
   type WatchingUpdateCheckLogEntry,
   type WatchingUpdateCheckLogQuery,
   type WatchingUpdateCheckLogSource,
@@ -62,7 +61,10 @@ async function queuedWrite<T>(
 export class WatchingUpdateCheckLogRepository {
   constructor(private readonly store: WatchingUpdateCheckLogStore = db) {}
 
-  async append(entry: WatchingUpdateCheckLogEntry): Promise<void> {
+  async append(
+    entry: WatchingUpdateCheckLogEntry,
+    retentionCount: number,
+  ): Promise<void> {
     if (!storageIsAvailable()) return;
     await queuedWrite(WATCHING_UPDATE_CHECK_LOG_CACHE_KEY, async () => {
       const existing = asLogs(
@@ -70,21 +72,19 @@ export class WatchingUpdateCheckLogRepository {
       );
       await this.store.setCache(
         WATCHING_UPDATE_CHECK_LOG_CACHE_KEY,
-        [entry, ...existing].slice(0, WATCHING_UPDATE_CHECK_LOG_LIMIT),
+        [entry, ...existing].slice(0, retentionCount),
       );
     });
   }
 
   async list(
+    retentionCount: number,
     query: WatchingUpdateCheckLogQuery = {},
   ): Promise<WatchingUpdateCheckLogEntry[]> {
     if (!storageIsAvailable()) return [];
     const limit = Math.max(
       1,
-      Math.min(
-        query.limit ?? WATCHING_UPDATE_CHECK_LOG_LIMIT,
-        WATCHING_UPDATE_CHECK_LOG_LIMIT,
-      ),
+      Math.min(query.limit ?? retentionCount, retentionCount),
     );
     return asLogs(
       await this.store.getCache(WATCHING_UPDATE_CHECK_LOG_CACHE_KEY),

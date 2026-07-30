@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
+import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
 import { updateCheckPermissionService } from '@/lib/update-check-permission-service';
 
 export const runtime = 'nodejs';
@@ -73,6 +74,7 @@ export async function PUT(request: NextRequest) {
       parsed.data.enabled,
       operator,
     );
+    await updateCheckRuntime.reconcileUser(parsed.data.userId);
     return NextResponse.json(
       { success: true, permission },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -139,6 +141,11 @@ export async function POST(request: NextRequest) {
       parsed.data.userIds,
       parsed.data.enabled,
       operator,
+    );
+    await Promise.all(
+      parsed.data.userIds.map((userId) =>
+        updateCheckRuntime.reconcileUser(userId),
+      ),
     );
     return NextResponse.json(
       { success: true, permissions },

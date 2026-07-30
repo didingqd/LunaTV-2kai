@@ -11,6 +11,11 @@ jest.mock('@/lib/auth', () => ({
 jest.mock('@/lib/config', () => ({
   getConfig: jest.fn(),
 }));
+jest.mock('@/lib/scheduler/update-check-runtime', () => ({
+  updateCheckRuntime: {
+    reconcileUser: jest.fn(),
+  },
+}));
 jest.mock('@/lib/update-check-permission-service', () => ({
   updateCheckPermissionService: {
     setPermission: jest.fn(),
@@ -21,6 +26,7 @@ jest.mock('@/lib/update-check-permission-service', () => ({
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
+import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
 import { updateCheckPermissionService } from '@/lib/update-check-permission-service';
 import { POST, PUT } from './route';
 
@@ -29,6 +35,7 @@ const getAuth = getAuthInfoFromCookie as jest.Mock;
 const loadConfig = getConfig as jest.Mock;
 const setPermission = updateCheckPermissionService.setPermission as jest.Mock;
 const setPermissions = updateCheckPermissionService.setPermissions as jest.Mock;
+const reconcileUser = updateCheckRuntime.reconcileUser as jest.Mock;
 const previousStorageType = process.env.NEXT_PUBLIC_STORAGE_TYPE;
 
 describe('update check user permission route', () => {
@@ -72,6 +79,22 @@ describe('update check user permission route', () => {
       permission: { userId: 'alice', enabled: true },
     });
     expect(setPermission).toHaveBeenCalledWith('alice', true, 'admin');
+    expect(reconcileUser).toHaveBeenCalledWith('alice');
+  });
+
+  it('reconciles the user after disabling permission', async () => {
+    setPermission.mockResolvedValue({
+      userId: 'alice',
+      enabled: false,
+      createdAt: 100,
+      updatedAt: 200,
+      operator: 'admin',
+    });
+
+    const response = await updatePermission('alice', false);
+
+    expect(response.status).toBe(200);
+    expect(reconcileUser).toHaveBeenCalledWith('alice');
   });
 
   it('does not create authorization for an unknown user', async () => {
@@ -79,6 +102,7 @@ describe('update check user permission route', () => {
 
     expect(response.status).toBe(404);
     expect(setPermission).not.toHaveBeenCalled();
+    expect(reconcileUser).not.toHaveBeenCalled();
   });
 
   it('keeps owner authorization implicit', async () => {
@@ -90,6 +114,7 @@ describe('update check user permission route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'Owner permission follows the system switch',
     });
+    expect(reconcileUser).not.toHaveBeenCalled();
   });
 
   it('updates a batch of users through the batch endpoint', async () => {
@@ -108,6 +133,7 @@ describe('update check user permission route', () => {
 
     expect(response.status).toBe(200);
     expect(setPermissions).toHaveBeenCalledWith(['alice'], true, 'admin');
+    expect(reconcileUser).toHaveBeenCalledWith('alice');
   });
 });
 

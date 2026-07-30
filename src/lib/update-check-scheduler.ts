@@ -1,4 +1,7 @@
+import type { AdminConfig, SystemConfig } from './admin.types';
+import { getConfig } from './config';
 import { db } from './db';
+import { resolveUserWatchingUpdateSchedule } from './scheduler/user-watching-update-schedule-resolver';
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
@@ -6,6 +9,7 @@ import {
 } from './system-config-repository';
 import {
   CachedUpdateCheckTaskRepository,
+  type UpdateCheckScheduleTaskRepository,
   type UpdateCheckTaskRepository,
 } from './update-check-repository';
 import {
@@ -13,6 +17,17 @@ import {
   type UpdateCheckService,
 } from './update-check-service';
 import type { UpdateCheckTask, UpdateResult } from './update-check-types';
+
+type SchedulerTaskRepository = UpdateCheckTaskRepository &
+  Pick<
+    UpdateCheckScheduleTaskRepository,
+    'listTasksByUser' | 'batchUpdateNextCheckAt'
+  >;
+
+interface CompletedTask {
+  before: UpdateCheckTask;
+  after: UpdateCheckTask | null;
+}
 
 export interface UpdateCheckSchedulerOptions {
   limit?: number;
@@ -23,9 +38,16 @@ export interface UpdateCheckSchedulerOptions {
   }) => void | Promise<void>;
 }
 
+export interface UpdateCheckSchedulerResult {
+  inspected: number;
+  succeeded: number;
+  failed: number;
+  oldestDueAt: number | null;
+}
+
 export class UpdateCheckScheduler {
   constructor(
-    private readonly tasks: UpdateCheckTaskRepository = new CachedUpdateCheckTaskRepository(
+    private readonly tasks: SchedulerTaskRepository = new CachedUpdateCheckTaskRepository(
       db,
     ),
     private readonly service: UpdateCheckService = updateCheckService,
@@ -34,9 +56,12 @@ export class UpdateCheckScheduler {
       UpdateCheckUserAccessReader,
       'listUpdateCheckEnabledUserIds'
     > = systemConfigRepository,
+    private readonly loadAdminConfig: () => Promise<AdminConfig> = getConfig,
   ) {}
 
-  async run(options: UpdateCheckSchedulerOptions = {}) {
+  async run(
+    options: UpdateCheckSchedulerOptions = {},
+  ): Promise<UpdateCheckSchedulerResult> {
     const now = options.now ?? Date.now();
     const settings = await this.config.getUpdateCheckConfig();
     if (!settings.updateCheckBackendEnabled) {
@@ -50,16 +75,31 @@ export class UpdateCheckScheduler {
       ),
     );
     const dueTasks = await this.tasks.listDue(now, limit);
-    const authorizedUsers = new Set(
-      await this.permissions.listUpdateCheckEnabledUserIds(),
-    );
+    const [enabledUserIds, adminConfig] = await Promise.all([
+      this.permissions.listUpdateCheckEnabledUserIds(),
+      this.loadAdminConfig(),
+    ]);
+    const authorizedUsers = new Set(enabledUserIds);
     const ownerId = process.env.USERNAME;
     if (ownerId) authorizedUsers.add(ownerId);
+    const usersById = new Map(
+      adminConfig.UserConfig.Users.map((user) => [user.username, user]),
+    );
     const selectedTasks: typeof dueTasks = [];
     const users = new Set<string>();
     const followCounts = new Map<string, number>();
     for (const task of dueTasks) {
       if (!authorizedUsers.has(task.userId)) continue;
+      const user = usersById.get(task.userId);
+      const schedule = resolveUserWatchingUpdateSchedule({
+        username: task.userId,
+        userUpdateCheckBackendEnabled: true,
+        isOwner: task.userId === ownerId,
+        systemConfig: settings,
+        userConfig: user?.watchingUpdateConfig,
+        from: new Date(now),
+      });
+      if (!schedule.enabled) continue;
       const count = followCounts.get(task.userId) ?? 0;
       if (
         !users.has(task.userId) &&
@@ -74,12 +114,15 @@ export class UpdateCheckScheduler {
     }
     let succeeded = 0;
     let failed = 0;
+    const completedTasks: CompletedTask[] = [];
 
     let cursor = 0;
     const worker = async () => {
       while (cursor < selectedTasks.length) {
         const task = selectedTasks[cursor++];
         const result = await this.service.checkTask(task);
+        const latestTask = await this.tasks.get(task.id);
+        completedTasks.push({ before: task, after: latestTask });
         if (result) succeeded += 1;
         else failed += 1;
         if (options.onTaskComplete) {
@@ -94,6 +137,13 @@ export class UpdateCheckScheduler {
     await Promise.all(
       Array.from({ length: Math.min(5, selectedTasks.length) }, worker),
     );
+    await this.rescheduleSuccessfulTasks(
+      completedTasks,
+      settings,
+      usersById,
+      authorizedUsers,
+      ownerId,
+    );
 
     return {
       inspected: selectedTasks.length,
@@ -104,6 +154,65 @@ export class UpdateCheckScheduler {
           ? Math.min(...selectedTasks.map((task) => task.nextCheckAt))
           : null,
     };
+  }
+
+  private async rescheduleSuccessfulTasks(
+    completedTasks: CompletedTask[],
+    settings: SystemConfig,
+    usersById: Map<string, AdminConfig['UserConfig']['Users'][number]>,
+    authorizedUsers: Set<string>,
+    ownerId: string | undefined,
+  ): Promise<void> {
+    const byUser = new Map<
+      string,
+      {
+        attemptedIds: Set<string>;
+        successfulIds: Set<string>;
+        latestSuccessAt: number;
+      }
+    >();
+
+    for (const completed of completedTasks) {
+      const current = byUser.get(completed.before.userId) ?? {
+        attemptedIds: new Set<string>(),
+        successfulIds: new Set<string>(),
+        latestSuccessAt: Number.NEGATIVE_INFINITY,
+      };
+      current.attemptedIds.add(completed.before.id);
+      if (
+        typeof completed.after?.lastSuccessAt === 'number' &&
+        completed.after.lastSuccessAt !== completed.before.lastSuccessAt
+      ) {
+        current.successfulIds.add(completed.before.id);
+        current.latestSuccessAt = Math.max(
+          current.latestSuccessAt,
+          completed.after.lastSuccessAt,
+        );
+      }
+      byUser.set(completed.before.userId, current);
+    }
+
+    for (const [username, state] of byUser) {
+      if (state.successfulIds.size === 0) continue;
+      const user = usersById.get(username);
+      const schedule = resolveUserWatchingUpdateSchedule({
+        username,
+        userUpdateCheckBackendEnabled: authorizedUsers.has(username),
+        isOwner: username === ownerId,
+        systemConfig: settings,
+        userConfig: user?.watchingUpdateConfig,
+        from: new Date(state.latestSuccessAt),
+      });
+      if (!schedule.enabled || schedule.nextRunAt === null) continue;
+
+      const userTasks = await this.tasks.listTasksByUser(username);
+      const preservedTasks = userTasks.filter(
+        (task) =>
+          state.attemptedIds.has(task.id) && !state.successfulIds.has(task.id),
+      );
+      await this.tasks.batchUpdateNextCheckAt(username, schedule.nextRunAt);
+      for (const task of preservedTasks) await this.tasks.save(task);
+    }
   }
 }
 

@@ -38,7 +38,11 @@ function configStore(config: AdminConfig, save = jest.fn()) {
 const systemConfig = {
   getUpdateCheckConfig: async () => ({
     updateCheckBackendEnabled: false,
+    updateCheckSchedulerEnabled: true,
     updateCheckCronInterval: 30 * 60 * 1000,
+    updateCheckCronExpression: '*/30 * * * *',
+    updateCheckTimezone: 'UTC',
+    updateCheckLogRetentionCount: 200,
     updateCheckBatchSize: 100,
     updateCheckMaxUsers: 1000,
     updateCheckMaxFollowPerUser: 100,

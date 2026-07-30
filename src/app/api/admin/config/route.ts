@@ -7,7 +7,8 @@ import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-import { normalizeUpdateCheckSystemConfig } from '@/lib/system-config-repository';
+import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
+import { validateUpdateCheckSystemConfigForSave } from '@/lib/system-config-repository';
 import { updateCheckPermissionService } from '@/lib/update-check-permission-service';
 
 export const runtime = 'nodejs';
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
       {
         error: '不支持本地存储进行管理员配置',
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
       } else {
         return NextResponse.json(
           { error: '你是管理员吗你就访问？' },
-          { status: 401 }
+          { status: 401 },
         );
       }
     }
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
         error: '获取管理员配置失败',
         details: (error as Error).message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       {
         error: '不支持本地存储进行管理员配置',
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -87,14 +88,14 @@ export async function POST(request: NextRequest) {
   if (username !== process.env.USERNAME) {
     return NextResponse.json(
       { error: '只有站长可以修改配置' },
-      { status: 403 }
+      { status: 403 },
     );
   }
 
   try {
     const previousConfig = await getConfig();
     const newConfig: AdminConfig = await request.json();
-    newConfig.SystemConfig = normalizeUpdateCheckSystemConfig(
+    newConfig.SystemConfig = validateUpdateCheckSystemConfigForSave(
       newConfig.SystemConfig,
     );
 
@@ -113,6 +114,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await updateCheckRuntime.handleSystemConfigChanged(
+      previousConfig.SystemConfig,
+      newConfig.SystemConfig,
+    );
+
     // 🔥 刷新所有页面的缓存，使新配置立即生效（无需重启Docker）
     revalidatePath('/', 'layout');
 
@@ -122,11 +128,12 @@ export async function POST(request: NextRequest) {
       { success: true, Config: newConfig },
       {
         headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
+          'Cache-Control':
+            'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
         },
-      }
+      },
     );
   } catch (error) {
     console.error('保存管理员配置失败:', error);
@@ -135,7 +142,7 @@ export async function POST(request: NextRequest) {
         error: '保存配置失败',
         details: (error as Error).message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -8,6 +8,13 @@ jest.mock('@/lib/update-check-capability', () => ({
 jest.mock('@/lib/update-check-service', () => ({
   updateCheckService: { checkUser: jest.fn() },
 }));
+jest.mock('@/lib/watching-update-check-log-service', () => {
+  const actual = jest.requireActual('@/lib/watching-update-check-log-service');
+  return {
+    ...actual,
+    watchingUpdateCheckLogService: { record: jest.fn() },
+  };
+});
 jest.mock('../route-utils', () => ({
   requireWatchingFollowUser: jest.fn(async () => ({ username: 'alice' })),
   noStoreJson: (data: unknown, init?: ResponseInit) =>
@@ -18,13 +25,18 @@ jest.mock('../route-utils', () => ({
 
 import { updateCheckCapabilityService } from '@/lib/update-check-capability';
 import { updateCheckService } from '@/lib/update-check-service';
+import { watchingUpdateCheckLogService } from '@/lib/watching-update-check-log-service';
 import { POST } from './route';
 
 const getCapability = updateCheckCapabilityService.getCapability as jest.Mock;
 const checkUser = updateCheckService.checkUser as jest.Mock;
+const recordLog = watchingUpdateCheckLogService.record as jest.Mock;
 
 describe('watching update check', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    recordLog.mockResolvedValue(undefined);
+  });
 
   it('delegates an enabled request to UpdateCheckService', async () => {
     getCapability.mockResolvedValue({
@@ -80,5 +92,45 @@ describe('watching update check', () => {
       errors: [],
     });
     expect(checkUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps the check response successful when log storage fails', async () => {
+    getCapability.mockResolvedValue({
+      enabled: true,
+      backendEnabled: true,
+      userEnabled: true,
+      mode: 'backend',
+    });
+    checkUser.mockResolvedValue({
+      results: [],
+      errors: [],
+    });
+    recordLog.mockRejectedValueOnce(new Error('log storage failed'));
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/watching-updates/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      capability: { mode: 'backend' },
+      results: [],
+      errors: [],
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to record watching update check log',
+      expect.any(Error),
+    );
+    expect(checkUser).toHaveBeenCalledWith('alice', undefined);
+    expect(recordLog).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

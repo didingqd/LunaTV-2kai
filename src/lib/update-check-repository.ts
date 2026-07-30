@@ -33,6 +33,16 @@ export interface UpdateCheckTaskRepository {
   deleteForUser(userId: string): Promise<void>;
 }
 
+export interface UpdateCheckScheduleTaskRepository {
+  listTasksByUser(username: string): Promise<UpdateCheckTask[]>;
+  listAllUsersWithTasks(): Promise<string[]>;
+  findEarliestNextCheckAt(): Promise<number | null>;
+  batchUpdateNextCheckAt(
+    username: string,
+    nextCheckAt: number,
+  ): Promise<number>;
+}
+
 const RESULT_PREFIX = 'watching-update:results:v1:';
 const OBSERVATION_PREFIX = 'watching-update:observations:v1:';
 const TASK_INDEX_KEY = 'watching-update:tasks:v1:index';
@@ -187,7 +197,9 @@ export class CachedUpdateObservationRepository implements UpdateObservationRepos
   }
 }
 
-export class CachedUpdateCheckTaskRepository implements UpdateCheckTaskRepository {
+export class CachedUpdateCheckTaskRepository
+  implements UpdateCheckTaskRepository, UpdateCheckScheduleTaskRepository
+{
   constructor(private readonly store: UpdateCacheStore) {}
 
   async get(id: string): Promise<UpdateCheckTask | null> {
@@ -232,6 +244,76 @@ export class CachedUpdateCheckTaskRepository implements UpdateCheckTaskRepositor
       if (due.length >= Math.max(0, limit)) break;
     }
     return due;
+  }
+
+  async listTasksByUser(username: string): Promise<UpdateCheckTask[]> {
+    const ids = asIdList(await this.store.getCache(userTaskKey(username)));
+    const tasks = await Promise.all(ids.map((id) => this.get(id)));
+    return tasks
+      .filter((task): task is UpdateCheckTask => task?.userId === username)
+      .sort(
+        (left, right) =>
+          left.nextCheckAt - right.nextCheckAt ||
+          left.id.localeCompare(right.id),
+      );
+  }
+
+  async listAllUsersWithTasks(): Promise<string[]> {
+    const users = new Set<string>();
+    const index = asTaskIndex(await this.store.getCache(TASK_INDEX_KEY));
+    for (const entry of index) {
+      const task = await this.get(entry.id);
+      if (task) users.add(task.userId);
+    }
+    return [...users].sort();
+  }
+
+  async findEarliestNextCheckAt(): Promise<number | null> {
+    let earliest: number | null = null;
+    const index = asTaskIndex(await this.store.getCache(TASK_INDEX_KEY));
+    for (const entry of index) {
+      const task = await this.get(entry.id);
+      if (!task) continue;
+      earliest =
+        earliest === null
+          ? task.nextCheckAt
+          : Math.min(earliest, task.nextCheckAt);
+    }
+    return earliest;
+  }
+
+  async batchUpdateNextCheckAt(
+    username: string,
+    nextCheckAt: number,
+  ): Promise<number> {
+    if (!Number.isFinite(nextCheckAt)) {
+      throw new Error('INVALID_NEXT_CHECK_AT');
+    }
+
+    return queuedWrite(TASK_INDEX_KEY, async () => {
+      const ids = asIdList(await this.store.getCache(userTaskKey(username)));
+      const tasks = (await Promise.all(ids.map((id) => this.get(id)))).filter(
+        (task): task is UpdateCheckTask => task?.userId === username,
+      );
+      if (tasks.length === 0) return 0;
+
+      const updatedIds = new Set(tasks.map((task) => task.id));
+      const index = asTaskIndex(
+        await this.store.getCache(TASK_INDEX_KEY),
+      ).filter((entry) => !updatedIds.has(entry.id));
+      for (const task of tasks) {
+        const updated = { ...task, nextCheckAt };
+        await this.store.setCache(taskKey(task.id), updated);
+        index.push({ id: task.id, nextCheckAt });
+      }
+      index.sort(
+        (left, right) =>
+          left.nextCheckAt - right.nextCheckAt ||
+          left.id.localeCompare(right.id),
+      );
+      await this.store.setCache(TASK_INDEX_KEY, index);
+      return tasks.length;
+    });
   }
 
   async delete(id: string): Promise<void> {

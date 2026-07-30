@@ -5,18 +5,12 @@ import { useMemo, useState } from 'react';
 
 import type { AdminConfig } from '@/lib/admin.types';
 
+import UserWatchingUpdateConfigPanel from './UserWatchingUpdateConfigPanel';
+
 type User = AdminConfig['UserConfig']['Users'][number];
 type Source = AdminConfig['SourceConfig'][number];
 type UserGroup = NonNullable<AdminConfig['UserConfig']['Tags']>[number];
-type Tab = 'groups' | 'sources' | 'tvbox' | 'special';
-
-interface PermissionResponse {
-  userId: string;
-  owner: boolean;
-  granted: boolean;
-  enabled: boolean;
-  mode: 'backend' | 'local';
-}
+type Tab = 'groups' | 'sources' | 'tvbox' | 'special' | 'watching-update';
 
 interface UserPermissionSettingsModalProps {
   user: User;
@@ -32,6 +26,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'sources', label: '采集源' },
   { id: 'tvbox', label: 'TVBox Token' },
   { id: 'special', label: '特殊功能权限' },
+  { id: 'watching-update', label: '追更系统控制' },
 ];
 
 const featureLabels = [
@@ -72,21 +67,6 @@ export default function UserPermissionSettingsModal({
   const [tvboxToken, setTvboxToken] = useState(user.tvboxToken);
   const [tvboxSources, setTvboxSources] = useState<string[]>(
     user.tvboxEnabledSources || [],
-  );
-  const [permission, setPermission] = useState<PermissionResponse>(() => {
-    const owner = user.role === 'owner';
-    const granted = owner || user.updateCheckBackendEnabled === true;
-    const enabled = systemUpdateCheckEnabled && granted;
-    return {
-      userId: user.username,
-      owner,
-      granted,
-      enabled,
-      mode: enabled ? 'backend' : 'local',
-    };
-  });
-  const [selectedUpdateCheckBackend, setSelectedUpdateCheckBackend] = useState(
-    user.role === 'owner' || user.updateCheckBackendEnabled === true,
   );
   const [saving, setSaving] = useState<Tab | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -146,33 +126,6 @@ export default function UserPermissionSettingsModal({
         },
         '采集源配置已保存',
       );
-      if (
-        !permission.owner &&
-        selectedUpdateCheckBackend !== permission.granted
-      ) {
-        const response = await fetch(
-          '/api/admin/settings/update-check/permissions',
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.username,
-              enabled: selectedUpdateCheckBackend,
-            }),
-          },
-        );
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || '更新追更授权失败');
-        const granted = data.permission?.enabled === true;
-        setPermission((current) => ({
-          ...current,
-          granted,
-          enabled: systemUpdateCheckEnabled && granted,
-          mode: systemUpdateCheckEnabled && granted ? 'backend' : 'local',
-        }));
-        setSelectedUpdateCheckBackend(granted);
-        await onRefresh();
-      }
       setMessage('特殊功能权限已保存');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '保存采集源配置失败');
@@ -512,47 +465,21 @@ export default function UserPermissionSettingsModal({
                 </span>
               </label>
 
-              <label className='flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700'>
-                <input
-                  type='checkbox'
-                  checked={selectedUpdateCheckBackend}
-                  onChange={(event) =>
-                    setSelectedUpdateCheckBackend(event.target.checked)
-                  }
-                  disabled={permission.owner || saving === 'sources'}
-                  className='mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
-                />
-                <div className='min-w-0 flex-1'>
-                  <div>
-                    <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
-                      追更后端计算
-                    </div>
-                    <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-                      {systemUpdateCheckEnabled
-                        ? '系统总开关已开启，用户授权后使用后端结果。'
-                        : '系统总开关已关闭，当前授权不会生效，用户继续本地计算。'}
-                    </p>
-                  </div>
-                  {permission.owner && (
-                    <span className='text-xs text-gray-500'>
-                      站长跟随总开关
-                    </span>
-                  )}
-                  {!permission.owner && (
-                    <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
-                      当前状态：
-                      {permission.granted ? '已授权' : '未授权'}
-                      ，实际模式：
-                      {permission.mode === 'backend' ? '后端计算' : '本地计算'}
-                    </p>
-                  )}
-                </div>
-              </label>
-
               <SaveButton
                 loading={saving === 'sources'}
                 onClick={saveSources}
                 label='保存特殊功能'
+              />
+            </section>
+          )}
+
+          {activeTab === 'watching-update' && (
+            <section role='tabpanel' aria-label='追更系统控制'>
+              <UserWatchingUpdateConfigPanel
+                username={user.username}
+                userRole={user.role}
+                systemUpdateCheckEnabled={systemUpdateCheckEnabled}
+                onRefresh={onRefresh}
               />
             </section>
           )}
