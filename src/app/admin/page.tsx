@@ -77,6 +77,7 @@ import DownloadConfig from '@/components/OfflineDownloadConfig';
 import EmbyConfig from '@/components/EmbyConfig';
 import CustomAdFilterConfig from '@/components/CustomAdFilterConfig';
 import WatchRoomConfig from '@/components/WatchRoomConfig';
+import WatchingUpdateCheckLogViewer from '@/components/WatchingUpdateCheckLogViewer';
 import HomePageConfig from '@/components/HomePageConfig';
 import PerformanceMonitor from '@/components/admin/PerformanceMonitor';
 import InviteCodeManager from '@/components/InviteCodeManager';
@@ -9726,6 +9727,7 @@ function AdminPageClient() {
                 onToggle={() => toggleTab('updateCheckConfig')}
               >
                 <UpdateCheckConfig />
+                <WatchingUpdateCheckLogViewer />
               </CollapsibleTab>
             )}
 
