@@ -64,6 +64,13 @@ function formatJson(value: unknown): string {
   }
 }
 
+function readFormControlValue(control: Element | RadioNodeList | null): string {
+  if (control && typeof control === 'object' && 'value' in control) {
+    return String(control.value);
+  }
+  return '';
+}
+
 function DetailItem({ label, value }: { label: string; value: unknown }) {
   return (
     <div className='min-w-0'>
@@ -310,9 +317,22 @@ export default function WatchingUpdateCheckLogViewer() {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const sourceElement = event.currentTarget.elements.namedItem('source');
+    const userIdElement = event.currentTarget.elements.namedItem('userId');
+    const submittedSource = readFormControlValue(sourceElement);
+    const submittedUserId = readFormControlValue(userIdElement).trim();
+    const nextSource: SourceFilter =
+      submittedSource === 'cron' ||
+      submittedSource === 'app' ||
+      submittedSource === 'web' ||
+      submittedSource === 'admin'
+        ? submittedSource
+        : 'all';
+    setSource(nextSource);
+    setUserId(submittedUserId);
     setQuery({
-      source,
-      userId: userId.trim(),
+      source: nextSource,
+      userId: submittedUserId,
     });
     setRefreshKey((current) => current + 1);
   };
@@ -339,6 +359,7 @@ export default function WatchingUpdateCheckLogViewer() {
             来源
           </span>
           <select
+            name='source'
             value={source}
             onChange={(event) => setSource(event.target.value as SourceFilter)}
             className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
@@ -375,6 +396,7 @@ export default function WatchingUpdateCheckLogViewer() {
             用户
           </span>
           <input
+            name='userId'
             type='text'
             value={userId}
             onChange={(event) => setUserId(event.target.value)}

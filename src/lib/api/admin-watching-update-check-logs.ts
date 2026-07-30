@@ -38,7 +38,8 @@ export async function getAdminWatchingUpdateCheckLogs(
     searchParams.set('userId', query.userId);
   }
 
-  const suffix = searchParams.size > 0 ? `?${searchParams.toString()}` : '';
+  const queryString = searchParams.toString();
+  const suffix = queryString ? `?${queryString}` : '';
   const response = await fetch(
     `/api/admin/watching-update-check-logs${suffix}`,
     { cache: 'no-store' },
