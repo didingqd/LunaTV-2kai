@@ -3,8 +3,6 @@
 import {
   BellRing,
   Check,
-  CheckCircle2,
-  ChevronRight,
   Edit3,
   Layers3,
   LoaderCircle,
@@ -21,7 +19,6 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
   NOTIFICATION_EVENT_METAS,
-  NOTIFICATION_PROVIDER_METAS,
   getCreatableNotificationProviderMetas,
   getNotificationProviderMeta,
   type NotificationProviderMeta,
@@ -59,12 +56,6 @@ interface ChannelFormState {
   originalConfig: Record<string, string>;
 }
 
-interface ChannelTestResult {
-  status: 'success' | 'error';
-  message: string;
-  time: number;
-}
-
 type ChannelModalStep = 'provider' | 'config';
 
 const NOTIFICATION_SETTINGS_ENDPOINT = '/api/user/notification-settings';
@@ -92,7 +83,6 @@ function getCompatibleSubscribedEvents(
   settings: NotificationSettings,
 ) {
   if (Array.isArray(channel.subscribedEvents)) return channel.subscribedEvents;
-
   const events: string[] = [];
   if (settings.watchingUpdateFoundEnabled) events.push('watching.update_found');
   if (settings.watchingUpdateFailedEnabled)
@@ -177,26 +167,64 @@ function buildConfigPatch(form: ChannelFormState) {
 }
 
 function isFormValid(form: ChannelFormState) {
-  const provider = getNotificationProviderMeta(form.providerType);
   if (!form.name.trim()) return false;
+  const provider = getNotificationProviderMeta(form.providerType);
   return provider.configSchema.fields.every((field) => {
     if (!field.required) return true;
-    return Boolean((form.config[field.key] ?? '').trim());
+    return Boolean(form.config[field.key]?.trim());
   });
 }
 
-function formatTestTime(value: number) {
-  return new Date(value).toLocaleString('zh-CN', {
-    hour12: false,
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatUpdatedAt(timestamp?: number) {
+  if (!timestamp) return null;
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(timestamp);
+  } catch {
+    return null;
+  }
 }
 
-function getProviderTone() {
-  return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300';
+function mergeClassName(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(' ');
+}
+
+function ToggleSwitch({
+  checked,
+  disabled,
+  label,
+  onClick,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type='button'
+      role='switch'
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={mergeClassName(
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-gray-950',
+        checked ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700',
+      )}
+    >
+      <span
+        className={mergeClassName(
+          'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+          checked ? 'translate-x-5' : 'translate-x-0.5',
+        )}
+      />
+    </button>
+  );
 }
 
 export default function NotificationSettingsPage({
@@ -210,15 +238,9 @@ export default function NotificationSettingsPage({
   const [channelSavingId, setChannelSavingId] = useState<string | null>(null);
   const [channelModalStep, setChannelModalStep] =
     useState<ChannelModalStep | null>(null);
-  const [selectedProviderType, setSelectedProviderType] = useState<
-    string | null
-  >(null);
   const [form, setForm] = useState<ChannelFormState | null>(null);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
-  const [testResults, setTestResults] = useState<
-    Record<string, ChannelTestResult>
-  >({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -258,7 +280,6 @@ export default function NotificationSettingsPage({
 
   const closeChannelModal = useCallback(() => {
     setChannelModalStep(null);
-    setSelectedProviderType(null);
     setForm(null);
   }, []);
 
@@ -301,6 +322,41 @@ export default function NotificationSettingsPage({
     );
   };
 
+  const patchChannel = async (
+    channel: NotificationChannelConfig,
+    patch: Record<string, unknown>,
+  ) => {
+    const response = await fetch(
+      `${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      },
+    );
+    const data = await readSettingsResponse(response);
+    return data.settings;
+  };
+
+  const updateChannel = async (
+    channel: NotificationChannelConfig,
+    patch: Record<string, unknown>,
+    successMessage = '通知渠道已更新',
+  ) => {
+    setChannelSavingId(channel.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const nextSettings = await patchChannel(channel, patch);
+      applySettings(nextSettings);
+      setMessage(successMessage);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '通知渠道更新失败');
+    } finally {
+      setChannelSavingId(null);
+    }
+  };
+
   const restoreDefault = async () => {
     setSaving(true);
     setError(null);
@@ -330,10 +386,10 @@ export default function NotificationSettingsPage({
       const configPatch = buildConfigPatch(form);
       const body: Record<string, unknown> = {
         name: form.name.trim(),
+        subscribedEvents: form.subscribedEvents,
       };
       if (form.mode === 'create') {
         body.type = form.providerType;
-        body.subscribedEvents = form.subscribedEvents;
         body.config = configPatch;
       } else if (hasConfigPatch(form)) {
         body.config = configPatch;
@@ -350,52 +406,17 @@ export default function NotificationSettingsPage({
       );
       const data = await readSettingsResponse(response);
       applySettings(data.settings);
-      setMessage(form.mode === 'create' ? '通知方式已添加' : '通知方式已更新');
+      setMessage(form.mode === 'create' ? '通知渠道已添加' : '通知渠道已更新');
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
           : form.mode === 'create'
-            ? '通知方式添加失败'
-            : '通知方式更新失败',
+            ? '通知渠道添加失败'
+            : '通知渠道更新失败',
       );
     } finally {
       setSaving(false);
-    }
-  };
-
-  const patchChannel = async (
-    channel: NotificationChannelConfig,
-    patch: Record<string, unknown>,
-  ) => {
-    const response = await fetch(
-      `${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      },
-    );
-    const data = await readSettingsResponse(response);
-    return data.settings;
-  };
-
-  const updateChannel = async (
-    channel: NotificationChannelConfig,
-    patch: Record<string, unknown>,
-    successMessage = '通知方式已更新',
-  ) => {
-    setChannelSavingId(channel.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const nextSettings = await patchChannel(channel, patch);
-      applySettings(nextSettings);
-      setMessage(successMessage);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '通知方式更新失败');
-    } finally {
-      setChannelSavingId(null);
     }
   };
 
@@ -406,15 +427,13 @@ export default function NotificationSettingsPage({
     try {
       const response = await fetch(
         `${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`,
-        {
-          method: 'DELETE',
-        },
+        { method: 'DELETE' },
       );
       const data = await readSettingsResponse(response);
       applySettings(data.settings);
-      setMessage('通知方式已删除');
+      setMessage('通知渠道已删除');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '通知方式删除失败');
+      setError(reason instanceof Error ? reason.message : '通知渠道删除失败');
     } finally {
       setChannelSavingId(null);
     }
@@ -431,43 +450,23 @@ export default function NotificationSettingsPage({
         body: JSON.stringify({ channelId: channel.id }),
       });
       await readSettingsResponse(response);
-      setTestResults((current) => ({
-        ...current,
-        [channel.id]: {
-          status: 'success',
-          message: '测试通知已发送',
-          time: Date.now(),
-        },
-      }));
       setMessage('测试通知已发送');
     } catch (reason) {
-      const reasonMessage =
-        reason instanceof Error ? reason.message : '测试通知发送失败';
-      setTestResults((current) => ({
-        ...current,
-        [channel.id]: {
-          status: 'error',
-          message: reasonMessage,
-          time: Date.now(),
-        },
-      }));
-      setError(reasonMessage);
+      setError(reason instanceof Error ? reason.message : '测试通知发送失败');
     } finally {
       setChannelSavingId(null);
     }
   };
 
   const openAddChannel = () => {
-    setSelectedProviderType(creatableProviders[0]?.type ?? null);
     setForm(null);
     setChannelModalStep('provider');
     setMessage(null);
     setError(null);
   };
 
-  const openCreateForm = () => {
-    if (!selectedProviderType) return;
-    const provider = getNotificationProviderMeta(selectedProviderType);
+  const openCreateForm = (providerType: string) => {
+    const provider = getNotificationProviderMeta(providerType);
     if (!provider.capabilities.canCreate) return;
     setForm(buildCreateForm(provider));
     setChannelModalStep('config');
@@ -477,7 +476,6 @@ export default function NotificationSettingsPage({
     if (!settings) return;
     const provider = getNotificationProviderMeta(channel.type);
     if (!provider.capabilities.canEdit) return;
-    setSelectedProviderType(channel.type);
     setForm(buildEditForm(channel, settings));
     setChannelModalStep('config');
     setMessage(null);
@@ -524,8 +522,6 @@ export default function NotificationSettingsPage({
     );
   };
 
-  const clearSelection = () => setSelectedChannelIds([]);
-
   const toggleChannelSelection = (channelId: string) => {
     setSelectedChannelIds((current) =>
       current.includes(channelId)
@@ -534,34 +530,31 @@ export default function NotificationSettingsPage({
     );
   };
 
-  const batchPatchChannels = async (enabled: boolean) => {
-    if (!settings || selectedChannels.length === 0) return;
-    const targets = selectedChannels.filter(
-      (channel) =>
-        getNotificationProviderMeta(channel.type).capabilities.canToggle,
-    );
-    if (targets.length === 0) return;
-
+  const runBatchPatch = async (patch: Record<string, unknown>) => {
+    if (selectedChannels.length === 0) return;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
       let nextSettings = settings;
-      for (const channel of targets) {
-        nextSettings = await patchChannel(channel, { enabled });
+      for (const channel of selectedChannels) {
+        if (!nextSettings) break;
+        nextSettings = await patchChannel(channel, patch);
       }
-      applySettings(nextSettings);
-      setMessage(enabled ? '已批量启用通知渠道' : '已批量禁用通知渠道');
+      if (nextSettings) applySettings(nextSettings);
+      setMessage('批量操作已完成');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '批量更新失败');
+      setError(reason instanceof Error ? reason.message : '批量操作失败');
     } finally {
       setSaving(false);
     }
   };
 
-  const batchDeleteChannels = async () => {
-    if (!settings || selectedDeletableChannels.length === 0) return;
-
+  const runBatchDelete = async () => {
+    if (selectedDeletableChannels.length === 0) {
+      setMessage('没有可删除的通知渠道');
+      return;
+    }
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -575,9 +568,8 @@ export default function NotificationSettingsPage({
         const data = await readSettingsResponse(response);
         nextSettings = data.settings;
       }
-      applySettings(nextSettings);
-      setSelectedChannelIds([]);
-      setMessage('已批量删除可删除的通知渠道');
+      if (nextSettings) applySettings(nextSettings);
+      setMessage('批量删除已完成');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '批量删除失败');
     } finally {
@@ -585,668 +577,564 @@ export default function NotificationSettingsPage({
     }
   };
 
-  const renderModal = () => {
-    if (!channelModalStep) return null;
-    const provider = form
-      ? getNotificationProviderMeta(form.providerType)
-      : selectedProviderType
-        ? getNotificationProviderMeta(selectedProviderType)
-        : null;
-    const ProviderIcon = provider?.icon;
+  const renderProviderPicker = () => (
+    <div className='grid gap-3 sm:grid-cols-2'>
+      {creatableProviders.map((provider) => {
+        const Icon = provider.icon;
+        return (
+          <button
+            key={provider.type}
+            type='button'
+            disabled={saving}
+            onClick={() => openCreateForm(provider.type)}
+            className='group flex min-h-24 items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50/60 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-800 dark:hover:bg-blue-950/20'
+          >
+            <span className='flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300'>
+              <Icon className='h-5 w-5' />
+            </span>
+            <span className='min-w-0'>
+              <span className='block text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                {provider.displayName}
+              </span>
+              <span className='mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                {provider.description}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
+  const renderChannelForm = () => {
+    if (!form) return null;
+    const provider = getNotificationProviderMeta(form.providerType);
+    const Icon = provider.icon;
+    const valid = isFormValid(form);
     return (
-      <div
-        className='fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm'
-        role='dialog'
-        aria-modal='true'
-        aria-label={form?.mode === 'edit' ? '编辑通知渠道' : '添加通知渠道'}
-      >
-        <div className='w-full max-w-xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950'>
-          <div className='flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800'>
-            <div>
-              <div className='flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-gray-100'>
-                {ProviderIcon && (
-                  <span className='inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300'>
-                    <ProviderIcon className='h-4 w-4' />
-                  </span>
-                )}
-                {form?.mode === 'edit' ? '编辑渠道' : '添加渠道'}
-              </div>
-              <p className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
-                {channelModalStep === 'provider'
-                  ? '先选择 Provider，再进入基础配置。事件订阅可在渠道卡片内调整。'
-                  : '仅配置名称和 Provider 基础字段；事件订阅与测试结果不会出现在弹窗中。'}
-              </p>
+      <div className='space-y-5'>
+        <div className='flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60'>
+          <span className='flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300'>
+            <Icon className='h-5 w-5' />
+          </span>
+          <div>
+            <div className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+              {provider.displayName}
             </div>
-            <button
-              type='button'
-              onClick={closeChannelModal}
-              disabled={saving}
-              className='rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200'
-              aria-label='关闭弹窗'
-            >
-              <X className='h-4 w-4' />
-            </button>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>
+              {provider.description}
+            </div>
           </div>
+        </div>
 
-          {channelModalStep === 'provider' ? (
-            <div className='p-5'>
-              <div className='mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'>
-                选择 Provider
-              </div>
-              <div className='grid gap-3'>
-                {NOTIFICATION_PROVIDER_METAS.map((providerMeta) => {
-                  const Icon = providerMeta.icon;
-                  const active = selectedProviderType === providerMeta.type;
-                  const creatable = providerMeta.capabilities.canCreate;
-                  return (
-                    <button
-                      key={providerMeta.type}
-                      type='button'
-                      disabled={!creatable}
-                      onClick={() => setSelectedProviderType(providerMeta.type)}
-                      className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
-                        active
-                          ? 'border-blue-400 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-900'
-                      }`}
-                    >
-                      <span
-                        className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${getProviderTone()}`}
-                      >
-                        <Icon className='h-5 w-5' />
-                      </span>
-                      <span className='min-w-0 flex-1'>
-                        <span className='block text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                          {providerMeta.displayName}
-                        </span>
-                        <span className='mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
-                          {providerMeta.description}
-                        </span>
-                      </span>
-                      <span className='text-xs font-medium text-gray-400'>
-                        {creatable ? '可添加' : '内置'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className='mt-5 flex justify-end gap-2'>
-                <button
-                  type='button'
-                  onClick={closeChannelModal}
-                  className='rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                >
-                  取消
-                </button>
-                <button
-                  type='button'
-                  onClick={openCreateForm}
-                  disabled={saving || !selectedProviderType}
-                  className='inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                >
-                  下一步
-                  <ChevronRight className='h-4 w-4' />
-                </button>
-              </div>
+        <section className='space-y-3'>
+          <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+            基础信息
+          </h4>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-200'>
+            渠道名称
+            <input
+              value={form.name}
+              onChange={(event) =>
+                setForm((current) =>
+                  current ? { ...current, name: event.target.value } : current,
+                )
+              }
+              className='mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+              placeholder='例如：服务器通知'
+            />
+          </label>
+        </section>
+
+        <section className='space-y-3'>
+          <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+            Provider配置
+          </h4>
+          {provider.configSchema.fields.length === 0 ? (
+            <div className='rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400'>
+              当前通知方式无需额外配置。
             </div>
-          ) : form && provider ? (
-            <div className='p-5'>
-              <div className='mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60'>
-                <div className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                  {provider.displayName}
-                </div>
-                <div className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
-                  {provider.description}
-                </div>
-              </div>
-
-              <div className='grid gap-4'>
-                <label className='flex flex-col gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200'>
-                  渠道名称
+          ) : (
+            <div className='space-y-3'>
+              {provider.configSchema.fields.map((field) => (
+                <label
+                  key={field.key}
+                  className='block text-sm font-medium text-gray-700 dark:text-gray-200'
+                >
+                  {field.label}
+                  {field.required && <span className='text-red-500'> *</span>}
                   <input
-                    aria-label='渠道名称'
-                    value={form.name}
-                    disabled={saving}
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    inputMode={field.type === 'url' ? 'url' : undefined}
+                    value={form.config[field.key] ?? ''}
                     onChange={(event) =>
                       setForm((current) =>
                         current
-                          ? { ...current, name: event.target.value }
+                          ? {
+                              ...current,
+                              config: {
+                                ...current.config,
+                                [field.key]: event.target.value,
+                              },
+                            }
                           : current,
                       )
                     }
-                    className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+                    className='mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+                    placeholder={field.placeholder}
                   />
+                  {field.description && (
+                    <span className='mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                      {field.description}
+                    </span>
+                  )}
                 </label>
+              ))}
+            </div>
+          )}
+        </section>
 
-                {provider.configSchema.fields.map((field) => (
+        {form.mode === 'edit' && (
+          <section className='space-y-3'>
+            <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+              通知事件
+            </h4>
+            <div className='grid gap-2 sm:grid-cols-2'>
+              {NOTIFICATION_EVENT_METAS.map((eventMeta) => {
+                const checked = form.subscribedEvents.includes(eventMeta.type);
+                return (
                   <label
-                    key={field.key}
-                    className='flex flex-col gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200'
+                    key={eventMeta.type}
+                    className='flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 text-sm transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-800 dark:hover:bg-blue-950/20'
                   >
-                    {field.label}
                     <input
-                      aria-label={field.label}
-                      type={field.type}
-                      required={field.required}
-                      value={form.config[field.key] ?? ''}
-                      disabled={saving}
-                      onChange={(event) =>
+                      type='checkbox'
+                      checked={checked}
+                      aria-label={eventMeta.label}
+                      onChange={() =>
                         setForm((current) =>
                           current
                             ? {
                                 ...current,
-                                config: {
-                                  ...current.config,
-                                  [field.key]: event.target.value,
-                                },
+                                subscribedEvents: toggleEventSubscription(
+                                  current.subscribedEvents,
+                                  eventMeta.type,
+                                ),
                               }
                             : current,
                         )
                       }
-                      placeholder={field.placeholder}
-                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+                      className='mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-700'
                     />
-                    {field.description && (
-                      <span className='text-xs font-normal leading-5 text-gray-500 dark:text-gray-400'>
-                        {field.description}
+                    <span>
+                      <span className='block font-medium text-gray-800 dark:text-gray-100'>
+                        {eventMeta.label}
                       </span>
-                    )}
+                      <span className='mt-0.5 block text-xs text-gray-500 dark:text-gray-400'>
+                        {eventMeta.type}
+                      </span>
+                    </span>
                   </label>
-                ))}
-              </div>
-
-              <div className='mt-5 flex justify-between gap-2'>
-                {form.mode === 'create' ? (
-                  <button
-                    type='button'
-                    onClick={() => {
-                      setForm(null);
-                      setChannelModalStep('provider');
-                    }}
-                    disabled={saving}
-                    className='rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                  >
-                    上一步
-                  </button>
-                ) : (
-                  <span />
-                )}
-                <div className='flex gap-2'>
-                  <button
-                    type='button'
-                    onClick={closeChannelModal}
-                    disabled={saving}
-                    className='rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                  >
-                    取消
-                  </button>
-                  <button
-                    type='button'
-                    onClick={saveChannelForm}
-                    disabled={saving || !isFormValid(form)}
-                    className='inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                  >
-                    {saving && (
-                      <LoaderCircle className='h-4 w-4 animate-spin' />
-                    )}
-                    保存渠道
-                  </button>
-                </div>
-              </div>
+                );
+              })}
             </div>
-          ) : null}
+          </section>
+        )}
+
+        <div className='flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end'>
+          {form.mode === 'create' && (
+            <button
+              type='button'
+              disabled={saving}
+              onClick={() => {
+                setForm(null);
+                setChannelModalStep('provider');
+              }}
+              className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+            >
+              重新选择
+            </button>
+          )}
+          <button
+            type='button'
+            disabled={saving}
+            onClick={closeChannelModal}
+            className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            取消
+          </button>
+          <button
+            type='button'
+            disabled={saving || !valid}
+            onClick={() => void saveChannelForm()}
+            className='inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+          >
+            {saving && <LoaderCircle className='h-4 w-4 animate-spin' />}
+            保存
+          </button>
         </div>
       </div>
     );
   };
 
-  if (!authChecked || loading) {
+  const renderChannelModal = () => {
+    if (!channelModalStep) return null;
+    const title =
+      channelModalStep === 'provider'
+        ? '选择通知渠道'
+        : form?.mode === 'edit'
+          ? '编辑通知渠道'
+          : '配置通知渠道';
     return (
-      <main
-        className={
-          embedded
-            ? 'p-4'
-            : 'min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-950'
-        }
-      >
-        <div className='mx-auto max-w-5xl rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'>
-          <div className='flex items-center gap-2'>
-            <LoaderCircle className='h-4 w-4 animate-spin' />
-            正在加载通知设置
+      <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm'>
+        <div className='max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950'>
+          <div className='flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800'>
+            <div>
+              <h3 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+                {title}
+              </h3>
+              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                {channelModalStep === 'provider'
+                  ? '选择一种通知方式，点击卡片后直接进入配置。'
+                  : '列表保持简洁，详细配置统一在弹窗中维护。'}
+              </p>
+            </div>
+            <button
+              type='button'
+              aria-label='关闭'
+              disabled={saving}
+              onClick={closeChannelModal}
+              className='rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100'
+            >
+              <X className='h-5 w-5' />
+            </button>
+          </div>
+          <div className='max-h-[calc(88vh-5rem)] overflow-y-auto p-5'>
+            {channelModalStep === 'provider'
+              ? renderProviderPicker()
+              : renderChannelForm()}
           </div>
         </div>
-      </main>
+      </div>
     );
-  }
+  };
 
-  if (!canManageSettings) {
-    return (
-      <main
-        className={
-          embedded
-            ? 'p-4'
-            : 'min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-950'
-        }
-      >
-        <div className='mx-auto max-w-5xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200'>
-          通知设置仅管理员可见。请使用管理员账号登录后再管理通知渠道。
+  const renderNotificationConfig = () => (
+    <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/80'>
+      <div className='flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'>
+        <div>
+          <div className='flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-gray-100'>
+            <BellRing className='h-5 w-5 text-blue-600 dark:text-blue-400' />
+            通知配置
+          </div>
+          <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+            管理推送总开关、通知渠道与默认配置。
+          </p>
         </div>
-      </main>
+        <div className='flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/60'>
+          <div className='text-right'>
+            <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+              推送总开关
+            </div>
+            <div className='text-xs text-gray-500 dark:text-gray-400'>
+              {globalPushEnabled ? 'ON' : 'OFF'}
+            </div>
+          </div>
+          <ToggleSwitch
+            checked={globalPushEnabled}
+            disabled={saving || loading || !settings?.channels.length}
+            label='推送总开关'
+            onClick={() => void toggleGlobalPush()}
+          />
+        </div>
+      </div>
+
+      <div className='mt-5 flex flex-wrap gap-2'>
+        <button
+          type='button'
+          disabled={saving || loading}
+          onClick={openAddChannel}
+          className='inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+        >
+          <MessageSquarePlus className='h-4 w-4' />
+          添加通知渠道
+        </button>
+        <button
+          type='button'
+          disabled={saving || loading || !settings?.channels.length}
+          onClick={toggleBatchMode}
+          className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+        >
+          <Layers3 className='h-4 w-4' />
+          {batchMode ? '退出批量管理' : '批量管理'}
+        </button>
+        <button
+          type='button'
+          disabled={saving || loading}
+          onClick={() => void restoreDefault()}
+          className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+        >
+          <RotateCcw className='h-4 w-4' />
+          恢复默认
+        </button>
+      </div>
+    </section>
+  );
+
+  const renderBatchToolbar = () => {
+    if (!batchMode) return null;
+    return (
+      <div className='mb-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20 md:flex-row md:items-center md:justify-between'>
+        <div>
+          <div className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+            批量管理
+          </div>
+          <div className='text-xs text-gray-500 dark:text-gray-400'>
+            已选择 {selectedChannelIds.length} 项
+          </div>
+        </div>
+        <div className='flex flex-wrap gap-2'>
+          <button
+            type='button'
+            disabled={saving || !settings?.channels.length}
+            onClick={toggleSelectAll}
+            className='rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            {allSelected ? '取消全选' : '全选'}
+          </button>
+          <button
+            type='button'
+            disabled={saving || selectedChannels.length === 0}
+            onClick={() => void runBatchPatch({ enabled: true })}
+            className='rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            启用
+          </button>
+          <button
+            type='button'
+            disabled={saving || selectedChannels.length === 0}
+            onClick={() => void runBatchPatch({ enabled: false })}
+            className='rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            关闭
+          </button>
+          <button
+            type='button'
+            disabled={saving || selectedDeletableChannels.length === 0}
+            onClick={() => void runBatchDelete()}
+            className='rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-gray-950 dark:text-red-300 dark:hover:bg-red-950/30'
+          >
+            删除
+          </button>
+          <button
+            type='button'
+            disabled={saving}
+            onClick={toggleBatchMode}
+            className='rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            退出
+          </button>
+        </div>
+      </div>
     );
-  }
+  };
 
-  return (
-    <main
-      className={
-        embedded ? 'p-4' : 'min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-950'
-      }
-    >
-      {renderModal()}
-      <div className='mx-auto flex max-w-6xl flex-col gap-5'>
-        {!embedded && (
-          <div>
-            <h1 className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
-              通知设置
-            </h1>
-            <p className='mt-2 text-sm text-gray-500 dark:text-gray-400'>
-              管理通知总开关、Provider 渠道与事件订阅。布局已按 renewhelper
-              的渠道管理交互重新组织。
-            </p>
-          </div>
+  const renderChannelList = () => (
+    <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/80'>
+      <div className='mb-4 flex items-center justify-between gap-3'>
+        <div>
+          <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+            通知渠道
+          </h2>
+          <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+            管理已创建的通知渠道。
+          </p>
+        </div>
+        {settings?.updatedAt && (
+          <span className='hidden rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400 sm:inline-flex'>
+            更新于 {formatUpdatedAt(settings.updatedAt)}
+          </span>
         )}
+      </div>
 
-        {message && (
-          <div className='flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300'>
-            <CheckCircle2 className='h-4 w-4' />
-            {message}
-          </div>
-        )}
-        {error && (
-          <div className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'>
-            {error}
-          </div>
-        )}
+      {renderBatchToolbar()}
 
-        {!settings ? null : (
-          <>
-            <section className='rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
-              <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-                <div className='flex items-start gap-3'>
-                  <span className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300'>
-                    <BellRing className='h-5 w-5' />
-                  </span>
-                  <div>
-                    <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                      通知配置
-                    </h2>
-                    <p className='mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400'>
-                      推送总开关负责统一启停可用渠道；渠道新增、编辑与事件订阅统一在下方列表管理。
-                    </p>
-                  </div>
-                </div>
+      {!settings || settings.channels.length === 0 ? (
+        <div className='rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400'>
+          暂无通知渠道，请先添加一个通知渠道。
+        </div>
+      ) : (
+        <div className='space-y-3'>
+          {settings.channels.map((channel) => {
+            const provider = getNotificationProviderMeta(channel.type);
+            const Icon = provider.icon;
+            const pending = channelSavingId === channel.id;
+            const selected = selectedChannelIds.includes(channel.id);
+            return (
+              <article
+                key={channel.id}
+                className={mergeClassName(
+                  'flex min-h-24 items-center gap-3 rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-sm dark:bg-gray-950',
+                  selected
+                    ? 'border-blue-300 ring-2 ring-blue-500/20 dark:border-blue-700'
+                    : 'border-gray-200 dark:border-gray-800',
+                )}
+              >
+                {batchMode && (
+                  <input
+                    type='checkbox'
+                    checked={selected}
+                    aria-label={`选择 ${channel.name}`}
+                    disabled={saving}
+                    onChange={() => toggleChannelSelection(channel.id)}
+                    className='h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-700'
+                  />
+                )}
 
-                <div className='flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950 sm:min-w-80'>
-                  <div className='flex items-center justify-between gap-4'>
-                    <div>
-                      <div className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                        推送总开关
-                      </div>
-                      <div className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-                        {enabledChannelCount}/{settings.channels.length}{' '}
-                        个渠道已启用
-                      </div>
-                    </div>
-                    <button
-                      type='button'
-                      role='switch'
-                      aria-checked={globalPushEnabled}
-                      aria-label='推送总开关'
-                      disabled={saving || settings.channels.length === 0}
-                      onClick={toggleGlobalPush}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                        globalPushEnabled
-                          ? 'bg-blue-600'
-                          : 'bg-gray-300 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                          globalPushEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  <div className='flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-gray-800'>
-                    <button
-                      type='button'
-                      onClick={openAddChannel}
-                      disabled={saving}
-                      className='inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                    >
-                      <MessageSquarePlus className='h-4 w-4' />
-                      通知渠道管理入口
-                    </button>
-                    <button
-                      type='button'
-                      onClick={restoreDefault}
-                      disabled={saving}
-                      className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                    >
-                      <RotateCcw className='h-4 w-4' />
-                      恢复默认
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
+                <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300'>
+                  <Icon className='h-5 w-5' />
+                </span>
 
-            <section className='rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
-              <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                <div>
-                  <div className='flex items-center gap-2'>
-                    <Layers3 className='h-5 w-5 text-blue-600 dark:text-blue-300' />
-                    <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                      通知渠道
-                    </h2>
-                  </div>
-                  <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                    统一卡片列表展示所有通知方式，配置通过弹窗完成。
+                <div className='min-w-0 flex-1'>
+                  <h3 className='truncate text-base font-semibold text-gray-900 dark:text-gray-100'>
+                    {channel.name}
+                  </h3>
+                  <p className='mt-1 truncate text-sm text-gray-500 dark:text-gray-400'>
+                    {provider.displayName}
                   </p>
                 </div>
 
-                <div className='flex flex-wrap gap-2'>
-                  <button
-                    type='button'
-                    onClick={openAddChannel}
-                    disabled={saving}
-                    className='inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                  >
-                    <MessageSquarePlus className='h-4 w-4' />
-                    添加渠道
-                  </button>
-                  <button
-                    type='button'
-                    onClick={toggleBatchMode}
-                    disabled={saving || settings.channels.length === 0}
-                    className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                      batchMode
-                        ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    <Check className='h-4 w-4' />
-                    {batchMode ? '退出批量' : '批量选择'}
-                  </button>
-                </div>
-              </div>
-
-              {batchMode && (
-                <div className='mt-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/50 dark:bg-blue-950/20 sm:flex-row sm:items-center sm:justify-between'>
-                  <div className='flex flex-wrap items-center gap-3 text-sm text-blue-800 dark:text-blue-200'>
-                    <span className='font-semibold'>
-                      已选择：{selectedChannelIds.length} 个渠道
+                <div className='flex flex-col items-end gap-3 sm:flex-row sm:items-center'>
+                  <div className='flex items-center gap-2'>
+                    <span
+                      className={mergeClassName(
+                        'text-xs font-medium',
+                        channel.enabled
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-gray-500 dark:text-gray-400',
+                      )}
+                    >
+                      {channel.enabled ? '启用' : '关闭'}
                     </span>
-                    <button
-                      type='button'
-                      onClick={toggleSelectAll}
-                      className='text-xs font-medium text-blue-700 hover:underline dark:text-blue-300'
-                    >
-                      {allSelected ? '取消全选' : '全选'}
-                    </button>
-                    <button
-                      type='button'
-                      onClick={clearSelection}
-                      disabled={selectedChannelIds.length === 0}
-                      className='text-xs font-medium text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-300'
-                    >
-                      取消选择
-                    </button>
+                    {provider.capabilities.canToggle && (
+                      <ToggleSwitch
+                        checked={channel.enabled}
+                        disabled={pending || saving}
+                        label={`启停 ${channel.name}`}
+                        onClick={() =>
+                          void updateChannel(channel, {
+                            enabled: !channel.enabled,
+                          })
+                        }
+                      />
+                    )}
                   </div>
-                  <div className='flex flex-wrap gap-2'>
-                    <button
-                      type='button'
-                      onClick={() => void batchPatchChannels(true)}
-                      disabled={saving || selectedChannelIds.length === 0}
-                      className='rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-900/60 dark:bg-gray-950 dark:text-emerald-300 dark:hover:bg-emerald-950/30'
-                    >
-                      批量启用
-                    </button>
-                    <button
-                      type='button'
-                      onClick={() => void batchPatchChannels(false)}
-                      disabled={saving || selectedChannelIds.length === 0}
-                      className='rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-gray-950 dark:text-amber-300 dark:hover:bg-amber-950/30'
-                    >
-                      批量禁用
-                    </button>
-                    <button
-                      type='button'
-                      onClick={() => void batchDeleteChannels()}
-                      disabled={
-                        saving || selectedDeletableChannels.length === 0
-                      }
-                      className='rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/60 dark:bg-gray-950 dark:text-red-300 dark:hover:bg-red-950/30'
-                      title={
-                        selectedDeletableChannels.length === 0
-                          ? '所选渠道不可删除，内置 Inbox 不允许删除'
-                          : undefined
-                      }
-                    >
-                      批量删除
-                    </button>
-                  </div>
+
+                  {!batchMode && (
+                    <div className='flex flex-wrap justify-end gap-2'>
+                      {provider.capabilities.canTest && (
+                        <button
+                          type='button'
+                          disabled={pending || saving || !channel.enabled}
+                          onClick={() => void sendTest(channel)}
+                          className='inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                        >
+                          {pending ? (
+                            <LoaderCircle className='h-3.5 w-3.5 animate-spin' />
+                          ) : (
+                            <Send className='h-3.5 w-3.5' />
+                          )}
+                          测试
+                        </button>
+                      )}
+                      {provider.capabilities.canEdit && (
+                        <button
+                          type='button'
+                          disabled={pending || saving}
+                          onClick={() => openEditForm(channel)}
+                          className='inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                        >
+                          <Edit3 className='h-3.5 w-3.5' />
+                          编辑
+                        </button>
+                      )}
+                      {provider.capabilities.canDelete && (
+                        <button
+                          type='button'
+                          disabled={pending || saving}
+                          onClick={() => void deleteChannel(channel)}
+                          className='inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30'
+                        >
+                          <Trash2 className='h-3.5 w-3.5' />
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 
-              <div className='mt-4 grid gap-3'>
-                {settings.channels.length === 0 ? (
-                  <div className='rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-400'>
-                    暂无通知渠道，请点击右上角添加渠道。
-                  </div>
-                ) : (
-                  settings.channels.map((channel) => {
-                    const provider = getNotificationProviderMeta(channel.type);
-                    const Icon = provider.icon;
-                    const subscribedEvents = getCompatibleSubscribedEvents(
-                      channel,
-                      settings,
-                    );
-                    const testResult = testResults[channel.id];
-                    const pending = channelSavingId === channel.id;
-                    const selected = selectedChannelIds.includes(channel.id);
-
-                    return (
-                      <article
-                        key={channel.id}
-                        className={`group min-h-[154px] rounded-xl border bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-gray-950 ${
-                          selected
-                            ? 'border-blue-400 ring-2 ring-blue-100 dark:border-blue-700 dark:ring-blue-950'
-                            : 'border-gray-200 hover:border-blue-200 dark:border-gray-800 dark:hover:border-blue-900'
-                        } ${!channel.enabled ? 'opacity-75' : ''}`}
-                      >
-                        <div className='flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between'>
-                          <div className='flex min-w-0 flex-1 items-start gap-3'>
-                            {batchMode && (
-                              <input
-                                aria-label={`选择 ${channel.name}`}
-                                type='checkbox'
-                                checked={selected}
-                                onChange={() =>
-                                  toggleChannelSelection(channel.id)
-                                }
-                                className='mt-3 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500'
-                              />
-                            )}
-                            <span
-                              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${getProviderTone()}`}
-                            >
-                              <Icon className='h-5 w-5' />
-                            </span>
-                            <div className='min-w-0 flex-1'>
-                              <div className='flex flex-wrap items-center gap-2'>
-                                <h3 className='truncate text-base font-semibold text-gray-900 dark:text-gray-100'>
-                                  {channel.name}
-                                </h3>
-                                <span className='rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400'>
-                                  {channel.type}
-                                </span>
-                                <span
-                                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                    channel.enabled
-                                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                      : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                                  }`}
-                                >
-                                  {channel.enabled ? '启用中' : '已停用'}
-                                </span>
-                              </div>
-                              <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                                {provider.displayName} · {provider.description}
-                              </p>
-                              <div className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
-                                最近测试：
-                                {testResult ? (
-                                  <span
-                                    className={
-                                      testResult.status === 'success'
-                                        ? 'text-emerald-600 dark:text-emerald-300'
-                                        : 'text-red-600 dark:text-red-300'
-                                    }
-                                  >
-                                    {testResult.message} ·{' '}
-                                    {formatTestTime(testResult.time)}
-                                  </span>
-                                ) : (
-                                  <span>暂无测试记录</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className='flex flex-wrap items-center gap-2 lg:justify-end'>
-                            {provider.capabilities.canToggle && (
-                              <button
-                                type='button'
-                                role='switch'
-                                aria-checked={channel.enabled}
-                                aria-label={`启停 ${channel.name}`}
-                                disabled={pending || saving}
-                                onClick={() =>
-                                  void updateChannel(channel, {
-                                    enabled: !channel.enabled,
-                                  })
-                                }
-                                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                                  channel.enabled
-                                    ? 'bg-blue-600'
-                                    : 'bg-gray-300 dark:bg-gray-700'
-                                }`}
-                              >
-                                <span
-                                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                                    channel.enabled
-                                      ? 'translate-x-6'
-                                      : 'translate-x-1'
-                                  }`}
-                                />
-                              </button>
-                            )}
-                            {provider.capabilities.canTest && (
-                              <button
-                                type='button'
-                                disabled={pending || saving || !channel.enabled}
-                                onClick={() => void sendTest(channel)}
-                                className='inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                              >
-                                {pending ? (
-                                  <LoaderCircle className='h-3.5 w-3.5 animate-spin' />
-                                ) : (
-                                  <Send className='h-3.5 w-3.5' />
-                                )}
-                                测试
-                              </button>
-                            )}
-                            {provider.capabilities.canEdit && (
-                              <button
-                                type='button'
-                                disabled={pending || saving}
-                                onClick={() => openEditForm(channel)}
-                                className='inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                              >
-                                <Edit3 className='h-3.5 w-3.5' />
-                                编辑
-                              </button>
-                            )}
-                            {provider.capabilities.canDelete && (
-                              <button
-                                type='button'
-                                disabled={pending || saving}
-                                onClick={() => void deleteChannel(channel)}
-                                className='inline-flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30'
-                              >
-                                <Trash2 className='h-3.5 w-3.5' />
-                                删除
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className='mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60'>
-                          <div className='mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'>
-                            事件
-                          </div>
-                          <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-4'>
-                            {NOTIFICATION_EVENT_METAS.map((eventMeta) => {
-                              const checked = subscribedEvents.includes(
-                                eventMeta.type,
-                              );
-                              return (
-                                <label
-                                  key={eventMeta.type}
-                                  className='flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-white dark:text-gray-200 dark:hover:bg-gray-950'
-                                >
-                                  <input
-                                    type='checkbox'
-                                    checked={checked}
-                                    disabled={pending || saving}
-                                    aria-label={`${channel.name} ${eventMeta.label}`}
-                                    onChange={() => {
-                                      const nextEvents =
-                                        toggleEventSubscription(
-                                          subscribedEvents,
-                                          eventMeta.type,
-                                        );
-                                      void updateChannel(
-                                        channel,
-                                        { subscribedEvents: nextEvents },
-                                        '事件订阅已更新',
-                                      );
-                                    }}
-                                    className='mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60'
-                                  />
-                                  <span>
-                                    <span className='block font-medium'>
-                                      {eventMeta.label}
-                                    </span>
-                                    <span className='mt-0.5 hidden text-xs leading-5 text-gray-500 dark:text-gray-400 lg:block'>
-                                      {eventMeta.description}
-                                    </span>
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </article>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-          </>
+  const content = (
+    <div className='space-y-5'>
+      <div className='flex items-start justify-between gap-4'>
+        <div>
+          <h1 className='text-2xl font-semibold text-gray-900 dark:text-gray-100'>
+            通知设置
+          </h1>
+          <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+            管理通知推送渠道。
+          </p>
+        </div>
+        {loading && (
+          <span className='inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400'>
+            <LoaderCircle className='h-3 w-3 animate-spin' />
+            正在加载通知设置
+          </span>
         )}
       </div>
+
+      {message && (
+        <div className='flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300'>
+          <Check className='h-4 w-4' />
+          {message}
+        </div>
+      )}
+      {error && (
+        <div className='rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'>
+          {error}
+        </div>
+      )}
+
+      {!authChecked || loading ? (
+        <div className='rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-950/80 dark:text-gray-400'>
+          正在加载通知设置
+        </div>
+      ) : !canManageSettings ? (
+        <div className='rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-950/80 dark:text-gray-400'>
+          通知设置仅管理员可见。
+        </div>
+      ) : (
+        <>
+          {renderNotificationConfig()}
+          {renderChannelList()}
+        </>
+      )}
+
+      {renderChannelModal()}
+    </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <main className='min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-950 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-5xl'>{content}</div>
     </main>
   );
 }

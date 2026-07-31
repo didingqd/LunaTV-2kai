@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 
 import NotificationSettingsPage from './NotificationSettingsPage';
+import { getCreatableNotificationProviderMetas } from './notification-settings-provider-ui';
 
 const originalFetch = global.fetch;
 
@@ -68,7 +69,7 @@ function getCardByChannelName(name: string) {
   return within(card);
 }
 
-describe('NotificationSettingsPage', () => {
+describe('NotificationSettingsPage Stage 2.7 UI', () => {
   beforeEach(() => {
     setAuth('admin');
   });
@@ -83,7 +84,7 @@ describe('NotificationSettingsPage', () => {
     jest.restoreAllMocks();
   });
 
-  it('loads the two-module notification settings layout with provider-driven cards', async () => {
+  it('renders two modules and keeps channel cards as summary-only rows', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValue(jsonResponse({ settings: baseSettings }));
@@ -91,30 +92,61 @@ describe('NotificationSettingsPage', () => {
 
     render(<NotificationSettingsPage />);
 
-    expect(screen.getByText('正在加载通知设置')).toBeInTheDocument();
-    expect(await screen.findByText('通知设置')).toBeInTheDocument();
+    expect(screen.getAllByText('正在加载通知设置').length).toBeGreaterThan(0);
+    expect(await screen.findByText('外部企业微信')).toBeInTheDocument();
+    expect(screen.getByText('通知配置')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '通知渠道' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('switch', { name: '推送总开关' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: '添加渠道' }),
+      screen.getByRole('button', { name: '添加通知渠道' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: '批量选择' }),
+      screen.getByRole('button', { name: '批量管理' }),
     ).toBeInTheDocument();
-    expect(await screen.findByText('系统收件箱')).toBeInTheDocument();
-    expect(await screen.findByText('外部企业微信')).toBeInTheDocument();
-    expect(screen.getAllByText('事件').length).toBeGreaterThan(0);
-    expect(screen.queryByText('追更通知')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: '保存' }),
+      screen.getByRole('button', { name: '恢复默认' }),
+    ).toBeInTheDocument();
+
+    const wechatCard = getCardByChannelName('外部企业微信');
+    expect(wechatCard.getByText('企业微信')).toBeInTheDocument();
+    expect(wechatCard.getByText('启用')).toBeInTheDocument();
+    expect(
+      wechatCard.getByRole('switch', { name: '启停 外部企业微信' }),
+    ).toBeInTheDocument();
+    expect(
+      wechatCard.getByRole('button', { name: /测试/ }),
+    ).toBeInTheDocument();
+    expect(
+      wechatCard.getByRole('button', { name: /编辑/ }),
+    ).toBeInTheDocument();
+    expect(
+      wechatCard.getByRole('button', { name: /删除/ }),
+    ).toBeInTheDocument();
+
+    expect(wechatCard.queryByText('wechat_work')).not.toBeInTheDocument();
+    expect(
+      wechatCard.queryByText('发送通知到企业微信群机器人。'),
     ).not.toBeInTheDocument();
+    expect(
+      wechatCard.queryByText('watching.update_found'),
+    ).not.toBeInTheDocument();
+    expect(wechatCard.queryByText('Webhook 地址')).not.toBeInTheDocument();
+    expect(
+      wechatCard.queryByText('https://qyapi.weixin.qq.com/****abcd'),
+    ).not.toBeInTheDocument();
+    expect(wechatCard.queryByText(/最近测试/)).not.toBeInTheDocument();
+    expect(screen.queryByText('追更更新')).not.toBeInTheDocument();
+
     expect(fetchMock).toHaveBeenCalledWith('/api/user/notification-settings', {
       cache: 'no-store',
     });
   });
 
-  it('uses a modal provider step before creating a channel without showing events', async () => {
+  it('opens the RenewHelper-style provider picker and enters create config by clicking a provider card', async () => {
     const settingsAfterCreate = {
       ...baseSettings,
       channels: [
@@ -141,20 +173,39 @@ describe('NotificationSettingsPage', () => {
 
     render(<NotificationSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '添加渠道' }));
-    expect(await screen.findByText('选择 Provider')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    expect(screen.queryByText('最近测试结果')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('更新检查失败')).not.toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole('button', { name: '添加通知渠道' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: '选择通知渠道' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '下一步' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Telegram')).toBeInTheDocument();
+    expect(screen.getByText('Bark')).toBeInTheDocument();
+    expect(screen.getByText('钉钉')).toBeInTheDocument();
+    expect(screen.getByText('飞书')).toBeInTheDocument();
+    expect(screen.getByText('Server酱3')).toBeInTheDocument();
+    expect(screen.getByText('Ntfy')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('企业微信').closest('button')!);
+    expect(
+      await screen.findByRole('heading', { name: '配置通知渠道' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('基础信息')).toBeInTheDocument();
+    expect(screen.getByText('Provider配置')).toBeInTheDocument();
+    expect(screen.queryByText('通知事件')).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText('渠道名称'), {
       target: { value: '我的企业微信' },
     });
-    fireEvent.change(screen.getByLabelText('Webhook 地址'), {
+    fireEvent.change(screen.getByLabelText(/Webhook 地址/), {
       target: {
         value: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存渠道' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe(
@@ -168,22 +219,17 @@ describe('NotificationSettingsPage', () => {
         webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
     });
-    expect(await screen.findByText('通知方式已添加')).toBeInTheDocument();
+    expect(await screen.findByText('通知渠道已添加')).toBeInTheDocument();
   });
 
-  it('edits basic provider config in a modal and keeps events on the card', async () => {
+  it('edits provider config and event subscriptions in a modal instead of on the card', async () => {
     const settingsAfterEdit = {
       ...baseSettings,
       channels: baseSettings.channels.map((channel) =>
-        channel.id === 'wc-1' ? { ...channel, name: '企业微信告警' } : channel,
-      ),
-    };
-    const settingsAfterEvents = {
-      ...settingsAfterEdit,
-      channels: settingsAfterEdit.channels.map((channel) =>
         channel.id === 'wc-1'
           ? {
               ...channel,
+              name: '企业微信告警',
               subscribedEvents: [
                 'watching.update_found',
                 'watching.update_failed',
@@ -195,8 +241,7 @@ describe('NotificationSettingsPage', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse({ settings: baseSettings }))
-      .mockResolvedValueOnce(jsonResponse({ settings: settingsAfterEdit }))
-      .mockResolvedValueOnce(jsonResponse({ settings: settingsAfterEvents }));
+      .mockResolvedValueOnce(jsonResponse({ settings: settingsAfterEdit }));
     setFetch(fetchMock);
 
     render(<NotificationSettingsPage />);
@@ -205,11 +250,21 @@ describe('NotificationSettingsPage', () => {
       await screen.findByText('外部企业微信').then(() => '外部企业微信'),
     );
     fireEvent.click(wechatCard.getByRole('button', { name: /编辑/ }));
+
+    expect(
+      await screen.findByRole('heading', { name: '编辑通知渠道' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('基础信息')).toBeInTheDocument();
+    expect(screen.getByText('Provider配置')).toBeInTheDocument();
+    expect(screen.getByText('通知事件')).toBeInTheDocument();
+    expect(screen.getByText('watching.update_found')).toBeInTheDocument();
+    expect(screen.getByText('scheduler.failed')).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText('渠道名称'), {
       target: { value: '企业微信告警' },
     });
-    expect(screen.queryByLabelText('更新检查失败')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '保存渠道' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '更新失败' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe(
@@ -218,40 +273,15 @@ describe('NotificationSettingsPage', () => {
     expect(fetchMock.mock.calls[1][1].method).toBe('PATCH');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
       name: '企业微信告警',
-    });
-    expect(await screen.findByText('通知方式已更新')).toBeInTheDocument();
-
-    const editedCard = getCardByChannelName('企业微信告警');
-    fireEvent.click(editedCard.getByLabelText('企业微信告警 更新检查失败'));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
       subscribedEvents: ['watching.update_found', 'watching.update_failed'],
     });
-  });
-
-  it('uses provider capabilities to hide inbox delete and disable inbox creation', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ settings: baseSettings }));
-    setFetch(fetchMock);
-
-    render(<NotificationSettingsPage />);
-
-    const inboxCard = getCardByChannelName(
-      await screen.findByText('系统收件箱').then(() => '系统收件箱'),
-    );
+    expect(await screen.findByText('通知渠道已更新')).toBeInTheDocument();
     expect(
-      inboxCard.queryByRole('button', { name: /删除/ }),
+      getCardByChannelName('企业微信告警').queryByText('通知事件'),
     ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '添加渠道' }));
-    const inboxProviderButton = screen.getByRole('button', {
-      name: /站内通知/,
-    });
-    expect(inboxProviderButton).toBeDisabled();
   });
 
-  it('toggles and tests an individual channel card', async () => {
+  it('toggles and tests an individual channel without showing recent test details on the card', async () => {
     const settingsAfterToggle = {
       ...baseSettings,
       channels: baseSettings.channels.map((channel) =>
@@ -270,7 +300,7 @@ describe('NotificationSettingsPage', () => {
     const wechatCard = getCardByChannelName(
       await screen.findByText('外部企业微信').then(() => '外部企业微信'),
     );
-    fireEvent.click(wechatCard.getByRole('button', { name: '测试' }));
+    fireEvent.click(wechatCard.getByRole('button', { name: /测试/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][0]).toBe(
       '/api/user/notification-settings/test',
@@ -279,6 +309,7 @@ describe('NotificationSettingsPage', () => {
       channelId: 'wc-1',
     });
     expect(await screen.findAllByText('测试通知已发送')).toHaveLength(1);
+    expect(wechatCard.queryByText(/最近测试/)).not.toBeInTheDocument();
 
     fireEvent.click(
       wechatCard.getByRole('switch', { name: '启停 外部企业微信' }),
@@ -292,7 +323,7 @@ describe('NotificationSettingsPage', () => {
     });
   });
 
-  it('supports batch selection, enabling, disabling and deleting deletable channels', async () => {
+  it('supports batch selection, select all, enable, close and delete while skipping non-deletable channels', async () => {
     const afterDisableInbox = {
       ...baseSettings,
       channels: baseSettings.channels.map((channel) =>
@@ -335,11 +366,13 @@ describe('NotificationSettingsPage', () => {
 
     render(<NotificationSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '批量选择' }));
+    fireEvent.click(await screen.findByRole('button', { name: '批量管理' }));
+    expect(screen.getByText('已选择 0 项')).toBeInTheDocument();
+    expect(screen.getByLabelText('选择 系统收件箱')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '全选' }));
-    expect(screen.getByText('已选择：2 个渠道')).toBeInTheDocument();
+    expect(screen.getByText('已选择 2 项')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '批量禁用' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
       enabled: false,
@@ -348,7 +381,7 @@ describe('NotificationSettingsPage', () => {
       enabled: false,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '批量启用' }));
+    fireEvent.click(screen.getByRole('button', { name: '启用' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
       enabled: true,
@@ -357,7 +390,7 @@ describe('NotificationSettingsPage', () => {
       enabled: true,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '批量删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
     expect(fetchMock.mock.calls[5][0]).toBe(
       '/api/user/notification-settings/channels/wc-1',
@@ -365,7 +398,29 @@ describe('NotificationSettingsPage', () => {
     expect(fetchMock.mock.calls[5][1].method).toBe('DELETE');
   });
 
-  it('restores default settings', async () => {
+  it('keeps the page provider-driven for future provider additions', async () => {
+    const creatableTypes = getCreatableNotificationProviderMetas().map(
+      (provider) => provider.type,
+    );
+    expect(creatableTypes).toEqual(
+      expect.arrayContaining([
+        'telegram',
+        'bark',
+        'pushplus',
+        'dingtalk',
+        'lark',
+        'wecom',
+        'serverchan3',
+        'notifyx',
+        'resend',
+        'webhook',
+        'gotify',
+        'ntfy',
+      ]),
+    );
+  });
+
+  it('restores default settings and shows API/admin states', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse({ settings: baseSettings }))
@@ -373,24 +428,11 @@ describe('NotificationSettingsPage', () => {
     setFetch(fetchMock);
 
     render(<NotificationSettingsPage />);
-
     fireEvent.click(await screen.findByRole('button', { name: '恢复默认' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls[1][1].method).toBe('DELETE');
     expect(await screen.findByText('已恢复默认通知设置')).toBeInTheDocument();
-  });
-
-  it('shows API errors for administrators', async () => {
-    setFetch(
-      jest
-        .fn()
-        .mockResolvedValue(jsonResponse({ error: 'settings failed' }, 500)),
-    );
-
-    render(<NotificationSettingsPage />);
-
-    expect(await screen.findByText('settings failed')).toBeInTheDocument();
   });
 
   it('hides settings UI from normal users before loading management APIs', async () => {

@@ -5,6 +5,7 @@
 
 import { notificationProviderRegistry } from './notification-provider-registry';
 import { inboxNotificationProvider } from './providers/inbox-notification-provider';
+import { schemaOnlyNotificationProviders } from './providers/schema-only-notification-providers';
 import { wechatWorkNotificationProvider } from './providers/wechat-work-notification-provider';
 
 const registeredProviderTypes = new Set<string>();
@@ -13,6 +14,7 @@ export function registerDefaultNotificationProviders(): void {
   for (const provider of [
     inboxNotificationProvider,
     wechatWorkNotificationProvider,
+    ...schemaOnlyNotificationProviders,
   ]) {
     if (
       registeredProviderTypes.has(provider.type) ||
