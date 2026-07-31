@@ -377,8 +377,14 @@ describe('WatchingUpdateSettingsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '创建 Token' }));
 
-    expect(await screen.findByDisplayValue('token.secret')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue(
+        'curl -X POST http://localhost/api/watching-updates/trigger -H "Authorization: Bearer token.secret"',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '复制触发命令' }),
+    ).toBeInTheDocument();
     expectTriggerRequest(fetchMock, 2, 'POST');
   });
 
@@ -405,7 +411,9 @@ describe('WatchingUpdateSettingsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '轮换 Token' }));
 
     expect(
-      await screen.findByDisplayValue('token.new-secret'),
+      await screen.findByDisplayValue(
+        'curl -X POST http://localhost/api/watching-updates/trigger -H "Authorization: Bearer token.new-secret"',
+      ),
     ).toBeInTheDocument();
     expectTriggerRequest(fetchMock, 2, 'PATCH', { action: 'rotate' });
   });

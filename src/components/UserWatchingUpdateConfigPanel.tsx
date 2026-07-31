@@ -99,9 +99,7 @@ export default function UserWatchingUpdateConfigPanel({
   const [timezoneMode, setTimezoneMode] = useState<ConfigMode>('inherit');
   const [timezone, setTimezone] = useState('UTC');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<
-    ConfigField | 'permission' | 'ability' | null
-  >(null);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -165,126 +163,113 @@ export default function UserWatchingUpdateConfigPanel({
     void loadConfig(true);
   }, [loadConfig]);
 
-  const updateSavedField = (
-    next: UserWatchingUpdateConfigResponse,
-    field: ConfigField,
-  ) => {
-    applyConfig(next, false);
-    if (field === 'cronExpression') {
-      setCronMode(next.userConfig?.cronExpression ? 'custom' : 'inherit');
-      setCronExpression(
-        next.userConfig?.cronExpression ?? next.effective.cronExpression,
-      );
-    } else {
-      setTimezoneMode(next.userConfig?.timezone ? 'custom' : 'inherit');
-      setTimezone(next.userConfig?.timezone ?? next.effective.timezone);
-    }
-  };
+  const targetIsOwner = userRole === 'owner';
 
-  const saveField = async (field: ConfigField) => {
-    const mode = field === 'cronExpression' ? cronMode : timezoneMode;
-    let value = '';
-    if (mode === 'custom') {
-      if (field === 'cronExpression') {
-        if (!validateCronExpression(cronExpression)) {
-          setMessage({ type: 'error', text: 'Cron 表达式无效' });
-          return;
+  const saveAll = async () => {
+    if (cronMode === 'custom' && !validateCronExpression(cronExpression)) {
+      setMessage({ type: 'error', text: 'Cron 表达式无效' });
+      return;
+    }
+    if (timezoneMode === 'custom' && !validateTimezone(timezone)) {
+      setMessage({ type: 'error', text: '时区无效' });
+      return;
+    }
+
+    const fieldsToClear: ConfigField[] = [];
+    if (
+      cronMode === 'inherit' &&
+      config?.userConfig?.cronExpression !== undefined
+    ) {
+      fieldsToClear.push('cronExpression');
+    }
+    if (
+      timezoneMode === 'inherit' &&
+      config?.userConfig?.timezone !== undefined
+    ) {
+      fieldsToClear.push('timezone');
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      if (!targetIsOwner) {
+        const permissionResponse = await fetch(
+          '/api/admin/settings/update-check/permissions',
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: username,
+              enabled: permissionEnabled,
+            }),
+          },
+        );
+        const data = await permissionResponse.json().catch(() => ({}));
+        if (!permissionResponse.ok) {
+          throw new Error(data.error || '追更权限更新失败');
         }
-        value = cronExpression;
-      } else {
-        if (!validateTimezone(timezone)) {
-          setMessage({ type: 'error', text: '时区无效' });
-          return;
-        }
-        value = timezone;
       }
-    }
 
-    setSaving(field);
-    setMessage(null);
-    try {
-      const response = await fetch(configUrl(username), {
-        method: mode === 'custom' ? 'PATCH' : 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          mode === 'custom' ? { [field]: value } : { field },
-        ),
-      });
-      const next = await readResponse(response);
-      updateSavedField(next, field);
-      await onRefresh();
-      setMessage({
-        type: 'success',
-        text: mode === 'custom' ? '用户配置已保存' : '已恢复继承',
-      });
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : '追更配置保存失败',
-      });
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const savePermission = async () => {
-    setSaving('permission');
-    setMessage(null);
-    try {
-      const response = await fetch(
-        '/api/admin/settings/update-check/permissions',
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: username, enabled: permissionEnabled }),
-        },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || '追更权限更新失败');
-      }
-      await onRefresh();
-      await loadConfig(false);
-      setMessage({ type: 'success', text: '权限已保存' });
-    } catch (error) {
-      setMessage({
-        type: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : '追更权限更新失败',
-      });
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const saveAbilityLimits = async () => {
-    setSaving('ability');
-    setMessage(null);
-    try {
-      const response = await fetch(configUrl(username), {
+      const configResponse = await fetch(configUrl(username), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allowCustomSchedule, allowTriggerLink }),
+        body: JSON.stringify({
+          allowCustomSchedule,
+          allowTriggerLink,
+          ...(cronMode === 'custom' ? { cronExpression } : {}),
+          ...(timezoneMode === 'custom' ? { timezone } : {}),
+        }),
       });
-      const next = await readResponse(response);
-      applyConfig(next, false);
+      await readResponse(configResponse);
+
+      for (const field of fieldsToClear) {
+        const response = await fetch(configUrl(username), {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field }),
+        });
+        await readResponse(response);
+      }
+
       await onRefresh();
-      setMessage({ type: 'success', text: '能力限制已保存' });
+      await loadConfig(true);
+      setMessage({ type: 'success', text: '追更系统设置已保存' });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : '能力限制保存失败',
+            : '追更系统设置保存失败',
       });
     } finally {
-      setSaving(null);
+      setSaving(false);
+    }
+  };
+
+  const clearAllOverrides = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      for (const field of ['cronExpression', 'timezone'] as const) {
+        const response = await fetch(configUrl(username), {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field }),
+        });
+        await readResponse(response);
+      }
+      await onRefresh();
+      await loadConfig(true);
+      setMessage({ type: 'success', text: '已恢复系统配置' });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error ? error.message : '恢复系统配置失败',
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -305,7 +290,6 @@ export default function UserWatchingUpdateConfigPanel({
     );
   }
 
-  const targetIsOwner = userRole === 'owner';
   const displayedPermission = targetIsOwner
     ? systemUpdateCheckEnabled
     : permissionEnabled;
@@ -328,16 +312,9 @@ export default function UserWatchingUpdateConfigPanel({
             <Switch
               label='追更授权'
               checked={displayedPermission}
-              disabled={targetIsOwner || saving === 'permission'}
+              disabled={targetIsOwner || saving}
               onChange={() => setPermissionEnabled((current) => !current)}
             />
-            {!targetIsOwner && (
-              <ActionButton
-                label='保存权限'
-                loading={saving === 'permission'}
-                onClick={savePermission}
-              />
-            )}
           </div>
         </div>
       </section>
@@ -349,22 +326,17 @@ export default function UserWatchingUpdateConfigPanel({
             label='允许用户自定义调度'
             description='控制用户是否可在用户中心修改 Cron 和时区。'
             checked={allowCustomSchedule}
-            disabled={saving === 'ability'}
+            disabled={saving}
             onChange={() => setAllowCustomSchedule((current) => !current)}
           />
           <SwitchRow
             label='允许触发链接'
             description='控制用户是否可管理外部触发链接。'
             checked={allowTriggerLink}
-            disabled={saving === 'ability'}
+            disabled={saving}
             onChange={() => setAllowTriggerLink((current) => !current)}
           />
         </div>
-        <ActionButton
-          label='保存能力限制'
-          loading={saving === 'ability'}
-          onClick={saveAbilityLimits}
-        />
       </section>
 
       <section className='space-y-0'>
@@ -376,8 +348,6 @@ export default function UserWatchingUpdateConfigPanel({
           source={config.sources.cron}
           mode={cronMode}
           onModeChange={setCronMode}
-          saving={saving === 'cronExpression'}
-          onSave={() => saveField('cronExpression')}
         >
           {cronMode === 'custom' && (
             <div className='grid gap-3 sm:grid-cols-2'>
@@ -429,8 +399,6 @@ export default function UserWatchingUpdateConfigPanel({
           source={config.sources.timezone}
           mode={timezoneMode}
           onModeChange={setTimezoneMode}
-          saving={saving === 'timezone'}
-          onSave={() => saveField('timezone')}
         >
           {timezoneMode === 'custom' && (
             <div className='grid gap-3 sm:grid-cols-2'>
@@ -475,6 +443,18 @@ export default function UserWatchingUpdateConfigPanel({
           )}
         </StrategySection>
       </section>
+
+      <div className='flex flex-col gap-2 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:justify-end'>
+        <button
+          type='button'
+          disabled={saving}
+          onClick={clearAllOverrides}
+          className='inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+        >
+          清除 Cron/时区覆盖
+        </button>
+        <ActionButton label='保存全部设置' loading={saving} onClick={saveAll} />
+      </div>
     </div>
   );
 }
@@ -564,8 +544,6 @@ function StrategySection({
   source,
   mode,
   onModeChange,
-  saving,
-  onSave,
   children,
 }: {
   title: string;
@@ -574,8 +552,6 @@ function StrategySection({
   source: ConfigSource;
   mode: ConfigMode;
   onModeChange: (mode: ConfigMode) => void;
-  saving: boolean;
-  onSave: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -638,11 +614,6 @@ function StrategySection({
         </div>
       </div>
       {children}
-      <ActionButton
-        label={mode === 'custom' ? `保存 ${title}` : `清除 ${title} 覆盖`}
-        loading={saving}
-        onClick={onSave}
-      />
     </section>
   );
 }

@@ -123,6 +123,14 @@ function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
   return status.enabled ? '已启用' : '已禁用';
 }
 
+function buildTriggerCommand(token: string) {
+  const origin =
+    typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : '';
+  return `curl -X POST ${origin}/api/watching-updates/trigger -H "Authorization: Bearer ${token}"`;
+}
+
 export default function WatchingUpdateSettingsPage({
   embedded = false,
 }: {
@@ -318,10 +326,10 @@ export default function WatchingUpdateSettingsPage({
   const copyPlainToken = async () => {
     if (!plainToken) return;
     try {
-      await navigator.clipboard.writeText(plainToken);
-      setMessage({ type: 'success', text: 'Token 已复制' });
+      await navigator.clipboard.writeText(buildTriggerCommand(plainToken));
+      setMessage({ type: 'success', text: '触发命令已复制' });
     } catch {
-      setMessage({ type: 'error', text: '复制失败，请手动复制 Token' });
+      setMessage({ type: 'error', text: '复制失败，请手动复制触发命令' });
     }
   };
 
@@ -450,22 +458,23 @@ export default function WatchingUpdateSettingsPage({
                         htmlFor='watching-update-trigger-token'
                         className='mb-2 block text-sm font-medium text-sky-900 dark:text-sky-100'
                       >
-                        本次生成的 Token
+                        本次生成的触发链接
                       </label>
-                      <div className='flex flex-col gap-2 sm:flex-row'>
-                        <input
+                      <div className='flex flex-col gap-2'>
+                        <textarea
                           id='watching-update-trigger-token'
                           readOnly
-                          value={plainToken}
-                          className='min-w-0 flex-1 rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
+                          value={buildTriggerCommand(plainToken)}
+                          rows={3}
+                          className='min-w-0 resize-none rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
                         />
                         <button
                           type='button'
                           onClick={copyPlainToken}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900 sm:self-start'
                         >
                           <Copy className='h-4 w-4' />
-                          复制
+                          复制触发命令
                         </button>
                       </div>
                     </div>

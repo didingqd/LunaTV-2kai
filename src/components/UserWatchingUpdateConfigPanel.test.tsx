@@ -131,7 +131,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
     expect(screen.getAllByText('系统配置')).toHaveLength(2);
   });
 
-  it('saves a custom cron expression', async () => {
+  it('saves all settings with a custom cron expression', async () => {
     const initial = configResponse();
     const saved = configResponse({
       userConfig: { cronExpression: '0 */6 * * *' },
@@ -141,6 +141,8 @@ describe('UserWatchingUpdateConfigPanel', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(jsonResponse(saved))
       .mockResolvedValueOnce(jsonResponse(saved));
     setFetch(fetchMock);
     renderPanel();
@@ -154,10 +156,15 @@ describe('UserWatchingUpdateConfigPanel', () => {
     fireEvent.change(screen.getByLabelText('Cron 表达式'), {
       target: { value: '0 */6 * * *' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectConfigRequest(fetchMock, 1, 'PATCH', {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/settings/update-check/permissions',
+    );
+    expectConfigRequest(fetchMock, 2, 'PATCH', {
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
       cronExpression: '0 */6 * * *',
     });
   });
@@ -172,6 +179,8 @@ describe('UserWatchingUpdateConfigPanel', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(jsonResponse(saved))
       .mockResolvedValueOnce(jsonResponse(saved));
     setFetch(fetchMock);
     renderPanel();
@@ -185,13 +194,17 @@ describe('UserWatchingUpdateConfigPanel', () => {
     fireEvent.change(screen.getByLabelText('IANA 时区'), {
       target: { value: 'Asia/Tokyo' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存 时区' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectConfigRequest(fetchMock, 1, 'PATCH', { timezone: 'Asia/Tokyo' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expectConfigRequest(fetchMock, 2, 'PATCH', {
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
+      timezone: 'Asia/Tokyo',
+    });
   });
 
-  it('clears one user override', async () => {
+  it('clears one user override when saving all inherited settings', async () => {
     const initial = configResponse({
       userConfig: { cronExpression: '0 */6 * * *' },
       cronExpression: '0 */6 * * *',
@@ -204,6 +217,9 @@ describe('UserWatchingUpdateConfigPanel', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse(cleared))
       .mockResolvedValueOnce(jsonResponse(cleared));
     setFetch(fetchMock);
     renderPanel();
@@ -212,13 +228,17 @@ describe('UserWatchingUpdateConfigPanel', () => {
       name: 'Cron 配置模式',
     });
     fireEvent.click(cronGroup.querySelector('button') as HTMLButtonElement);
-    fireEvent.click(screen.getByRole('button', { name: '清除 Cron 覆盖' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectConfigRequest(fetchMock, 1, 'DELETE', { field: 'cronExpression' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expectConfigRequest(fetchMock, 2, 'PATCH', {
+      allowCustomSchedule: true,
+      allowTriggerLink: false,
+    });
+    expectConfigRequest(fetchMock, 3, 'DELETE', { field: 'cronExpression' });
   });
 
-  it('shows and saves custom schedule and trigger link limits', async () => {
+  it('saves permission, custom schedule, and trigger link in one action', async () => {
     const initial = configResponse({
       permission: {
         enabled: true,
@@ -236,6 +256,8 @@ describe('UserWatchingUpdateConfigPanel', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(jsonResponse(saved))
       .mockResolvedValueOnce(jsonResponse(saved));
     setFetch(fetchMock);
     renderPanel();
@@ -246,11 +268,14 @@ describe('UserWatchingUpdateConfigPanel', () => {
     );
     fireEvent.click(screen.getByRole('switch', { name: '允许触发链接' }));
     fireEvent.click(
-      screen.getByRole('button', { name: '保存能力限制' }),
+      screen.getByRole('button', { name: '保存全部设置' }),
     );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectConfigRequest(fetchMock, 1, 'PATCH', {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/settings/update-check/permissions',
+    );
+    expectConfigRequest(fetchMock, 2, 'PATCH', {
       allowCustomSchedule: false,
       allowTriggerLink: true,
     });
