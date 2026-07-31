@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { WeChatWorkNotificationChannel } from '@/lib/notification/channels/wechat-work-notification-channel';
-import { NotificationChannelType } from '@/lib/notification/notification-settings-repository';
+import { notificationProviderRegistry } from '@/lib/notification/notification-provider-bootstrap';
 import { notificationSettingsService } from '@/lib/notification/notification-settings-service';
-import { NotificationMessageType } from '@/lib/notification/notification-types';
 
 export const runtime = 'nodejs';
 
@@ -22,39 +20,42 @@ function errorResponse(error: string, status: number) {
   );
 }
 
-function getCurrentUser(request: NextRequest) {
-  const username = getAuthInfoFromCookie(request)?.username;
-  if (!username) return null;
-  return username;
+function requireNotificationSettingsAdmin(request: NextRequest) {
+  const auth = getAuthInfoFromCookie(request);
+  if (!auth?.username) return { error: errorResponse('Unauthorized', 401) };
+  if (auth.role !== 'owner' && auth.role !== 'admin') {
+    return { error: errorResponse('Forbidden', 403) };
+  }
+  return { username: auth.username };
 }
 
 export async function POST(request: NextRequest) {
-  const username = getCurrentUser(request);
-  if (!username) return errorResponse('Unauthorized', 401);
+  const admin = requireNotificationSettingsAdmin(request);
+  if ('error' in admin) return admin.error;
 
   const parsed = testSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return errorResponse('Invalid notification channel', 400);
 
   try {
-    const settings = await notificationSettingsService.getForUser(username);
+    const settings = await notificationSettingsService.getForUser(admin.username);
     const channel = settings.channels.find(
       (candidate) => candidate.id === parsed.data.channelId,
     );
     if (!channel) return errorResponse('Notification channel not found', 404);
-    if (channel.type !== NotificationChannelType.WECHAT_WORK) {
-      return errorResponse('Unsupported notification channel', 400);
-    }
     if (!channel.enabled) return errorResponse('Notification channel disabled', 403);
-    if (typeof channel.config.webhookUrl !== 'string') {
-      return errorResponse('Webhook URL is required', 400);
-    }
 
-    await new WeChatWorkNotificationChannel(channel.config).send({
-      userId: username,
-      type: NotificationMessageType.SYSTEM,
-      title: '测试通知',
-      content: '这是一条企业微信通知测试消息。',
-      createdAt: Date.now(),
+    // Stage 2.5 API convergence: resolve the concrete implementation only through
+    // NotificationProviderRegistry and call Provider.test().  Adding Telegram,
+    // Webhook, Email, Bark, etc. should register a provider instead of changing this route.
+    const provider = notificationProviderRegistry.get(channel.type);
+    if (!provider) return errorResponse('Unsupported notification channel', 400);
+
+    await provider.test({
+      ...channel,
+      config: {
+        ...channel.config,
+        userId: admin.username,
+      },
     });
 
     return NextResponse.json(

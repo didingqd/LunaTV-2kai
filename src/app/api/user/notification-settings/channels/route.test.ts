@@ -48,7 +48,7 @@ describe('user notification channel create API', () => {
           : channel,
       ),
     }));
-    getAuth.mockReturnValue({ username: 'alice' });
+    getAuth.mockReturnValue({ username: 'alice', role: 'admin' });
     createChannel.mockResolvedValue({
       inboxEnabled: true,
       watchingUpdateFoundEnabled: true,
@@ -59,6 +59,7 @@ describe('user notification channel create API', () => {
           type: 'inbox',
           name: '站内通知',
           enabled: true,
+          subscribedEvents: ['watching.update_found'],
           config: {},
         },
         {
@@ -66,6 +67,7 @@ describe('user notification channel create API', () => {
           type: 'wechat_work',
           name: '企业微信',
           enabled: true,
+          subscribedEvents: ['watching.update_failed'],
           config: {
             webhookUrl:
               'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
@@ -84,12 +86,27 @@ describe('user notification channel create API', () => {
     expect(createChannel).not.toHaveBeenCalled();
   });
 
-  it('creates a WeChat Work channel for the current user', async () => {
+  it('rejects normal users from creating channels', async () => {
+    getAuth.mockReturnValue({ username: 'bob', role: 'user' });
+
+    const response = await POST(
+      request({
+        type: 'wechat_work',
+        config: { webhookUrl: 'https://example.com/hook' },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(createChannel).not.toHaveBeenCalled();
+  });
+
+  it('creates a provider-backed channel for the current admin with subscribedEvents', async () => {
     const response = await POST(
       request({
         type: 'wechat_work',
         name: '我的企业微信',
         username: 'bob',
+        subscribedEvents: ['watching.update_found'],
         config: {
           webhookUrl:
             'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
@@ -104,6 +121,7 @@ describe('user notification channel create API', () => {
       request({
         type: 'wechat_work',
         name: '我的企业微信',
+        subscribedEvents: ['watching.update_failed'],
         config: {
           webhookUrl:
             'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
@@ -114,6 +132,7 @@ describe('user notification channel create API', () => {
     expect(createChannel).toHaveBeenCalledWith('alice', {
       type: 'wechat_work',
       name: '我的企业微信',
+      subscribedEvents: ['watching.update_failed'],
       config: {
         webhookUrl:
           'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',

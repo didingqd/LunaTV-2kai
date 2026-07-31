@@ -8,13 +8,10 @@ export const runtime = 'nodejs';
 
 const createSchema = z
   .object({
-    type: z.literal('wechat_work'),
+    type: z.string().min(1),
     name: z.string().optional(),
-    config: z
-      .object({
-        webhookUrl: z.string(),
-      })
-      .strict(),
+    subscribedEvents: z.array(z.string().min(1)).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -31,10 +28,13 @@ function errorResponse(error: string, status: number) {
   );
 }
 
-function getCurrentUser(request: NextRequest) {
-  const username = getAuthInfoFromCookie(request)?.username;
-  if (!username) return null;
-  return username;
+function requireNotificationSettingsAdmin(request: NextRequest) {
+  const auth = getAuthInfoFromCookie(request);
+  if (!auth?.username) return { error: errorResponse('Unauthorized', 401) };
+  if (auth.role !== 'owner' && auth.role !== 'admin') {
+    return { error: errorResponse('Forbidden', 403) };
+  }
+  return { username: auth.username };
 }
 
 function mapSettingsError(error: unknown) {
@@ -52,21 +52,20 @@ function mapSettingsError(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  const username = getCurrentUser(request);
-  if (!username) return errorResponse('Unauthorized', 401);
+  const admin = requireNotificationSettingsAdmin(request);
+  if ('error' in admin) return admin.error;
 
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return errorResponse('Invalid notification channel', 400);
 
   try {
     const settings = await notificationSettingsService.createChannel(
-      username,
+      admin.username,
       {
         type: parsed.data.type,
         name: parsed.data.name,
-        config: {
-          webhookUrl: parsed.data.config.webhookUrl,
-        },
+        subscribedEvents: parsed.data.subscribedEvents,
+        config: parsed.data.config,
       },
     );
     return jsonNoStore({

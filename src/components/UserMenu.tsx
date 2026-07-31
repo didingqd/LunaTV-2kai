@@ -1414,7 +1414,7 @@ export const UserMenu: React.FC = () => {
             </button>
           </div>
 
-          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden'>
+          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800'>
             <button
               type='button'
               onClick={() => setWatchingFollowsTab('list')}
@@ -1440,10 +1440,10 @@ export const UserMenu: React.FC = () => {
           </div>
 
           <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
-            <div className='grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]'>
+            <div className='space-y-5'>
               <section
                 className={
-                  watchingFollowsTab === 'list' ? 'block' : 'hidden lg:block'
+                  watchingFollowsTab === 'list' ? 'block' : 'hidden'
                 }
               >
                 <div className='mb-3 flex items-center justify-between gap-3'>
@@ -1508,9 +1508,7 @@ export const UserMenu: React.FC = () => {
 
               <aside
                 className={
-                  watchingFollowsTab === 'settings'
-                    ? 'block'
-                    : 'hidden lg:block'
+                  watchingFollowsTab === 'settings' ? 'block' : 'hidden'
                 }
               >
                 <WatchingUpdateSettingsPage embedded />
@@ -1563,7 +1561,7 @@ export const UserMenu: React.FC = () => {
           <div
             className={`mb-4 grid ${
               showNotificationSettings ? 'grid-cols-2' : 'grid-cols-1'
-            } rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden`}
+            } rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800`}
           >
             <button
               type='button'
@@ -1592,10 +1590,10 @@ export const UserMenu: React.FC = () => {
           </div>
 
           <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
-            <div className='grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]'>
+            <div className='space-y-5'>
               <section
                 className={
-                  notificationsTab === 'list' ? 'block' : 'hidden lg:block'
+                  notificationsTab === 'list' ? 'block' : 'hidden'
                 }
               >
                 <NotificationCenterPage embedded />
@@ -1603,9 +1601,7 @@ export const UserMenu: React.FC = () => {
               {showNotificationSettings && (
                 <aside
                   className={
-                    notificationsTab === 'settings'
-                      ? 'block'
-                      : 'hidden lg:block'
+                    notificationsTab === 'settings' ? 'block' : 'hidden'
                   }
                 >
                   <NotificationSettingsPage embedded />

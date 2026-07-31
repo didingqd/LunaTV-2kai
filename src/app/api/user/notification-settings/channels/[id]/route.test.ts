@@ -31,25 +31,52 @@ const settings = {
 describe('user notification channel item API', () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    getAuth.mockReturnValue({ username: 'alice' });
+    getAuth.mockReturnValue({ username: 'alice', role: 'admin' });
     updateChannel.mockResolvedValue(settings);
     deleteChannel.mockResolvedValue(settings);
   });
 
-  it('updates a channel for the current user', async () => {
-    const response = await PATCH(request('PATCH', { enabled: false }), params());
+  it('updates a channel for the current admin with subscribedEvents', async () => {
+    const response = await PATCH(
+      request('PATCH', {
+        enabled: false,
+        subscribedEvents: ['watching.update_failed'],
+        config: { webhookUrl: 'https://example.com/hook' },
+      }),
+      params(),
+    );
 
     expect(response.status).toBe(200);
     expect(updateChannel).toHaveBeenCalledWith('alice', 'wc-1', {
       enabled: false,
+      subscribedEvents: ['watching.update_failed'],
+      config: { webhookUrl: 'https://example.com/hook' },
     });
   });
 
-  it('deletes a channel for the current user', async () => {
+  it('rejects normal users from updating channels', async () => {
+    getAuth.mockReturnValue({ username: 'bob', role: 'user' });
+
+    const response = await PATCH(request('PATCH', { enabled: false }), params());
+
+    expect(response.status).toBe(403);
+    expect(updateChannel).not.toHaveBeenCalled();
+  });
+
+  it('deletes a channel for the current admin', async () => {
     const response = await DELETE(request('DELETE'), params());
 
     expect(response.status).toBe(200);
     expect(deleteChannel).toHaveBeenCalledWith('alice', 'wc-1');
+  });
+
+  it('rejects normal users from deleting channels', async () => {
+    getAuth.mockReturnValue({ username: 'bob', role: 'user' });
+
+    const response = await DELETE(request('DELETE'), params());
+
+    expect(response.status).toBe(403);
+    expect(deleteChannel).not.toHaveBeenCalled();
   });
 
   it('returns 401 when unauthenticated', async () => {

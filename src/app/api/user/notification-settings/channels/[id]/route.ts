@@ -10,12 +10,8 @@ const patchSchema = z
   .object({
     enabled: z.boolean().optional(),
     name: z.string().optional(),
-    config: z
-      .object({
-        webhookUrl: z.string().optional(),
-      })
-      .strict()
-      .optional(),
+    subscribedEvents: z.array(z.string().min(1)).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -32,10 +28,13 @@ function errorResponse(error: string, status: number) {
   );
 }
 
-function getCurrentUser(request: NextRequest) {
-  const username = getAuthInfoFromCookie(request)?.username;
-  if (!username) return null;
-  return username;
+function requireNotificationSettingsAdmin(request: NextRequest) {
+  const auth = getAuthInfoFromCookie(request);
+  if (!auth?.username) return { error: errorResponse('Unauthorized', 401) };
+  if (auth.role !== 'owner' && auth.role !== 'admin') {
+    return { error: errorResponse('Forbidden', 403) };
+  }
+  return { username: auth.username };
 }
 
 function mapSettingsError(error: unknown, action: string) {
@@ -62,8 +61,8 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const username = getCurrentUser(request);
-  if (!username) return errorResponse('Unauthorized', 401);
+  const admin = requireNotificationSettingsAdmin(request);
+  if ('error' in admin) return admin.error;
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return errorResponse('Invalid notification channel', 400);
@@ -71,7 +70,7 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     const settings = await notificationSettingsService.updateChannel(
-      username,
+      admin.username,
       id,
       parsed.data,
     );
@@ -87,12 +86,12 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const username = getCurrentUser(request);
-  if (!username) return errorResponse('Unauthorized', 401);
+  const admin = requireNotificationSettingsAdmin(request);
+  if ('error' in admin) return admin.error;
 
   try {
     const { id } = await context.params;
-    const settings = await notificationSettingsService.deleteChannel(username, id);
+    const settings = await notificationSettingsService.deleteChannel(admin.username, id);
     return jsonNoStore({
       settings: notificationSettingsService.toPublicSettings(settings),
     });

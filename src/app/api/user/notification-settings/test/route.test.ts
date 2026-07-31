@@ -5,10 +5,10 @@ import { NextRequest } from 'next/server';
 jest.mock('@/lib/auth', () => ({
   getAuthInfoFromCookie: jest.fn(),
 }));
-jest.mock('@/lib/notification/channels/wechat-work-notification-channel', () => ({
-  WeChatWorkNotificationChannel: jest.fn().mockImplementation(() => ({
-    send: jest.fn(),
-  })),
+jest.mock('@/lib/notification/notification-provider-bootstrap', () => ({
+  notificationProviderRegistry: {
+    get: jest.fn(),
+  },
 }));
 jest.mock('@/lib/notification/notification-settings-service', () => ({
   notificationSettingsService: {
@@ -17,14 +17,14 @@ jest.mock('@/lib/notification/notification-settings-service', () => ({
 }));
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { WeChatWorkNotificationChannel } from '@/lib/notification/channels/wechat-work-notification-channel';
+import { notificationProviderRegistry } from '@/lib/notification/notification-provider-bootstrap';
 import { notificationSettingsService } from '@/lib/notification/notification-settings-service';
 import { POST } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
 const getForUser = notificationSettingsService.getForUser as jest.Mock;
-const WeChatWorkChannelMock = WeChatWorkNotificationChannel as unknown as jest.Mock;
-let sendMock: jest.Mock;
+const getProvider = notificationProviderRegistry.get as jest.Mock;
+let providerTest: jest.Mock;
 
 function settings(channel: Record<string, unknown>) {
   return {
@@ -38,17 +38,19 @@ function settings(channel: Record<string, unknown>) {
 describe('notification settings test API', () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    sendMock = jest.fn();
-    WeChatWorkChannelMock.mockImplementation(() => ({
-      send: sendMock,
-    }));
-    getAuth.mockReturnValue({ username: 'alice' });
+    providerTest = jest.fn();
+    getProvider.mockReturnValue({
+      type: 'wechat_work',
+      test: providerTest,
+    });
+    getAuth.mockReturnValue({ username: 'alice', role: 'admin' });
     getForUser.mockResolvedValue(
       settings({
         id: 'wc-1',
         type: 'wechat_work',
         name: '企业微信',
         enabled: true,
+        subscribedEvents: ['watching.update_found'],
         config: {
           webhookUrl:
             'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
@@ -63,23 +65,35 @@ describe('notification settings test API', () => {
     const response = await POST(request({ channelId: 'wc-1' }));
 
     expect(response.status).toBe(401);
+    expect(getProvider).not.toHaveBeenCalled();
   });
 
-  it('sends a WeChat Work test message', async () => {
+  it('rejects normal users', async () => {
+    getAuth.mockReturnValue({ username: 'bob', role: 'user' });
+
+    const response = await POST(request({ channelId: 'wc-1' }));
+
+    expect(response.status).toBe(403);
+    expect(getProvider).not.toHaveBeenCalled();
+  });
+
+  it('uses ProviderRegistry and Provider.test for a channel test', async () => {
     const response = await POST(request({ channelId: 'wc-1' }));
 
     expect(response.status).toBe(200);
-    expect(WeChatWorkChannelMock).toHaveBeenCalledWith({
-      webhookUrl:
-        'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
-    });
-    const instance = WeChatWorkChannelMock.mock.results[0].value;
-    expect(instance.send).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(getProvider).toHaveBeenCalledWith('wechat_work');
+    expect(providerTest).toHaveBeenCalledWith({
+      id: 'wc-1',
+      type: 'wechat_work',
+      name: '企业微信',
+      enabled: true,
+      subscribedEvents: ['watching.update_found'],
+      config: {
+        webhookUrl:
+          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
         userId: 'alice',
-        title: '测试通知',
-      }),
-    );
+      },
+    });
   });
 
   it('returns 403 when channel is disabled', async () => {
@@ -89,6 +103,7 @@ describe('notification settings test API', () => {
         type: 'wechat_work',
         name: '企业微信',
         enabled: false,
+        subscribedEvents: ['watching.update_found'],
         config: {
           webhookUrl:
             'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
@@ -99,30 +114,20 @@ describe('notification settings test API', () => {
     const response = await POST(request({ channelId: 'wc-1' }));
 
     expect(response.status).toBe(403);
+    expect(providerTest).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when webhook URL is empty', async () => {
-    getForUser.mockResolvedValue(
-      settings({
-        id: 'wc-1',
-        type: 'wechat_work',
-        name: '企业微信',
-        enabled: true,
-        config: {},
-      }),
-    );
+  it('returns 400 when the channel provider is not registered', async () => {
+    getProvider.mockReturnValue(null);
 
     const response = await POST(request({ channelId: 'wc-1' }));
 
     expect(response.status).toBe(400);
+    expect(providerTest).not.toHaveBeenCalled();
   });
 
-  it('returns 502 when sending fails', async () => {
-    WeChatWorkChannelMock.mockImplementationOnce(() => ({
-      send: jest.fn(async () => {
-        throw new Error('boom');
-      }),
-    }));
+  it('returns 502 when provider test fails', async () => {
+    providerTest.mockRejectedValueOnce(new Error('boom'));
 
     const response = await POST(request({ channelId: 'wc-1' }));
 
