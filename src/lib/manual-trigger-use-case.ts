@@ -1,0 +1,74 @@
+import type { AdminConfig } from './admin.types';
+import { getConfig } from './config';
+import {
+  updateCheckJobRunner,
+  type UpdateCheckJobRunner,
+  type UpdateCheckJobRunnerResult,
+} from './scheduler/update-check-job-runner';
+import { resolveUserWatchingUpdateConfig } from './user-watching-update-config-resolver';
+
+export type ManualTriggerUseCaseErrorCode =
+  | 'USER_NOT_FOUND'
+  | 'WATCHING_UPDATE_NOT_ALLOWED'
+  | 'TRIGGER_LINK_NOT_ALLOWED'
+  | 'TRIGGER_LINK_DISABLED'
+  | 'SCHEDULER_DISABLED';
+
+export class ManualTriggerUseCaseError extends Error {
+  constructor(readonly code: ManualTriggerUseCaseErrorCode) {
+    super(code);
+    this.name = 'ManualTriggerUseCaseError';
+  }
+}
+
+export interface ManualTriggerUseCaseResult {
+  jobResult: UpdateCheckJobRunnerResult;
+}
+
+type JobRunner = Pick<UpdateCheckJobRunner, 'run'>;
+
+export class ManualTriggerUseCase {
+  constructor(
+    private readonly loadConfig: () => Promise<AdminConfig> = getConfig,
+    private readonly jobRunner: JobRunner = updateCheckJobRunner,
+  ) {}
+
+  async execute(userId: string): Promise<ManualTriggerUseCaseResult> {
+    const config = await this.loadConfig();
+    const user = config.UserConfig.Users.find(
+      (candidate) => candidate.username === userId,
+    );
+    if (!user) throw new ManualTriggerUseCaseError('USER_NOT_FOUND');
+    if (config.SystemConfig?.updateCheckSchedulerEnabled === false) {
+      throw new ManualTriggerUseCaseError('SCHEDULER_DISABLED');
+    }
+
+    const effective = resolveUserWatchingUpdateConfig({
+      username: user.username,
+      userUpdateCheckBackendEnabled: user.updateCheckBackendEnabled === true,
+      allowCustomSchedule: user.allowCustomSchedule,
+      allowTriggerLink: user.allowTriggerLink,
+      systemConfig: config.SystemConfig,
+      userConfig: user.watchingUpdateConfig,
+    });
+
+    if (!effective.enabled) {
+      throw new ManualTriggerUseCaseError('WATCHING_UPDATE_NOT_ALLOWED');
+    }
+    if (!effective.permissions.allowTriggerLink) {
+      throw new ManualTriggerUseCaseError('TRIGGER_LINK_NOT_ALLOWED');
+    }
+    if (user.watchingUpdateConfig?.triggerLink?.enabled !== true) {
+      throw new ManualTriggerUseCaseError('TRIGGER_LINK_DISABLED');
+    }
+
+    return {
+      jobResult: await this.jobRunner.run({
+        trigger: 'manual',
+        requestedBy: user.username,
+      }),
+    };
+  }
+}
+
+export const manualTriggerUseCase = new ManualTriggerUseCase();
