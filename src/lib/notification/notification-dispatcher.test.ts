@@ -155,8 +155,13 @@ describe('NotificationDispatcher', () => {
   it('passes the original message object to each channel unchanged', async () => {
     const dispatcher = new NotificationDispatcher();
     const message = createMessage();
-    const firstSend = jest.fn(async () => undefined);
-    const secondSend = jest.fn(async () => undefined);
+    const firstSend = jest.fn<ReturnType<NotificationChannel['send']>, Parameters<NotificationChannel['send']>>(
+      async () => undefined,
+    );
+    const secondSend = jest.fn<
+      ReturnType<NotificationChannel['send']>,
+      Parameters<NotificationChannel['send']>
+    >(async () => undefined);
 
     dispatcher.register(createChannel('inbox', firstSend));
     dispatcher.register(createChannel('email', secondSend));
