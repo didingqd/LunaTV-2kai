@@ -87,7 +87,11 @@ function formatTime(timestamp: number) {
   }).format(new Date(timestamp));
 }
 
-export default function NotificationCenterPage() {
+export default function NotificationCenterPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
@@ -214,11 +218,23 @@ export default function NotificationCenterPage() {
   };
 
   return (
-    <main className='min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100'>
-      <div className='mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8'>
-        <header className='flex flex-col gap-3 border-b border-gray-200 pb-5 dark:border-gray-800 sm:flex-row sm:items-end sm:justify-between'>
+    <main
+      className={
+        embedded
+          ? 'text-gray-900 dark:text-gray-100'
+          : 'min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100'
+      }
+    >
+      <div
+        className={
+          embedded
+            ? 'flex w-full flex-col gap-4'
+            : 'mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8'
+        }
+      >
+        <header className='flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-end sm:justify-between'>
           <div>
-            <h1 className='text-2xl font-semibold'>通知中心</h1>
+            <h1 className={embedded ? 'text-lg font-semibold' : 'text-2xl font-semibold'}>通知中心</h1>
             <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
               共 {total} 条通知，{unread} 条未读
             </p>
@@ -266,7 +282,13 @@ export default function NotificationCenterPage() {
             </p>
           </div>
         ) : (
-          <section className='grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,380px)_1fr]'>
+          <section
+            className={
+              embedded
+                ? 'grid min-h-[420px] gap-4 xl:grid-cols-[minmax(0,300px)_1fr]'
+                : 'grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,380px)_1fr]'
+            }
+          >
             <div className='overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'>
               <div className='border-b border-gray-200 px-4 py-3 text-sm font-medium dark:border-gray-800'>
                 通知列表

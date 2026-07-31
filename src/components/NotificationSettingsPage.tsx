@@ -80,7 +80,11 @@ function SettingToggle({
   );
 }
 
-export default function NotificationSettingsPage() {
+export default function NotificationSettingsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [draft, setDraft] = useState<NotificationSettings | null>(null);
   const [addingWeChatWork, setAddingWeChatWork] = useState(false);
@@ -272,15 +276,27 @@ export default function NotificationSettingsPage() {
     type === 'wechat_work' ? '企业微信' : '站内通知';
 
   return (
-    <main className='min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100'>
-      <div className='mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8'>
-        <header className='border-b border-gray-200 pb-5 dark:border-gray-800'>
+    <main
+      className={
+        embedded
+          ? 'text-gray-900 dark:text-gray-100'
+          : 'min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100'
+      }
+    >
+      <div
+        className={
+          embedded
+            ? 'flex w-full flex-col gap-4'
+            : 'mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8'
+        }
+      >
+        <header className='border-b border-gray-200 pb-4 dark:border-gray-800'>
           <div className='flex items-center gap-3'>
             <span className='inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'>
               <Bell className='h-5 w-5' />
             </span>
             <div>
-              <h1 className='text-2xl font-semibold tracking-normal'>通知设置</h1>
+              <h1 className={embedded ? 'text-lg font-semibold tracking-normal' : 'text-2xl font-semibold tracking-normal'}>通知设置</h1>
               <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
                 管理站内通知和追更通知接收偏好
               </p>

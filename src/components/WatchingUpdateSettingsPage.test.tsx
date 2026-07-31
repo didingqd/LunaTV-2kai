@@ -198,7 +198,7 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.change(await screen.findByLabelText('Cron Expression'), {
+    fireEvent.change(await screen.findByLabelText('Cron 表达式'), {
       target: { value: '0 */6 * * *' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
@@ -227,10 +227,10 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.change(await screen.findByLabelText('IANA Timezone'), {
+    fireEvent.change(await screen.findByLabelText('IANA 时区'), {
       target: { value: 'Europe/Berlin' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存 Timezone' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存时区' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expectRequest(fetchMock, 1, 'PATCH', { timezone: 'Europe/Berlin' });
@@ -293,8 +293,8 @@ describe('WatchingUpdateSettingsPage', () => {
     expect(
       await screen.findByText('管理员未允许修改自定义调度。'),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Cron Expression')).toBeDisabled();
-    expect(screen.getByLabelText('IANA Timezone')).toBeDisabled();
+    expect(screen.getByLabelText('Cron 表达式')).toBeDisabled();
+    expect(screen.getByLabelText('IANA 时区')).toBeDisabled();
     expect(screen.getByRole('button', { name: '保存 Cron' })).toBeDisabled();
   });
 
@@ -309,7 +309,7 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.change(await screen.findByLabelText('Cron Expression'), {
+    fireEvent.change(await screen.findByLabelText('Cron 表达式'), {
       target: { value: '0 */6 * * *' },
     });
     fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
@@ -327,7 +327,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     expect(
-      await screen.findByText('管理员未允许使用 Trigger Link。'),
+      await screen.findByText('管理员未允许使用触发链接。'),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

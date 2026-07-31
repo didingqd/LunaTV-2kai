@@ -15,8 +15,6 @@ import {
   PlayCircle,
   Settings,
   Shield,
-  SlidersHorizontal,
-  ToggleLeft,
   Tv,
   User,
   Users,
@@ -46,7 +44,10 @@ import type { PlayRecord, Favorite } from '@/lib/types';
 import { useDownload } from '@/contexts/DownloadContext';
 
 import { VersionPanel } from './VersionPanel';
+import NotificationCenterPage from './NotificationCenterPage';
+import NotificationSettingsPage from './NotificationSettingsPage';
 import VideoCard from './VideoCard';
+import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
 import { SettingsPanel } from './SettingsPanel';
 import {
   useWatchRoomConfigQuery,
@@ -79,6 +80,13 @@ export const UserMenu: React.FC = () => {
   const [isContinueWatchingOpen, setIsContinueWatchingOpen] = useState(false);
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isWatchingFollowsOpen, setIsWatchingFollowsOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [watchingFollowsTab, setWatchingFollowsTab] = useState<
+    'list' | 'settings'
+  >('list');
+  const [notificationsTab, setNotificationsTab] = useState<
+    'list' | 'settings'
+  >('list');
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [notificationUnread, setNotificationUnread] = useState(0);
   const [storageType, setStorageType] = useState<string>(() => {
@@ -145,7 +153,7 @@ export const UserMenu: React.FC = () => {
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
-    if (isSettingsOpen || isChangePasswordOpen || isWatchingUpdatesOpen || isContinueWatchingOpen || isFavoritesOpen || isWatchingFollowsOpen) {
+    if (isSettingsOpen || isChangePasswordOpen || isWatchingUpdatesOpen || isContinueWatchingOpen || isFavoritesOpen || isWatchingFollowsOpen || isNotificationsOpen) {
       const body = document.body;
       const html = document.documentElement;
 
@@ -164,7 +172,7 @@ export const UserMenu: React.FC = () => {
         html.style.overflow = originalHtmlOverflow;
       };
     }
-  }, [isSettingsOpen, isChangePasswordOpen, isWatchingUpdatesOpen, isContinueWatchingOpen, isFavoritesOpen, isWatchingFollowsOpen]);
+  }, [isSettingsOpen, isChangePasswordOpen, isWatchingUpdatesOpen, isContinueWatchingOpen, isFavoritesOpen, isWatchingFollowsOpen, isNotificationsOpen]);
 
   // 数据查询条件（从 localStorage 读初始值，供 playRecords query 用）
   const [continueWatchingMinProgress] = useState(() =>
@@ -329,18 +337,8 @@ export const UserMenu: React.FC = () => {
 
   const handleNotifications = () => {
     setIsOpen(false);
-    navigateWithBrowserPreference({
-      href: '/notifications',
-      routerPush: (href) => router.push(href),
-    });
-  };
-
-  const handleNotificationSettings = () => {
-    setIsOpen(false);
-    navigateWithBrowserPreference({
-      href: '/notification-settings',
-      routerPush: (href) => router.push(href),
-    });
+    setNotificationsTab('list');
+    setIsNotificationsOpen(true);
   };
 
   const handleWatchingUpdates = () => {
@@ -370,20 +368,17 @@ export const UserMenu: React.FC = () => {
 
   const handleWatchingFollows = () => {
     setIsOpen(false);
+    setWatchingFollowsTab('list');
     void refreshWatchingFollows();
     setIsWatchingFollowsOpen(true);
   };
 
-  const handleWatchingUpdateSettings = () => {
-    setIsOpen(false);
-    navigateWithBrowserPreference({
-      href: '/watching-updates/settings',
-      routerPush: (href) => router.push(href),
-    });
-  };
-
   const handleCloseWatchingFollows = () => {
     setIsWatchingFollowsOpen(false);
+  };
+
+  const handleCloseNotifications = () => {
+    setIsNotificationsOpen(false);
   };
 
   const handleCloseFavorites = () => {
@@ -696,24 +691,6 @@ export const UserMenu: React.FC = () => {
               </span>
             )}
           </button>
-
-          <button
-            onClick={handleNotificationSettings}
-            className='relative flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 transition-[background-color] duration-150 ease-in-out hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-          >
-            <ToggleLeft className='h-4 w-4 text-gray-500 dark:text-gray-400' />
-            <span className='font-medium'>通知设置</span>
-          </button>
-
-          {showWatchingUpdates && (
-            <button
-              onClick={handleWatchingUpdateSettings}
-              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-[background-color] duration-150 ease-in-out text-sm'
-            >
-              <SlidersHorizontal className='w-4 h-4 text-gray-500 dark:text-gray-400' />
-              <span className='font-medium'>追更系统设置</span>
-            </button>
-          )}
 
           {showAdminPanel && (
             <button
@@ -1399,7 +1376,7 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
-  // 我的追更弹窗内容，卡片交互统一复用 VideoCard。
+  // 我的追更弹窗内容，卡片交互统一复用 VideoCard，设置区复用用户追更配置页面。
   const watchingFollowsPanel = (
     <>
       <div
@@ -1415,12 +1392,12 @@ export const UserMenu: React.FC = () => {
       />
 
       <div
-        className='fixed inset-x-4 top-1/2 transform -translate-y-1/2 max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-1001 max-h-[80vh] overflow-y-auto'
+        className='fixed inset-x-2 top-1/2 z-1001 mx-auto max-h-[88vh] max-w-6xl -translate-y-1/2 transform overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:inset-x-4'
         onClick={(e) => e.stopPropagation()}
       >
-        <div className='p-6'>
-          <div className='flex items-center justify-between mb-4'>
-            <h3 className='text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2'>
+        <div className='flex max-h-[88vh] flex-col p-4 sm:p-6'>
+          <div className='mb-4 flex items-center justify-between'>
+            <h3 className='flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white'>
               <ListChecks className='w-6 h-6 text-green-500' />
               我的追更
             </h3>
@@ -1433,49 +1410,196 @@ export const UserMenu: React.FC = () => {
             </button>
           </div>
 
-          <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
-            {watchingFollows.map((follow) => {
-              const update = watchingUpdates?.updatedSeries.find((series) =>
-                compareContentIdentity(series, follow),
-              );
-
-              return (
-                <VideoCard
-                  key={watchingFollowKey(follow.source, follow.id)}
-                  id={follow.id}
-                  title={follow.title}
-                  poster={follow.cover}
-                  year={follow.year}
-                  source={follow.source}
-                  source_name={
-                    watchingFollowSourceNames.get(follow.source) || follow.source
-                  }
-                  episodes={update?.latestEpisodes}
-                  currentEpisode={update?.currentEpisode}
-                  from='follow'
-                  type={follow.type || ''}
-                  onDelete={() =>
-                    void deleteFollow(follow.source, follow.id)
-                  }
-                />
-              );
-            })}
+          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden'>
+            <button
+              type='button'
+              onClick={() => setWatchingFollowsTab('list')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                watchingFollowsTab === 'list'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              追更列表
+            </button>
+            <button
+              type='button'
+              onClick={() => setWatchingFollowsTab('settings')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                watchingFollowsTab === 'settings'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              追更设置
+            </button>
           </div>
 
-          {watchingFollows.length === 0 && (
-            <div className='text-center py-12'>
-              <ListChecks className='w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4' />
-              <p className='text-gray-500 dark:text-gray-400 mb-2'>暂无追更</p>
-              <p className='text-xs text-gray-400 dark:text-gray-500'>
-                在详情页点击追更按钮即可添加
-              </p>
-            </div>
-          )}
+          <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
+            <div className='grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]'>
+              <section
+                className={
+                  watchingFollowsTab === 'list' ? 'block' : 'hidden lg:block'
+                }
+              >
+                <div className='mb-3 flex items-center justify-between gap-3'>
+                  <h4 className='text-base font-semibold text-gray-900 dark:text-white'>
+                    追更列表
+                  </h4>
+                  {watchingFollows.length > 0 && (
+                    <span className='text-xs text-gray-500 dark:text-gray-400'>
+                      共 {watchingFollows.length} 项
+                    </span>
+                  )}
+                </div>
 
-          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
-            <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
-              点击海报即可播放，长按或右键查看更多操作
-            </p>
+                <div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4'>
+                  {watchingFollows.map((follow) => {
+                    const update = watchingUpdates?.updatedSeries.find((series) =>
+                      compareContentIdentity(series, follow),
+                    );
+
+                    return (
+                      <VideoCard
+                        key={watchingFollowKey(follow.source, follow.id)}
+                        id={follow.id}
+                        title={follow.title}
+                        poster={follow.cover}
+                        year={follow.year}
+                        source={follow.source}
+                        source_name={
+                          watchingFollowSourceNames.get(follow.source) ||
+                          follow.source
+                        }
+                        episodes={update?.latestEpisodes}
+                        currentEpisode={update?.currentEpisode}
+                        from='follow'
+                        type={follow.type || ''}
+                        onDelete={() =>
+                          void deleteFollow(follow.source, follow.id)
+                        }
+                      />
+                    );
+                  })}
+                </div>
+
+                {watchingFollows.length === 0 && (
+                  <div className='py-12 text-center'>
+                    <ListChecks className='mx-auto mb-4 h-16 w-16 text-gray-300 dark:text-gray-600' />
+                    <p className='mb-2 text-gray-500 dark:text-gray-400'>
+                      暂无追更
+                    </p>
+                    <p className='text-xs text-gray-400 dark:text-gray-500'>
+                      在详情页点击追更按钮即可添加
+                    </p>
+                  </div>
+                )}
+
+                <div className='mt-6 border-t border-gray-200 pt-4 dark:border-gray-700'>
+                  <p className='text-center text-xs text-gray-500 dark:text-gray-400'>
+                    点击海报即可播放，长按或右键查看更多操作
+                  </p>
+                </div>
+              </section>
+
+              <aside
+                className={
+                  watchingFollowsTab === 'settings'
+                    ? 'block'
+                    : 'hidden lg:block'
+                }
+              >
+                <WatchingUpdateSettingsPage embedded />
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  const notificationsPanel = (
+    <>
+      <div
+        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-1000'
+        onClick={handleCloseNotifications}
+        onTouchMove={(e) => {
+          e.preventDefault();
+        }}
+        onWheel={(e) => {
+          e.preventDefault();
+        }}
+        style={{ touchAction: 'none' }}
+      />
+
+      <div
+        className='fixed inset-x-2 top-1/2 z-1001 mx-auto max-h-[88vh] max-w-6xl -translate-y-1/2 transform overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:inset-x-4'
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className='flex max-h-[88vh] flex-col p-4 sm:p-6'>
+          <div className='mb-4 flex items-center justify-between'>
+            <h3 className='flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white'>
+              <Bell className='h-6 w-6 text-blue-500' />
+              通知中心
+              {notificationUnread > 0 && (
+                <span className='inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white'>
+                  {notificationUnread > 99 ? '99+' : notificationUnread}
+                </span>
+              )}
+            </h3>
+            <button
+              onClick={handleCloseNotifications}
+              className='p-2 text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              aria-label='关闭通知中心'
+            >
+              <X className='h-5 w-5' />
+            </button>
+          </div>
+
+          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden'>
+            <button
+              type='button'
+              onClick={() => setNotificationsTab('list')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                notificationsTab === 'list'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              通知列表
+            </button>
+            <button
+              type='button'
+              onClick={() => setNotificationsTab('settings')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                notificationsTab === 'settings'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              通知设置
+            </button>
+          </div>
+
+          <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
+            <div className='grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]'>
+              <section
+                className={
+                  notificationsTab === 'list' ? 'block' : 'hidden lg:block'
+                }
+              >
+                <NotificationCenterPage embedded />
+              </section>
+              <aside
+                className={
+                  notificationsTab === 'settings'
+                    ? 'block'
+                    : 'hidden lg:block'
+                }
+              >
+                <NotificationSettingsPage embedded />
+              </aside>
+            </div>
           </div>
         </div>
       </div>
@@ -1538,6 +1662,11 @@ export const UserMenu: React.FC = () => {
       {isWatchingFollowsOpen &&
         mounted &&
         createPortal(watchingFollowsPanel, document.body)}
+
+      {/* 使用 Portal 将通知中心面板渲染到 document.body */}
+      {isNotificationsOpen &&
+        mounted &&
+        createPortal(notificationsPanel, document.body)}
 
       {/* 版本面板 */}
       <VersionPanel

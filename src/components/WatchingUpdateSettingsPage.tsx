@@ -90,12 +90,12 @@ async function readConfigResponse(response: Response) {
 async function readTriggerLinkResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) throw new Error('请先登录后管理 Trigger Link');
-    if (response.status === 403) throw new Error('管理员未允许使用 Trigger Link');
+    if (response.status === 401) throw new Error('请先登录后管理触发链接');
+    if (response.status === 403) throw new Error('管理员未允许使用触发链接');
     if (response.status === 400) {
-      throw new Error(data.error || 'Trigger Link 请求格式无效');
+      throw new Error(data.error || '触发链接请求格式无效');
     }
-    throw new Error(data.error || 'Trigger Link 请求失败');
+    throw new Error(data.error || '触发链接请求失败');
   }
   return data as TriggerLinkStatusResponse;
 }
@@ -123,7 +123,11 @@ function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
   return status.enabled ? '已启用' : '已禁用';
 }
 
-export default function WatchingUpdateSettingsPage() {
+export default function WatchingUpdateSettingsPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const [config, setConfig] = useState<WatchingUpdateUserConfigResponse | null>(
     null,
   );
@@ -155,7 +159,7 @@ export default function WatchingUpdateSettingsPage() {
       setMessage({
         type: 'error',
         text:
-          error instanceof Error ? error.message : 'Trigger Link 请求失败',
+          error instanceof Error ? error.message : '触发链接请求失败',
       });
     } finally {
       setTriggerLoading(false);
@@ -224,7 +228,7 @@ export default function WatchingUpdateSettingsPage() {
 
   const saveCronExpression = async () => {
     if (!validateCronExpression(cronExpression)) {
-      setMessage({ type: 'error', text: 'Cron Expression 格式无效' });
+      setMessage({ type: 'error', text: 'Cron 表达式格式无效' });
       return;
     }
 
@@ -246,7 +250,7 @@ export default function WatchingUpdateSettingsPage() {
 
   const saveTimezone = async () => {
     if (!validateTimezone(timezone)) {
-      setMessage({ type: 'error', text: 'Timezone 格式无效' });
+      setMessage({ type: 'error', text: '时区格式无效' });
       return;
     }
 
@@ -254,12 +258,12 @@ export default function WatchingUpdateSettingsPage() {
     setMessage(null);
     try {
       await sendConfigRequest('PATCH', { timezone });
-      setMessage({ type: 'success', text: 'Timezone 配置已保存' });
+      setMessage({ type: 'success', text: '时区配置已保存' });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
-          error instanceof Error ? error.message : 'Timezone 配置保存失败',
+          error instanceof Error ? error.message : '时区配置保存失败',
       });
     } finally {
       setSaving(null);
@@ -299,12 +303,12 @@ export default function WatchingUpdateSettingsPage() {
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data);
       setPlainToken(data.plainToken ?? null);
-      setMessage({ type: 'success', text: 'Trigger Link 设置已更新' });
+      setMessage({ type: 'success', text: '触发链接设置已更新' });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
-          error instanceof Error ? error.message : 'Trigger Link 设置失败',
+          error instanceof Error ? error.message : '触发链接设置失败',
       });
     } finally {
       setTriggerSaving(null);
@@ -328,15 +332,33 @@ export default function WatchingUpdateSettingsPage() {
     loading || triggerLoading || triggerSaving !== null || !canUseTriggerLink;
 
   return (
-    <div className='min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-gray-950 dark:text-slate-100 sm:px-6 lg:px-8'>
-      <div className='mx-auto flex w-full max-w-5xl flex-col gap-5'>
-        <header className='flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-gray-800'>
+    <div
+      className={
+        embedded
+          ? 'text-slate-900 dark:text-slate-100'
+          : 'min-h-screen bg-slate-50 px-4 py-6 text-slate-900 dark:bg-gray-950 dark:text-slate-100 sm:px-6 lg:px-8'
+      }
+    >
+      <div
+        className={
+          embedded
+            ? 'flex w-full flex-col gap-4'
+            : 'mx-auto flex w-full max-w-5xl flex-col gap-5'
+        }
+      >
+        <header
+          className={
+            embedded
+              ? 'flex flex-col gap-2 border-b border-slate-200 pb-3 dark:border-gray-800'
+              : 'flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-gray-800'
+          }
+        >
           <div className='flex items-center gap-3'>
             <SlidersHorizontal className='h-7 w-7 text-sky-600 dark:text-sky-400' />
-            <h1 className='text-2xl font-semibold tracking-normal'>追更系统设置</h1>
+            <h1 className={embedded ? 'text-lg font-semibold tracking-normal' : 'text-2xl font-semibold tracking-normal'}>追更设置</h1>
           </div>
           <p className='max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400'>
-            管理你自己的追更调度覆盖项，并查看系统最终采用的 Cron 与 Timezone。
+            管理你自己的追更调度覆盖项，并查看系统最终采用的 Cron 与时区。
           </p>
         </header>
 
@@ -381,7 +403,7 @@ export default function WatchingUpdateSettingsPage() {
                   value={allowedText(config.permission.allowCustomSchedule)}
                 />
                 <StatusItem
-                  label='Trigger Link'
+                  label='触发链接'
                   value={config.permission.allowTriggerLink ? '允许' : '暂不可用'}
                 />
               </div>
@@ -390,12 +412,12 @@ export default function WatchingUpdateSettingsPage() {
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
                 <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>Trigger Link</h2>
+                <h2 className='text-lg font-semibold tracking-normal'>触发链接</h2>
               </div>
 
               {!canUseTriggerLink ? (
                 <div className='rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-                  管理员未允许使用 Trigger Link。
+                  管理员未允许使用触发链接。
                 </div>
               ) : (
                 <div className='space-y-4'>
@@ -537,7 +559,7 @@ export default function WatchingUpdateSettingsPage() {
                       htmlFor='watching-update-cron'
                       className='mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300'
                     >
-                      Cron Expression
+                      Cron 表达式
                     </label>
                     <input
                       id='watching-update-cron'
@@ -591,7 +613,7 @@ export default function WatchingUpdateSettingsPage() {
                       htmlFor='watching-update-timezone'
                       className='mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300'
                     >
-                      IANA Timezone
+                      IANA 时区
                     </label>
                     <input
                       id='watching-update-timezone'
@@ -604,7 +626,7 @@ export default function WatchingUpdateSettingsPage() {
                   <p className='text-xs text-slate-500 dark:text-slate-400'>
                     当前用户配置：{getUserValueLabel(config.userConfig?.timezone)}
                   </p>
-                  <div className='flex flex-wrap gap-2' aria-label='Timezone 常用选项'>
+                  <div className='flex flex-wrap gap-2' aria-label='时区常用选项'>
                     {SCHEDULER_TIMEZONE_PRESETS.map((preset) => (
                       <button
                         key={preset}
@@ -625,7 +647,7 @@ export default function WatchingUpdateSettingsPage() {
                       className='inline-flex min-h-9 items-center gap-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
                     >
                       <Save className='h-4 w-4' />
-                      保存 Timezone
+                      保存时区
                     </button>
                     <button
                       type='button'
@@ -634,7 +656,7 @@ export default function WatchingUpdateSettingsPage() {
                       className='inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800'
                     >
                       <RefreshCw className='h-4 w-4' />
-                      恢复 Timezone 系统配置
+                      恢复时区系统配置
                     </button>
                   </div>
                 </div>
@@ -665,7 +687,7 @@ export default function WatchingUpdateSettingsPage() {
                   source={SOURCE_LABELS[config.sources.cron]}
                 />
                 <EffectiveItem
-                  label='最终 Timezone'
+                  label='最终时区'
                   value={config.effectiveConfig.timezone}
                   source={SOURCE_LABELS[config.sources.timezone]}
                 />

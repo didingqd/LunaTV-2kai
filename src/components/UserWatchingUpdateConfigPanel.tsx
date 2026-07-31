@@ -52,11 +52,11 @@ interface UserWatchingUpdateConfigPanelProps {
 }
 
 const CRON_PRESETS = [
-  { label: 'Every 30 minutes', value: '*/30 * * * *' },
-  { label: 'Every 1 hour', value: '0 * * * *' },
-  { label: 'Every 6 hours', value: '0 */6 * * *' },
-  { label: 'Every 12 hours', value: '0 */12 * * *' },
-  { label: 'Every 24 hours', value: '0 0 * * *' },
+  { label: '每30分钟', value: '*/30 * * * *' },
+  { label: '每1小时', value: '0 * * * *' },
+  { label: '每6小时', value: '0 */6 * * *' },
+  { label: '每12小时', value: '0 */12 * * *' },
+  { label: '每24小时', value: '0 0 * * *' },
 ] as const;
 
 const TIMEZONE_PRESETS = [
@@ -69,15 +69,15 @@ const TIMEZONE_PRESETS = [
 ] as const;
 
 const SOURCE_LABELS: Record<ConfigSource, string> = {
-  user: 'User Config',
-  system: 'System Config',
-  default: 'Default',
+  user: '用户配置',
+  system: '系统配置',
+  default: '默认值',
 };
 
 async function readResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || 'Watching update config request failed');
+    throw new Error(data.error || '追更配置请求失败');
   }
   return data as UserWatchingUpdateConfigResponse;
 }
@@ -149,7 +149,7 @@ export default function UserWatchingUpdateConfigPanel({
             text:
               error instanceof Error
                 ? error.message
-                : 'Failed to load watching update config',
+                : '追更配置加载失败',
           });
         }
       } finally {
@@ -187,13 +187,13 @@ export default function UserWatchingUpdateConfigPanel({
     if (mode === 'custom') {
       if (field === 'cronExpression') {
         if (!validateCronExpression(cronExpression)) {
-          setMessage({ type: 'error', text: 'Cron Expression is invalid' });
+          setMessage({ type: 'error', text: 'Cron 表达式无效' });
           return;
         }
         value = cronExpression;
       } else {
         if (!validateTimezone(timezone)) {
-          setMessage({ type: 'error', text: 'Timezone is invalid' });
+          setMessage({ type: 'error', text: '时区无效' });
           return;
         }
         value = timezone;
@@ -215,7 +215,7 @@ export default function UserWatchingUpdateConfigPanel({
       await onRefresh();
       setMessage({
         type: 'success',
-        text: mode === 'custom' ? 'User config saved' : 'Override cleared',
+        text: mode === 'custom' ? '用户配置已保存' : '已恢复继承',
       });
     } catch (error) {
       setMessage({
@@ -223,7 +223,7 @@ export default function UserWatchingUpdateConfigPanel({
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to save watching update config',
+            : '追更配置保存失败',
       });
     } finally {
       setSaving(null);
@@ -244,18 +244,18 @@ export default function UserWatchingUpdateConfigPanel({
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to update permission');
+        throw new Error(data.error || '追更权限更新失败');
       }
       await onRefresh();
       await loadConfig(false);
-      setMessage({ type: 'success', text: 'Permission saved' });
+      setMessage({ type: 'success', text: '权限已保存' });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to update permission',
+            : '追更权限更新失败',
       });
     } finally {
       setSaving(null);
@@ -274,14 +274,14 @@ export default function UserWatchingUpdateConfigPanel({
       const next = await readResponse(response);
       applyConfig(next, false);
       await onRefresh();
-      setMessage({ type: 'success', text: 'Ability limits saved' });
+      setMessage({ type: 'success', text: '能力限制已保存' });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to save ability limits',
+            : '能力限制保存失败',
       });
     } finally {
       setSaving(null);
@@ -292,7 +292,7 @@ export default function UserWatchingUpdateConfigPanel({
     return (
       <div className='flex items-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400'>
         <LoaderCircle className='h-4 w-4 animate-spin' />
-        Loading watching update config
+        正在加载追更配置
       </div>
     );
   }
@@ -300,7 +300,7 @@ export default function UserWatchingUpdateConfigPanel({
   if (!config) {
     return (
       <div className='py-6 text-sm text-red-600 dark:text-red-400'>
-        {message?.text || 'Unable to load watching update config'}
+        {message?.text || '无法加载追更配置'}
       </div>
     );
   }
@@ -315,25 +315,25 @@ export default function UserWatchingUpdateConfigPanel({
       {message && <StatusMessage type={message.type} text={message.text} />}
 
       <section className='space-y-4 border-b border-gray-200 pb-5 dark:border-gray-700'>
-        <SectionHeading icon='shield' title='Update Permission' />
+        <SectionHeading icon='shield' title='追更权限' />
         <div className='flex flex-wrap items-center justify-between gap-4'>
           <div className='text-sm text-gray-600 dark:text-gray-400'>
             <p>
-              Authorization: {displayedPermission ? 'Enabled' : 'Disabled'}
+              授权状态：{displayedPermission ? '已启用' : '已禁用'}
             </p>
-            <p>Effective status: {config.effective.enabled ? 'Enabled' : 'Disabled'}</p>
-            <p>Updated by: {config.audit?.operator ?? '-'}</p>
+            <p>生效状态：{config.effective.enabled ? '已启用' : '已禁用'}</p>
+            <p>操作人：{config.audit?.operator ?? '-'}</p>
           </div>
           <div className='flex items-center gap-3'>
             <Switch
-              label='Update-check authorization'
+              label='追更授权'
               checked={displayedPermission}
               disabled={targetIsOwner || saving === 'permission'}
               onChange={() => setPermissionEnabled((current) => !current)}
             />
             {!targetIsOwner && (
               <ActionButton
-                label='Save Permission'
+                label='保存权限'
                 loading={saving === 'permission'}
                 onClick={savePermission}
               />
@@ -343,32 +343,32 @@ export default function UserWatchingUpdateConfigPanel({
       </section>
 
       <section className='space-y-4 border-b border-gray-200 pb-5 dark:border-gray-700'>
-        <SectionHeading icon='sliders' title='Ability Limits' />
+        <SectionHeading icon='sliders' title='能力限制' />
         <div className='grid gap-3 sm:grid-cols-2'>
           <SwitchRow
-            label='Allow user custom schedule'
-            description='Controls whether the user can edit Cron and Timezone from the user center.'
+            label='允许用户自定义调度'
+            description='控制用户是否可在用户中心修改 Cron 和时区。'
             checked={allowCustomSchedule}
             disabled={saving === 'ability'}
             onChange={() => setAllowCustomSchedule((current) => !current)}
           />
           <SwitchRow
-            label='Allow Trigger Link'
-            description='Controls whether the user can manage Trigger Link later.'
+            label='允许触发链接'
+            description='控制用户是否可管理外部触发链接。'
             checked={allowTriggerLink}
             disabled={saving === 'ability'}
             onChange={() => setAllowTriggerLink((current) => !current)}
           />
         </div>
         <ActionButton
-          label='Save Ability Limits'
+          label='保存能力限制'
           loading={saving === 'ability'}
           onClick={saveAbilityLimits}
         />
       </section>
 
       <section className='space-y-0'>
-        <SectionHeading icon='sliders' title='User Config Management' />
+        <SectionHeading icon='sliders' title='用户配置管理' />
         <StrategySection
           title='Cron'
           effective={config.effective.cronExpression}
@@ -383,10 +383,10 @@ export default function UserWatchingUpdateConfigPanel({
             <div className='grid gap-3 sm:grid-cols-2'>
               <label className='block'>
                 <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
-                  Cron preset
+                  Cron 预设
                 </span>
                 <select
-                  aria-label='Cron preset'
+                  aria-label='Cron 预设'
                   value={
                     CRON_PRESETS.some(
                       (preset) => preset.value === cronExpression,
@@ -399,7 +399,7 @@ export default function UserWatchingUpdateConfigPanel({
                   }}
                   className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
                 >
-                  <option value=''>Custom expression</option>
+                  <option value=''>自定义表达式</option>
                   {CRON_PRESETS.map((preset) => (
                     <option key={preset.value} value={preset.value}>
                       {preset.label}
@@ -409,10 +409,10 @@ export default function UserWatchingUpdateConfigPanel({
               </label>
               <label className='block'>
                 <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
-                  Cron Expression
+                  Cron 表达式
                 </span>
                 <input
-                  aria-label='Cron Expression'
+                  aria-label='Cron 表达式'
                   value={cronExpression}
                   onChange={(event) => setCronExpression(event.target.value)}
                   className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
@@ -423,7 +423,7 @@ export default function UserWatchingUpdateConfigPanel({
         </StrategySection>
 
         <StrategySection
-          title='Timezone'
+          title='时区'
           effective={config.effective.timezone}
           override={config.userConfig?.timezone}
           source={config.sources.timezone}
@@ -436,10 +436,10 @@ export default function UserWatchingUpdateConfigPanel({
             <div className='grid gap-3 sm:grid-cols-2'>
               <label className='block'>
                 <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
-                  Timezone preset
+                  时区预设
                 </span>
                 <select
-                  aria-label='Timezone preset'
+                  aria-label='时区预设'
                   value={
                     TIMEZONE_PRESETS.includes(
                       timezone as (typeof TIMEZONE_PRESETS)[number],
@@ -452,7 +452,7 @@ export default function UserWatchingUpdateConfigPanel({
                   }}
                   className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
                 >
-                  <option value=''>Custom timezone</option>
+                  <option value=''>自定义时区</option>
                   {TIMEZONE_PRESETS.map((preset) => (
                     <option key={preset} value={preset}>
                       {preset}
@@ -462,10 +462,10 @@ export default function UserWatchingUpdateConfigPanel({
               </label>
               <label className='block'>
                 <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
-                  IANA Timezone
+                  IANA 时区
                 </span>
                 <input
-                  aria-label='IANA Timezone'
+                  aria-label='IANA 时区'
                   value={timezone}
                   onChange={(event) => setTimezone(event.target.value)}
                   className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
@@ -587,19 +587,19 @@ function StrategySection({
           </h4>
           <div className='mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400'>
             <p>
-              Effective:{' '}
+              当前生效：{' '}
               <span className='font-mono text-gray-900 dark:text-gray-100'>
                 {effective}
               </span>
             </p>
             <p>
-              User config:{' '}
+              用户配置：{' '}
               <span className='font-mono text-gray-900 dark:text-gray-100'>
-                {override ?? 'Not set'}
+                {override ?? '未设置'}
               </span>
             </p>
             <p>
-              Source:{' '}
+              来源：{' '}
               <span className='font-medium text-blue-700 dark:text-blue-300'>
                 {SOURCE_LABELS[source]}
               </span>
@@ -608,7 +608,7 @@ function StrategySection({
         </div>
         <div
           role='group'
-          aria-label={`${title} config mode`}
+          aria-label={`${title} 配置模式`}
           className='inline-flex overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600'
         >
           <button
@@ -621,7 +621,7 @@ function StrategySection({
                 : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
             }`}
           >
-            Inherit system
+            继承系统
           </button>
           <button
             type='button'
@@ -633,13 +633,13 @@ function StrategySection({
                 : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
             }`}
           >
-            Custom
+            自定义
           </button>
         </div>
       </div>
       {children}
       <ActionButton
-        label={mode === 'custom' ? `Save ${title}` : `Clear ${title} Override`}
+        label={mode === 'custom' ? `保存 ${title}` : `清除 ${title} 覆盖`}
         loading={saving}
         onClick={onSave}
       />
@@ -700,7 +700,7 @@ function ActionButton({
       ) : (
         <Save className='h-4 w-4' />
       )}
-      {loading ? 'Saving...' : label}
+      {loading ? '保存中...' : label}
     </button>
   );
 }

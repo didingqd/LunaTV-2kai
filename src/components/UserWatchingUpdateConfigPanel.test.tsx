@@ -119,7 +119,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     expect(await screen.findAllByText('0 */6 * * *')).toHaveLength(2);
-    expect(screen.getByText('User Config')).toBeInTheDocument();
+    expect(screen.getByText('用户配置')).toBeInTheDocument();
   });
 
   it('displays inherited system values', async () => {
@@ -127,8 +127,8 @@ describe('UserWatchingUpdateConfigPanel', () => {
 
     renderPanel();
 
-    expect(await screen.findAllByText('Not set')).toHaveLength(2);
-    expect(screen.getAllByText('System Config')).toHaveLength(2);
+    expect(await screen.findAllByText('未设置')).toHaveLength(2);
+    expect(screen.getAllByText('系统配置')).toHaveLength(2);
   });
 
   it('saves a custom cron expression', async () => {
@@ -146,15 +146,15 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const cronGroup = await screen.findByRole('group', {
-      name: 'Cron config mode',
+      name: 'Cron 配置模式',
     });
     fireEvent.click(
       cronGroup.querySelectorAll('button')[1] as HTMLButtonElement,
     );
-    fireEvent.change(screen.getByLabelText('Cron Expression'), {
+    fireEvent.change(screen.getByLabelText('Cron 表达式'), {
       target: { value: '0 */6 * * *' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Cron' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expectConfigRequest(fetchMock, 1, 'PATCH', {
@@ -177,15 +177,15 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const timezoneGroup = await screen.findByRole('group', {
-      name: 'Timezone config mode',
+      name: '时区 配置模式',
     });
     fireEvent.click(
       timezoneGroup.querySelectorAll('button')[1] as HTMLButtonElement,
     );
-    fireEvent.change(screen.getByLabelText('IANA Timezone'), {
+    fireEvent.change(screen.getByLabelText('IANA 时区'), {
       target: { value: 'Asia/Tokyo' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Timezone' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存 时区' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expectConfigRequest(fetchMock, 1, 'PATCH', { timezone: 'Asia/Tokyo' });
@@ -209,10 +209,10 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     const cronGroup = await screen.findByRole('group', {
-      name: 'Cron config mode',
+      name: 'Cron 配置模式',
     });
     fireEvent.click(cronGroup.querySelector('button') as HTMLButtonElement);
-    fireEvent.click(screen.getByRole('button', { name: 'Clear Cron Override' }));
+    fireEvent.click(screen.getByRole('button', { name: '清除 Cron 覆盖' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expectConfigRequest(fetchMock, 1, 'DELETE', { field: 'cronExpression' });
@@ -240,13 +240,13 @@ describe('UserWatchingUpdateConfigPanel', () => {
     setFetch(fetchMock);
     renderPanel();
 
-    expect(await screen.findByText('Ability Limits')).toBeInTheDocument();
+    expect(await screen.findByText('能力限制')).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole('switch', { name: 'Allow user custom schedule' }),
+      screen.getByRole('switch', { name: '允许用户自定义调度' }),
     );
-    fireEvent.click(screen.getByRole('switch', { name: 'Allow Trigger Link' }));
+    fireEvent.click(screen.getByRole('switch', { name: '允许触发链接' }));
     fireEvent.click(
-      screen.getByRole('button', { name: 'Save Ability Limits' }),
+      screen.getByRole('button', { name: '保存能力限制' }),
     );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -261,7 +261,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
 
     renderPanel();
 
-    expect(await screen.findByText('User Config Management')).toBeInTheDocument();
+    expect(await screen.findByText('用户配置管理')).toBeInTheDocument();
     expect(screen.queryByLabelText('Log Retention Count')).not.toBeInTheDocument();
     expect(screen.queryByText(/Retention/i)).not.toBeInTheDocument();
   });
@@ -283,10 +283,10 @@ describe('UserWatchingUpdateConfigPanel', () => {
 
     renderPanel();
 
-    expect(await screen.findByText('Authorization: Disabled')).toBeInTheDocument();
-    expect(screen.getByText('Effective status: Disabled')).toBeInTheDocument();
+    expect(await screen.findByText('授权状态：已禁用')).toBeInTheDocument();
+    expect(screen.getByText('生效状态：已禁用')).toBeInTheDocument();
     expect(
-      screen.getByRole('switch', { name: 'Update-check authorization' }),
+      screen.getByRole('switch', { name: '追更授权' }),
     ).not.toBeChecked();
   });
 });
