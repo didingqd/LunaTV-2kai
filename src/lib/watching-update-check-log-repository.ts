@@ -82,6 +82,17 @@ function sortLogs(
   );
 }
 
+function replaceLog(
+  logs: WatchingUpdateCheckLogEntry[],
+  entry: WatchingUpdateCheckLogEntry,
+  retentionCount: number,
+): WatchingUpdateCheckLogEntry[] {
+  return [entry, ...logs.filter((existing) => existing.id !== entry.id)].slice(
+    0,
+    retentionCount,
+  );
+}
+
 async function queuedWrite<T>(
   key: string,
   operation: () => Promise<T>,
@@ -128,6 +139,35 @@ export class WatchingUpdateCheckLogRepository {
     });
   }
 
+  async replaceGlobal(
+    entry: WatchingUpdateCheckLogEntry,
+    retentionCount: number,
+  ): Promise<void> {
+    if (!storageIsAvailable()) return;
+    await queuedWrite(WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY, async () => {
+      const existing = asLogs(
+        await this.store.getCache(WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY),
+      );
+      await this.store.setCache(
+        WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY,
+        replaceLog(existing, entry, retentionCount),
+      );
+    });
+  }
+
+  async removeGlobal(id: string): Promise<void> {
+    if (!storageIsAvailable()) return;
+    await queuedWrite(WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY, async () => {
+      const existing = asLogs(
+        await this.store.getCache(WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY),
+      );
+      await this.store.setCache(
+        WATCHING_UPDATE_CHECK_LOG_GLOBAL_CACHE_KEY,
+        existing.filter((entry) => entry.id !== id),
+      );
+    });
+  }
+
   async appendForUser(
     username: string,
     entry: WatchingUpdateCheckLogEntry,
@@ -141,6 +181,23 @@ export class WatchingUpdateCheckLogRepository {
       await this.store.setCache(
         key,
         [entry, ...existing].slice(0, retentionCount),
+      );
+    });
+  }
+
+  async replaceForUser(
+    username: string,
+    entry: WatchingUpdateCheckLogEntry,
+    retentionCount: number,
+  ): Promise<void> {
+    if (!storageIsAvailable()) return;
+    await this.ensureUserIndexed(username);
+    const key = userLogKey(username);
+    await queuedWrite(key, async () => {
+      const existing = asLogs(await this.store.getCache(key));
+      await this.store.setCache(
+        key,
+        replaceLog(existing, entry, retentionCount),
       );
     });
   }

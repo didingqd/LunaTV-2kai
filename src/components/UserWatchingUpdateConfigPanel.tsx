@@ -17,6 +17,7 @@ type UserRole = 'user' | 'admin' | 'owner';
 type ConfigMode = 'inherit' | 'custom';
 type ConfigField = 'cronExpression' | 'timezone';
 type ConfigSource = 'user' | 'system' | 'default';
+type PanelMode = 'standalone' | 'admin-management';
 
 interface UserWatchingUpdateConfigResponse {
   username: string;
@@ -49,6 +50,7 @@ interface UserWatchingUpdateConfigPanelProps {
   userRole: UserRole;
   systemUpdateCheckEnabled: boolean;
   onRefresh: () => Promise<void>;
+  mode?: PanelMode;
 }
 
 const CRON_PRESETS = [
@@ -87,6 +89,7 @@ export default function UserWatchingUpdateConfigPanel({
   userRole,
   systemUpdateCheckEnabled,
   onRefresh,
+  mode = 'standalone',
 }: UserWatchingUpdateConfigPanelProps) {
   const [config, setConfig] = useState<UserWatchingUpdateConfigResponse | null>(
     null,
@@ -164,6 +167,14 @@ export default function UserWatchingUpdateConfigPanel({
   }, [loadConfig]);
 
   const targetIsOwner = userRole === 'owner';
+  const isAdminManagementMode = mode === 'admin-management';
+
+  const refreshAfterSave = async () => {
+    if (!isAdminManagementMode) {
+      await onRefresh();
+    }
+    await loadConfig(true);
+  };
 
   const saveAll = async () => {
     if (cronMode === 'custom' && !validateCronExpression(cronExpression)) {
@@ -231,8 +242,7 @@ export default function UserWatchingUpdateConfigPanel({
         await readResponse(response);
       }
 
-      await onRefresh();
-      await loadConfig(true);
+      await refreshAfterSave();
       setMessage({ type: 'success', text: '追更系统设置已保存' });
     } catch (error) {
       setMessage({
@@ -259,8 +269,7 @@ export default function UserWatchingUpdateConfigPanel({
         });
         await readResponse(response);
       }
-      await onRefresh();
-      await loadConfig(true);
+      await refreshAfterSave();
       setMessage({ type: 'success', text: '已恢复系统配置' });
     } catch (error) {
       setMessage({

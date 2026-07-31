@@ -32,7 +32,6 @@ function systemConfig(updateCheckLogRetentionCount: number): SystemConfig {
   return {
     updateCheckBackendEnabled: true,
     updateCheckSchedulerEnabled: true,
-    updateCheckCronInterval: 30 * 60 * 1000,
     updateCheckCronExpression: '*/30 * * * *',
     updateCheckTimezone: 'UTC',
     updateCheckLogRetentionCount,
@@ -217,5 +216,77 @@ describe('WatchingUpdateCheckLogService retention', () => {
 
     await expect(service.list({ userId: 'alice' })).resolves.toHaveLength(1);
     await expect(service.list({ userId: 'bob' })).resolves.toHaveLength(1);
+  });
+
+  it('replaces a started cron log with its finished result instead of appending another log', async () => {
+    const { service } = createService(200);
+    const started = {
+      ...baseLog(1),
+      execution: {
+        stage: 'started' as const,
+        startedAt: 1,
+        endedAt: 1,
+        finishedAt: 1,
+        durationMs: 0,
+        success: true,
+      },
+    };
+    const id = await service.record(started);
+    const finished = {
+      ...baseLog(1),
+      execution: {
+        stage: 'finished' as const,
+        startedAt: 1,
+        endedAt: 21,
+        finishedAt: 21,
+        durationMs: 20,
+        success: true,
+      },
+      result: {
+        ...baseLog(1).result,
+        trigger: 'cron' as const,
+        checkedUsers: ['alice'],
+        updatedUsers: ['alice'],
+        failedUsers: [],
+        result: {
+          inspected: 1,
+          succeeded: 1,
+          failed: 0,
+          oldestDueAt: 1,
+        },
+      },
+    };
+
+    await service.record(finished, {
+      id: id ?? undefined,
+      replaceExisting: true,
+      userIds: ['alice'],
+    });
+
+    await expect(service.list({ limit: 200 })).resolves.toEqual([
+      expect.objectContaining({
+        id,
+        execution: expect.objectContaining({
+          stage: 'finished',
+          startedAt: 1,
+          finishedAt: 21,
+          durationMs: 20,
+          success: true,
+        }),
+        result: expect.objectContaining({
+          trigger: 'cron',
+          checkedUsers: ['alice'],
+          updatedUsers: ['alice'],
+          failedUsers: [],
+          result: {
+            inspected: 1,
+            succeeded: 1,
+            failed: 0,
+            oldestDueAt: 1,
+          },
+        }),
+      }),
+    ]);
+    await expect(service.list({ userId: 'alice' })).resolves.toHaveLength(1);
   });
 });

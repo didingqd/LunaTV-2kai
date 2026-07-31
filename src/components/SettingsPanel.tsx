@@ -9,6 +9,11 @@ import { createPortal } from 'react-dom';
 import { WatchCompletionThresholdSetting } from './WatchCompletionThresholdSetting';
 import { UserEmbyConfig } from './UserEmbyConfig';
 import { WatchingUpdateModeSetting } from './WatchingUpdateModeSetting';
+import {
+  MOBILE_DIALOG_CONTENT_CLASS,
+  MOBILE_DIALOG_FRAME_CLASS,
+  MOBILE_DIALOG_HEADER_CLASS,
+} from './mobile-dialog-layout';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { useEmbyConfigQuery } from '@/hooks/useUserMenuQueries';
 import { BROWSER_NAVIGATION_PREFERENCE_KEY } from '@/lib/browser-navigation';
@@ -493,15 +498,19 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
       />
 
       {/* 设置面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 flex flex-col'>
+      <div
+        className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 flex flex-col ${MOBILE_DIALOG_FRAME_CLASS}`}
+      >
         {/* 内容容器 */}
         <div
-          className='flex-1 p-6 overflow-y-auto'
+          className={`flex-1 p-6 overflow-y-auto ${MOBILE_DIALOG_CONTENT_CLASS}`}
           data-panel-content
           style={{ touchAction: 'pan-y', overscrollBehavior: 'contain' }}
         >
           {/* 标题栏 */}
-          <div className='flex items-center justify-between mb-6'>
+          <div
+            className={`flex items-center justify-between mb-6 ${MOBILE_DIALOG_HEADER_CLASS}`}
+          >
             <div className='flex items-center gap-3'>
               <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                 本地设置

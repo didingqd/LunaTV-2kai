@@ -58,6 +58,7 @@ describe('NotificationSettingsService', () => {
       service.save('alice', { watchingUpdateFailedEnabled: false }),
     ).resolves.toEqual({
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: false,
@@ -85,6 +86,7 @@ describe('NotificationSettingsService', () => {
 
     await expect(service.restoreDefault('alice')).resolves.toEqual({
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: true,
@@ -107,6 +109,66 @@ describe('NotificationSettingsService', () => {
     );
 
     await expect(service.shouldDispatch(message())).resolves.toBe(true);
+  });
+
+  it('keeps channel states unchanged while toggling the notification center', async () => {
+    const repository = new NotificationSettingsRepository(
+      new MemoryNotificationSettingsStore(),
+    );
+    const service = new NotificationSettingsService(repository, () => 9_000);
+    await repository.save('alice', {
+      channels: [
+        {
+          id: 'inbox',
+          type: 'inbox',
+          name: '站内通知',
+          enabled: true,
+          subscribedEvents: [FOUND_EVENT],
+          config: {},
+        },
+        {
+          id: 'wc-1',
+          type: 'wechat_work',
+          name: '企业微信',
+          enabled: false,
+          subscribedEvents: [FOUND_EVENT],
+          config: {
+            webhookUrl:
+              'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+          },
+        },
+      ],
+    });
+
+    const disabled = await service.save('alice', {
+      notificationCenterEnabled: false,
+    });
+    expect(disabled).toMatchObject({
+      notificationCenterEnabled: false,
+      channels: [
+        { id: 'inbox', enabled: true },
+        { id: 'wc-1', enabled: false },
+      ],
+    });
+    await expect(
+      service.getSubscribedChannelConfigs({
+        id: 'event-1',
+        type: FOUND_EVENT,
+        userId: 'alice',
+        data: {},
+        createdAt: 1_000,
+      }),
+    ).resolves.toEqual([]);
+
+    await expect(
+      service.save('alice', { notificationCenterEnabled: true }),
+    ).resolves.toMatchObject({
+      notificationCenterEnabled: true,
+      channels: [
+        { id: 'inbox', enabled: true },
+        { id: 'wc-1', enabled: false },
+      ],
+    });
   });
 
   it('excludes inbox from enabled channels when inbox is disabled', async () => {

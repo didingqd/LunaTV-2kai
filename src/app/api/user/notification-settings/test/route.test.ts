@@ -28,6 +28,7 @@ let providerTest: jest.Mock;
 
 function settings(channel: Record<string, unknown>) {
   return {
+    notificationCenterEnabled: true,
     inboxEnabled: true,
     watchingUpdateFoundEnabled: true,
     watchingUpdateFailedEnabled: true,
@@ -109,6 +110,28 @@ describe('notification settings test API', () => {
         },
       }),
     );
+
+    const response = await POST(request({ channelId: 'wc-1' }));
+
+    expect(response.status).toBe(403);
+    expect(providerTest).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the notification center is disabled', async () => {
+    getForUser.mockResolvedValue({
+      ...settings({
+        id: 'wc-1',
+        type: 'wechat_work',
+        name: '企业微信',
+        enabled: true,
+        subscribedEvents: ['watching.update_found'],
+        config: {
+          webhookUrl:
+            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        },
+      }),
+      notificationCenterEnabled: false,
+    });
 
     const response = await POST(request({ channelId: 'wc-1' }));
 

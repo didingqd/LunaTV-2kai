@@ -28,9 +28,7 @@ import { toast } from 'sonner';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
-import {
-  getUserMenuIndicatorColor,
-} from '@/lib/user-menu-indicator';
+import { getUserMenuIndicatorColor } from '@/lib/user-menu-indicator';
 import { watchingFollowKey } from '@/lib/api/watching-follow';
 import {
   compareContentIdentity,
@@ -50,6 +48,11 @@ import VideoCard from './VideoCard';
 import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
 import { SettingsPanel } from './SettingsPanel';
 import {
+  MOBILE_DIALOG_CONTENT_CLASS,
+  MOBILE_DIALOG_FRAME_CLASS,
+  MOBILE_DIALOG_HEADER_CLASS,
+} from './mobile-dialog-layout';
+import {
   useWatchRoomConfigQuery,
   useServerConfigQuery,
   useVersionCheckQuery,
@@ -58,7 +61,10 @@ import {
   useChangePasswordMutation,
   useInvalidateUserMenuData,
 } from '@/hooks/useUserMenuQueries';
-import { useWatchingUpdatesQuery, useRefreshWatchingUpdates } from '@/hooks/useWatchingUpdates';
+import {
+  useWatchingUpdatesQuery,
+  useRefreshWatchingUpdates,
+} from '@/hooks/useWatchingUpdates';
 import { useWatchingFollows } from '@/hooks/useWatchingFollows';
 import { useSourcesQuery } from '@/hooks/useSourcesQuery';
 
@@ -79,14 +85,13 @@ export const UserMenu: React.FC = () => {
   const [isWatchingUpdatesOpen, setIsWatchingUpdatesOpen] = useState(false);
   const [isContinueWatchingOpen, setIsContinueWatchingOpen] = useState(false);
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
-  const [isWatchingFollowsOpen, setIsWatchingFollowsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [watchingFollowsTab, setWatchingFollowsTab] = useState<
-    'list' | 'settings'
-  >('list');
-  const [notificationsTab, setNotificationsTab] = useState<
-    'list' | 'settings'
-  >('list');
+  const [watchingUpdatesTab, setWatchingUpdatesTab] = useState<
+    'updates' | 'follows' | 'settings'
+  >('updates');
+  const [notificationsTab, setNotificationsTab] = useState<'list' | 'settings'>(
+    'list',
+  );
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [notificationUnread, setNotificationUnread] = useState(0);
   const [storageType, setStorageType] = useState<string>(() => {
@@ -97,21 +102,24 @@ export const UserMenu: React.FC = () => {
     return 'localstorage';
   });
   const [mounted, setMounted] = useState(false);
-  const [dismissedReleases, setDismissedReleases] = useState<Set<string>>(() => {
-    // 从localStorage加载已忽略的新上映列表
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('moontv_dismissed_releases');
-        return saved ? new Set(JSON.parse(saved)) : new Set();
-      } catch {
-        return new Set();
+  const [dismissedReleases, setDismissedReleases] = useState<Set<string>>(
+    () => {
+      // 从localStorage加载已忽略的新上映列表
+      if (typeof window !== 'undefined') {
+        try {
+          const saved = localStorage.getItem('moontv_dismissed_releases');
+          return saved ? new Set(JSON.parse(saved)) : new Set();
+        } catch {
+          return new Set();
+        }
       }
-    }
-    return new Set();
-  });
+      return new Set();
+    },
+  );
 
   // 🚀 TanStack Query - 追番更新
-  const showWatchingUpdates = authInfo?.username && storageType !== 'localstorage';
+  const showWatchingUpdates =
+    authInfo?.username && storageType !== 'localstorage';
   const { data: watchingUpdates } = useWatchingUpdatesQuery({
     enabled: showWatchingUpdates, // 页面加载时就检查（会使用缓存）
   });
@@ -119,21 +127,27 @@ export const UserMenu: React.FC = () => {
 
   // 检查是否有实际更新（用于显示红点）- 包括新剧集更新和新上映
   // 过滤掉已忽略的新上映
-  const hasActualUpdates = watchingUpdates && (
-    (watchingUpdates.updatedCount || 0) > 0 ||
-    watchingUpdates.updatedSeries.filter(
-      series => series.hasNewRelease && !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`)
-    ).length > 0
-  );
+  const hasActualUpdates =
+    watchingUpdates &&
+    ((watchingUpdates.updatedCount || 0) > 0 ||
+      watchingUpdates.updatedSeries.filter(
+        (series) =>
+          series.hasNewRelease &&
+          !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`),
+      ).length > 0);
 
   // 计算更新数量（新剧集更新 + 未忽略的新上映）
-  const totalUpdates = (watchingUpdates?.updatedCount || 0) +
+  const totalUpdates =
+    (watchingUpdates?.updatedCount || 0) +
     (watchingUpdates?.updatedSeries.filter(
-      series => series.hasNewRelease && !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`)
+      (series) =>
+        series.hasNewRelease &&
+        !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`),
     ).length || 0);
 
   // 🚀 TanStack Query - 版本检查
-  const { data: updateStatus = null, isLoading: isChecking } = useVersionCheckQuery();
+  const { data: updateStatus = null, isLoading: isChecking } =
+    useVersionCheckQuery();
 
   // 🔧 修改点：按优先级区分用户菜单右上角提示点颜色，版本更新优先黄点，仅提醒更新时显示红点
   const userMenuIndicatorColor = getUserMenuIndicatorColor({
@@ -153,7 +167,14 @@ export const UserMenu: React.FC = () => {
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
-    if (isSettingsOpen || isChangePasswordOpen || isWatchingUpdatesOpen || isContinueWatchingOpen || isFavoritesOpen || isWatchingFollowsOpen || isNotificationsOpen) {
+    if (
+      isSettingsOpen ||
+      isChangePasswordOpen ||
+      isWatchingUpdatesOpen ||
+      isContinueWatchingOpen ||
+      isFavoritesOpen ||
+      isNotificationsOpen
+    ) {
       const body = document.body;
       const html = document.documentElement;
 
@@ -166,23 +187,35 @@ export const UserMenu: React.FC = () => {
       html.style.overflow = 'hidden';
 
       return () => {
-
         // 恢复所有原始样式
         body.style.overflow = originalBodyOverflow;
         html.style.overflow = originalHtmlOverflow;
       };
     }
-  }, [isSettingsOpen, isChangePasswordOpen, isWatchingUpdatesOpen, isContinueWatchingOpen, isFavoritesOpen, isWatchingFollowsOpen, isNotificationsOpen]);
+  }, [
+    isSettingsOpen,
+    isChangePasswordOpen,
+    isWatchingUpdatesOpen,
+    isContinueWatchingOpen,
+    isFavoritesOpen,
+    isNotificationsOpen,
+  ]);
 
   // 数据查询条件（从 localStorage 读初始值，供 playRecords query 用）
   const [continueWatchingMinProgress] = useState(() =>
-    typeof window !== 'undefined' ? (Number(localStorage.getItem('continueWatchingMinProgress')) || 5) : 5
+    typeof window !== 'undefined'
+      ? Number(localStorage.getItem('continueWatchingMinProgress')) || 5
+      : 5,
   );
   const [continueWatchingMaxProgress] = useState(() =>
-    typeof window !== 'undefined' ? (Number(localStorage.getItem('continueWatchingMaxProgress')) || 100) : 100
+    typeof window !== 'undefined'
+      ? Number(localStorage.getItem('continueWatchingMaxProgress')) || 100
+      : 100,
   );
   const [enableContinueWatchingFilter] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('enableContinueWatchingFilter') === 'true' : false
+    typeof window !== 'undefined'
+      ? localStorage.getItem('enableContinueWatchingFilter') === 'true'
+      : false,
   );
 
   // 修改密码相关状态
@@ -192,15 +225,19 @@ export const UserMenu: React.FC = () => {
   const [passwordError, setPasswordError] = useState('');
 
   // 数据查询条件
-  const dataQueryEnabled = typeof window !== 'undefined' && !!authInfo?.username && storageType !== 'localstorage';
+  const dataQueryEnabled =
+    typeof window !== 'undefined' &&
+    !!authInfo?.username &&
+    storageType !== 'localstorage';
 
   // 🚀 TanStack Query - 播放记录
-  const { data: playRecords = [], refetch: refetchPlayRecords } = usePlayRecordsQuery({
-    enabled: dataQueryEnabled,
-    enableFilter: enableContinueWatchingFilter,
-    minProgress: continueWatchingMinProgress,
-    maxProgress: continueWatchingMaxProgress,
-  });
+  const { data: playRecords = [], refetch: refetchPlayRecords } =
+    usePlayRecordsQuery({
+      enabled: dataQueryEnabled,
+      enableFilter: enableContinueWatchingFilter,
+      minProgress: continueWatchingMinProgress,
+      maxProgress: continueWatchingMaxProgress,
+    });
 
   // 🚀 TanStack Query - 收藏列表
   const { data: favorites = [] } = useFavoritesQuery({
@@ -219,7 +256,7 @@ export const UserMenu: React.FC = () => {
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
   const { data: sources = [] } = useSourcesQuery({
-    enabled: isWatchingFollowsOpen || isContinueWatchingOpen,
+    enabled: isWatchingUpdatesOpen || isContinueWatchingOpen,
   });
   const watchingFollowSourceNames = new Map(
     sources.map((source) => [source.key, source.name || source.key]),
@@ -276,7 +313,6 @@ export const UserMenu: React.FC = () => {
 
   // 🚀 版本检查由 TanStack Query 自动管理
 
-
   const handleMenuClick = async () => {
     const willOpen = !isOpen;
     setIsOpen(willOpen);
@@ -309,19 +345,28 @@ export const UserMenu: React.FC = () => {
   const handleAdminPanel = () => {
     setIsOpen(false);
     // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /admin
-    navigateWithBrowserPreference({ href: '/admin', routerPush: (href) => router.push(href) });
+    navigateWithBrowserPreference({
+      href: '/admin',
+      routerPush: (href) => router.push(href),
+    });
   };
 
   const handlePlayStats = () => {
     setIsOpen(false);
     // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /play-stats
-    navigateWithBrowserPreference({ href: '/play-stats', routerPush: (href) => router.push(href) });
+    navigateWithBrowserPreference({
+      href: '/play-stats',
+      routerPush: (href) => router.push(href),
+    });
   };
 
   const handleTVBoxConfig = () => {
     setIsOpen(false);
     // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /tvbox
-    navigateWithBrowserPreference({ href: '/tvbox', routerPush: (href) => router.push(href) });
+    navigateWithBrowserPreference({
+      href: '/tvbox',
+      routerPush: (href) => router.push(href),
+    });
   };
 
   const handleWatchRoom = () => {
@@ -332,7 +377,10 @@ export const UserMenu: React.FC = () => {
   const handleReleaseCalendar = () => {
     setIsOpen(false);
     // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /release-calendar
-    navigateWithBrowserPreference({ href: '/release-calendar', routerPush: (href) => router.push(href) });
+    navigateWithBrowserPreference({
+      href: '/release-calendar',
+      routerPush: (href) => router.push(href),
+    });
   };
 
   const handleNotifications = () => {
@@ -343,6 +391,8 @@ export const UserMenu: React.FC = () => {
 
   const handleWatchingUpdates = () => {
     setIsOpen(false);
+    setWatchingUpdatesTab('updates');
+    void refreshWatchingFollows();
     setIsWatchingUpdatesOpen(true);
     // 注意：不在这里标记为已读，只有用户点击"不再提醒"时才标记
   };
@@ -366,17 +416,6 @@ export const UserMenu: React.FC = () => {
     setIsFavoritesOpen(true);
   };
 
-  const handleWatchingFollows = () => {
-    setIsOpen(false);
-    setWatchingFollowsTab('list');
-    void refreshWatchingFollows();
-    setIsWatchingFollowsOpen(true);
-  };
-
-  const handleCloseWatchingFollows = () => {
-    setIsWatchingFollowsOpen(false);
-  };
-
   const handleCloseNotifications = () => {
     setIsNotificationsOpen(false);
   };
@@ -394,7 +433,10 @@ export const UserMenu: React.FC = () => {
 
     // 保存到localStorage
     try {
-      localStorage.setItem('moontv_dismissed_releases', JSON.stringify([...newDismissed]));
+      localStorage.setItem(
+        'moontv_dismissed_releases',
+        JSON.stringify([...newDismissed]),
+      );
     } catch (error) {
       console.error('保存已忽略列表失败:', error);
     }
@@ -443,9 +485,7 @@ export const UserMenu: React.FC = () => {
         cover: detail.poster || record.cover,
         year: String(detail.year || record.year || ''),
         type:
-          detail.type_name ||
-          record.type ||
-          (latestEpisodes > 1 ? 'tv' : ''),
+          detail.type_name || record.type || (latestEpisodes > 1 ? 'tv' : ''),
         originalEpisodes: latestEpisodes,
         enabled: true,
       });
@@ -462,7 +502,9 @@ export const UserMenu: React.FC = () => {
   };
 
   // 检查播放记录是否有新集数更新
-  const getNewEpisodesCount = (record: PlayRecord & { key: string }): number => {
+  const getNewEpisodesCount = (
+    record: PlayRecord & { key: string },
+  ): number => {
     if (!watchingUpdates || !watchingUpdates.updatedSeries) return 0;
 
     const { source, id } = parseKey(record.key);
@@ -473,7 +515,7 @@ export const UserMenu: React.FC = () => {
         series.hasNewEpisode && compareContentIdentity(series, { source, id }),
     );
 
-    return matchedSeries ? (matchedSeries.newEpisodes || 0) : 0;
+    return matchedSeries ? matchedSeries.newEpisodes || 0 : 0;
   };
 
   const handleChangePassword = () => {
@@ -553,7 +595,7 @@ export const UserMenu: React.FC = () => {
     watchingUpdates,
     showWatchingUpdates,
     hasActualUpdates,
-    totalUpdates
+    totalUpdates,
   });
 
   // 角色中文映射
@@ -589,12 +631,13 @@ export const UserMenu: React.FC = () => {
                 当前用户
               </span>
               <span
-                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${(authInfo?.role || 'user') === 'owner'
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                  : (authInfo?.role || 'user') === 'admin'
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                    : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                  }`}
+                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                  (authInfo?.role || 'user') === 'owner'
+                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                    : (authInfo?.role || 'user') === 'admin'
+                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                      : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                }`}
               >
                 {getRoleText(authInfo?.role || 'user')}
               </span>
@@ -649,7 +692,9 @@ export const UserMenu: React.FC = () => {
               <PlayCircle className='w-4 h-4 text-gray-500 dark:text-gray-400' />
               <span className='font-medium'>继续观看</span>
               {playRecords.length > 0 && (
-                <span className='ml-auto text-xs text-gray-400'>{playRecords.length}</span>
+                <span className='ml-auto text-xs text-gray-400'>
+                  {playRecords.length}
+                </span>
               )}
             </button>
           )}
@@ -663,24 +708,12 @@ export const UserMenu: React.FC = () => {
               <Heart className='w-4 h-4 text-gray-500 dark:text-gray-400' />
               <span className='font-medium'>我的收藏</span>
               {favorites.length > 0 && (
-                <span className='ml-auto text-xs text-gray-400'>{favorites.length}</span>
+                <span className='ml-auto text-xs text-gray-400'>
+                  {favorites.length}
+                </span>
               )}
             </button>
           )}
-
-          {/* 我的追更与收藏、播放记录保持独立 */}
-          <button
-            onClick={handleWatchingFollows}
-            className='relative flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 transition-[background-color] duration-150 ease-in-out hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-          >
-            <ListChecks className='h-4 w-4 text-gray-500 dark:text-gray-400' />
-            <span className='font-medium'>我的追更</span>
-            {watchingFollows.length > 0 && (
-              <span className='ml-auto text-xs text-gray-400'>
-                {watchingFollows.length}
-              </span>
-            )}
-          </button>
 
           {/* 管理面板按钮 */}
           <button
@@ -714,7 +747,9 @@ export const UserMenu: React.FC = () => {
             >
               <BarChart3 className='w-4 h-4 text-gray-500 dark:text-gray-400' />
               <span className='font-medium'>
-                {authInfo?.role === 'owner' || authInfo?.role === 'admin' ? '播放统计' : '个人统计'}
+                {authInfo?.role === 'owner' || authInfo?.role === 'admin'
+                  ? '播放统计'
+                  : '个人统计'}
               </span>
             </button>
           )}
@@ -759,20 +794,24 @@ export const UserMenu: React.FC = () => {
             >
               <Download className='w-4 h-4 text-gray-500 dark:text-gray-400' />
               <span className='font-medium'>下载管理</span>
-              {tasks.filter(t => t.status === 'downloading').length > 0 && (
+              {tasks.filter((t) => t.status === 'downloading').length > 0 && (
                 <span className='ml-auto flex items-center gap-1'>
                   <span className='relative flex h-2 w-2'>
                     <span className='animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75'></span>
                     <span className='relative inline-flex rounded-full h-2 w-2 bg-green-500'></span>
                   </span>
                   <span className='text-xs text-green-600 dark:text-green-400'>
-                    {tasks.filter(t => t.status === 'downloading').length}
+                    {tasks.filter((t) => t.status === 'downloading').length}
                   </span>
                 </span>
               )}
-              {tasks.length > 0 && tasks.filter(t => t.status === 'downloading').length === 0 && (
-                <span className='ml-auto text-xs text-gray-400'>{tasks.length}</span>
-              )}
+              {tasks.length > 0 &&
+                tasks.filter((t) => t.status === 'downloading').length ===
+                  0 && (
+                  <span className='ml-auto text-xs text-gray-400'>
+                    {tasks.length}
+                  </span>
+                )}
             </button>
           )}
 
@@ -816,12 +855,13 @@ export const UserMenu: React.FC = () => {
                 updateStatus &&
                 updateStatus !== UpdateStatus.FETCH_FAILED && (
                   <div
-                    className={`w-2 h-2 rounded-full -translate-y-2 ${updateStatus === UpdateStatus.HAS_UPDATE
-                      ? 'bg-yellow-500'
-                      : updateStatus === UpdateStatus.NO_UPDATE
-                        ? 'bg-green-400'
-                        : ''
-                      }`}
+                    className={`w-2 h-2 rounded-full -translate-y-2 ${
+                      updateStatus === UpdateStatus.HAS_UPDATE
+                        ? 'bg-yellow-500'
+                        : updateStatus === UpdateStatus.NO_UPDATE
+                          ? 'bg-green-400'
+                          : ''
+                    }`}
                   ></div>
                 )}
             </div>
@@ -852,9 +892,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 修改密码面板 */}
-      <div
-        className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 overflow-hidden'
-      >
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 overflow-hidden'>
         {/* 内容容器 - 独立的滚动区域 */}
         <div
           className='h-full p-6'
@@ -970,11 +1008,12 @@ export const UserMenu: React.FC = () => {
 
       {/* 更新弹窗 */}
       <div
-        className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-1001 flex flex-col'
+        className={`fixed top-1/2 left-1/2 z-1001 flex max-h-[90vh] w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-900 ${MOBILE_DIALOG_FRAME_CLASS}`}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* 内容容器 - 独立的滚动区域 */}
         <div
-          className='flex-1 p-6 overflow-y-auto'
+          className={`flex min-h-0 flex-1 flex-col p-6 ${MOBILE_DIALOG_CONTENT_CLASS}`}
           data-panel-content
           style={{
             touchAction: 'pan-y',
@@ -982,7 +1021,9 @@ export const UserMenu: React.FC = () => {
           }}
         >
           {/* 标题栏 */}
-          <div className='flex items-center justify-between mb-6'>
+          <div
+            className={`flex items-center justify-between mb-6 ${MOBILE_DIALOG_HEADER_CLASS}`}
+          >
             <div className='flex items-center gap-3'>
               <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
                 更新提醒
@@ -1005,128 +1046,292 @@ export const UserMenu: React.FC = () => {
             </button>
           </div>
 
-          {/* 更新列表 */}
-          <div className='space-y-8'>
-            {/* 没有更新时的提示 */}
-            {!hasActualUpdates && (
-              <div className='text-center py-8'>
-                <div className='text-gray-500 dark:text-gray-400 text-sm'>
-                  暂无新剧集更新
-                </div>
-                <div className='text-xs text-gray-400 dark:text-gray-500 mt-2'>
-                  系统会定期检查您观看过的剧集是否有新集数更新
-                </div>
-              </div>
-            )}
-            {/* 新上映的剧集 */}
-            {watchingUpdates && watchingUpdates.updatedSeries.filter(series => series.hasNewRelease && !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`)).length > 0 && (
-              <div className='mb-8'>
-                <div className='flex items-center gap-2 mb-4'>
-                  <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
-                    🎬 新上映
-                  </h4>
-                  <div className='flex items-center gap-1'>
-                    <div className='w-2 h-2 bg-green-500 rounded-full animate-pulse'></div>
-                    <span className='text-sm text-green-500 font-medium'>
-                      {watchingUpdates.updatedSeries.filter(series => series.hasNewRelease && !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`)).length}部新上映
-                    </span>
-                  </div>
-                </div>
-
-                <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
-                  {watchingUpdates.updatedSeries
-                    .filter(series => series.hasNewRelease && !dismissedReleases.has(`${series.sourceKey}+${series.videoId}`))
-                    .map((series, index) => (
-                      <div key={`release-${series.title}_${series.year}_${index}`} className='relative group/card'>
-                        <div className='relative group-hover/card:z-5 transition-all duration-300'>
-                          <VideoCard
-                            title={series.title}
-                            poster={series.cover}
-                            year={series.year}
-                            source={series.sourceKey}
-                            source_name={series.source_name}
-                            episodes={series.totalEpisodes}
-                            id={series.videoId}
-                            onDelete={undefined}
-                            type={series.totalEpisodes > 1 ? 'tv' : 'movie'}
-                            from="favorite"
-                            remarks={series.remarks}
-                            releaseDate={series.releaseDate}
-                          />
-                        </div>
-                        {/* 新上映徽章 */}
-                        <div className='absolute -top-2 -right-2 bg-green-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
-                          新上映
-                        </div>
-                        {/* 不再提醒按钮 */}
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDismissRelease(series.sourceKey, series.videoId);
-                          }}
-                          className='absolute -top-2 -left-2 bg-gray-800/80 hover:bg-gray-900 text-white rounded-full p-1 shadow-lg z-10 opacity-0 group-hover/card:opacity-100 transition-opacity'
-                          title='不再提醒'
-                        >
-                          <X className='w-3 h-3' />
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-            {/* 有新集数的剧集 */}
-            {watchingUpdates && watchingUpdates.updatedSeries.filter(series => series.hasNewEpisode).length > 0 && (
-              <div>
-                <div className='flex items-center gap-2 mb-4'>
-                  <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
-                    新集更新
-                  </h4>
-                  <div className='flex items-center gap-1'>
-                    <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
-                    <span className='text-sm text-red-500 font-medium'>
-                      {watchingUpdates.updatedSeries.filter(series => series.hasNewEpisode).length}部剧集有更新
-                    </span>
-                  </div>
-                </div>
-
-                <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
-                  {watchingUpdates.updatedSeries
-                    .filter(series => series.hasNewEpisode)
-                    .map((series, index) => (
-                      <div key={`new-${series.title}_${series.year}_${index}`} className='relative group/card'>
-                        <div className='relative group-hover/card:z-5 transition-all duration-300'>
-                          <VideoCard
-                            title={series.title}
-                            poster={series.cover}
-                            year={series.year}
-                            source={series.sourceKey}
-                            source_name={series.source_name}
-                            episodes={series.totalEpisodes}
-                            currentEpisode={series.currentEpisode}
-                            id={series.videoId}
-                            onDelete={undefined}
-                            type={series.totalEpisodes > 1 ? 'tv' : ''}
-                            from="playrecord"
-                          />
-                        </div>
-                        {/* 新集数徽章 - Netflix 统一风格 */}
-                        <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
-                          +{series.newEpisodes}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
+          <div
+            role='tablist'
+            aria-label='更新提醒'
+            className='mb-4 grid shrink-0 grid-cols-3 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800'
+          >
+            <button
+              type='button'
+              role='tab'
+              aria-selected={watchingUpdatesTab === 'updates'}
+              onClick={() => setWatchingUpdatesTab('updates')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                watchingUpdatesTab === 'updates'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              更新提醒
+            </button>
+            <button
+              type='button'
+              role='tab'
+              aria-selected={watchingUpdatesTab === 'follows'}
+              onClick={() => setWatchingUpdatesTab('follows')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                watchingUpdatesTab === 'follows'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              我的追更
+            </button>
+            <button
+              type='button'
+              role='tab'
+              aria-selected={watchingUpdatesTab === 'settings'}
+              onClick={() => setWatchingUpdatesTab('settings')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                watchingUpdatesTab === 'settings'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                  : 'text-gray-600 dark:text-gray-300'
+              }`}
+            >
+              追更设置
+            </button>
           </div>
 
-          {/* 底部说明 */}
-          <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
-            <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
-              点击海报即可观看新更新的剧集
-            </p>
+          <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
+            <section
+              role='tabpanel'
+              className={watchingUpdatesTab === 'updates' ? 'block' : 'hidden'}
+            >
+              {/* 更新列表 */}
+              <div className='space-y-8'>
+                {/* 没有更新时的提示 */}
+                {!hasActualUpdates && (
+                  <div className='text-center py-8'>
+                    <div className='text-gray-500 dark:text-gray-400 text-sm'>
+                      暂无新剧集更新
+                    </div>
+                    <div className='text-xs text-gray-400 dark:text-gray-500 mt-2'>
+                      系统会定期检查您观看过的剧集是否有新集数更新
+                    </div>
+                  </div>
+                )}
+                {/* 新上映的剧集 */}
+                {watchingUpdates &&
+                  watchingUpdates.updatedSeries.filter(
+                    (series) =>
+                      series.hasNewRelease &&
+                      !dismissedReleases.has(
+                        `${series.sourceKey}+${series.videoId}`,
+                      ),
+                  ).length > 0 && (
+                    <div className='mb-8'>
+                      <div className='flex items-center gap-2 mb-4'>
+                        <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
+                          🎬 新上映
+                        </h4>
+                        <div className='flex items-center gap-1'>
+                          <div className='w-2 h-2 bg-green-500 rounded-full animate-pulse'></div>
+                          <span className='text-sm text-green-500 font-medium'>
+                            {
+                              watchingUpdates.updatedSeries.filter(
+                                (series) =>
+                                  series.hasNewRelease &&
+                                  !dismissedReleases.has(
+                                    `${series.sourceKey}+${series.videoId}`,
+                                  ),
+                              ).length
+                            }
+                            部新上映
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
+                        {watchingUpdates.updatedSeries
+                          .filter(
+                            (series) =>
+                              series.hasNewRelease &&
+                              !dismissedReleases.has(
+                                `${series.sourceKey}+${series.videoId}`,
+                              ),
+                          )
+                          .map((series, index) => (
+                            <div
+                              key={`release-${series.title}_${series.year}_${index}`}
+                              className='relative group/card'
+                            >
+                              <div className='relative group-hover/card:z-5 transition-all duration-300'>
+                                <VideoCard
+                                  title={series.title}
+                                  poster={series.cover}
+                                  year={series.year}
+                                  source={series.sourceKey}
+                                  source_name={series.source_name}
+                                  episodes={series.totalEpisodes}
+                                  id={series.videoId}
+                                  onDelete={undefined}
+                                  type={
+                                    series.totalEpisodes > 1 ? 'tv' : 'movie'
+                                  }
+                                  from='favorite'
+                                  remarks={series.remarks}
+                                  releaseDate={series.releaseDate}
+                                />
+                              </div>
+                              {/* 新上映徽章 */}
+                              <div className='absolute -top-2 -right-2 bg-green-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                                新上映
+                              </div>
+                              {/* 不再提醒按钮 */}
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDismissRelease(
+                                    series.sourceKey,
+                                    series.videoId,
+                                  );
+                                }}
+                                className='absolute -top-2 -left-2 bg-gray-800/80 hover:bg-gray-900 text-white rounded-full p-1 shadow-lg z-10 opacity-0 group-hover/card:opacity-100 transition-opacity'
+                                title='不再提醒'
+                              >
+                                <X className='w-3 h-3' />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                {/* 有新集数的剧集 */}
+                {watchingUpdates &&
+                  watchingUpdates.updatedSeries.filter(
+                    (series) => series.hasNewEpisode,
+                  ).length > 0 && (
+                    <div>
+                      <div className='flex items-center gap-2 mb-4'>
+                        <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
+                          新集更新
+                        </h4>
+                        <div className='flex items-center gap-1'>
+                          <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
+                          <span className='text-sm text-red-500 font-medium'>
+                            {
+                              watchingUpdates.updatedSeries.filter(
+                                (series) => series.hasNewEpisode,
+                              ).length
+                            }
+                            部剧集有更新
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
+                        {watchingUpdates.updatedSeries
+                          .filter((series) => series.hasNewEpisode)
+                          .map((series, index) => (
+                            <div
+                              key={`new-${series.title}_${series.year}_${index}`}
+                              className='relative group/card'
+                            >
+                              <div className='relative group-hover/card:z-5 transition-all duration-300'>
+                                <VideoCard
+                                  title={series.title}
+                                  poster={series.cover}
+                                  year={series.year}
+                                  source={series.sourceKey}
+                                  source_name={series.source_name}
+                                  episodes={series.totalEpisodes}
+                                  currentEpisode={series.currentEpisode}
+                                  id={series.videoId}
+                                  onDelete={undefined}
+                                  type={series.totalEpisodes > 1 ? 'tv' : ''}
+                                  from='playrecord'
+                                />
+                              </div>
+                              {/* 新集数徽章 - Netflix 统一风格 */}
+                              <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                                +{series.newEpisodes}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+              </div>
+
+              {/* 底部说明 */}
+              <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
+                <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+                  点击海报即可观看新更新的剧集
+                </p>
+              </div>
+            </section>
+
+            <section
+              role='tabpanel'
+              className={watchingUpdatesTab === 'follows' ? 'block' : 'hidden'}
+            >
+              <div className='mb-3 flex items-center justify-between gap-3'>
+                <h4 className='text-base font-semibold text-gray-900 dark:text-white'>
+                  追更列表
+                </h4>
+                {watchingFollows.length > 0 && (
+                  <span className='text-xs text-gray-500 dark:text-gray-400'>
+                    共 {watchingFollows.length} 项
+                  </span>
+                )}
+              </div>
+
+              <div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4'>
+                {watchingFollows.map((follow) => {
+                  const update = watchingUpdates?.updatedSeries.find((series) =>
+                    compareContentIdentity(series, follow),
+                  );
+
+                  return (
+                    <VideoCard
+                      key={watchingFollowKey(follow.source, follow.id)}
+                      id={follow.id}
+                      title={follow.title}
+                      poster={follow.cover}
+                      year={follow.year}
+                      source={follow.source}
+                      source_name={
+                        watchingFollowSourceNames.get(follow.source) ||
+                        follow.source
+                      }
+                      episodes={update?.latestEpisodes}
+                      currentEpisode={update?.currentEpisode}
+                      from='follow'
+                      type={follow.type || ''}
+                      onDelete={() =>
+                        void deleteFollow(follow.source, follow.id)
+                      }
+                    />
+                  );
+                })}
+              </div>
+
+              {watchingFollows.length === 0 && (
+                <div className='py-12 text-center'>
+                  <ListChecks className='mx-auto mb-4 h-16 w-16 text-gray-300 dark:text-gray-600' />
+                  <p className='mb-2 text-gray-500 dark:text-gray-400'>
+                    暂无追更
+                  </p>
+                  <p className='text-xs text-gray-400 dark:text-gray-500'>
+                    在详情页点击追更按钮即可添加
+                  </p>
+                </div>
+              )}
+
+              <div className='mt-6 border-t border-gray-200 pt-4 dark:border-gray-700'>
+                <p className='text-center text-xs text-gray-500 dark:text-gray-400'>
+                  点击海报即可播放，长按或右键查看更多操作
+                </p>
+              </div>
+            </section>
+
+            <aside
+              role='tabpanel'
+              className={watchingUpdatesTab === 'settings' ? 'block' : 'hidden'}
+            >
+              <WatchingUpdateSettingsPage embedded />
+            </aside>
           </div>
         </div>
       </div>
@@ -1223,7 +1428,9 @@ export const UserMenu: React.FC = () => {
                         <div className='flex-1 bg-gray-600 rounded-full h-1'>
                           <div
                             className='bg-blue-500 h-1 rounded-full transition-all'
-                            style={{ width: `${Math.min(getProgress(record), 100)}%` }}
+                            style={{
+                              width: `${Math.min(getProgress(record), 100)}%`,
+                            }}
                           />
                         </div>
                         <span className='text-xs text-white font-medium'>
@@ -1241,12 +1448,13 @@ export const UserMenu: React.FC = () => {
           {playRecords.length === 0 && (
             <div className='text-center py-12'>
               <PlayCircle className='w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4' />
-              <p className='text-gray-500 dark:text-gray-400 mb-2'>暂无需要继续观看的内容</p>
+              <p className='text-gray-500 dark:text-gray-400 mb-2'>
+                暂无需要继续观看的内容
+              </p>
               <p className='text-xs text-gray-400 dark:text-gray-500'>
                 {enableContinueWatchingFilter
                   ? `观看进度在${continueWatchingMinProgress}%-${continueWatchingMaxProgress}%之间且播放时间超过2分钟的内容会显示在这里`
-                  : '播放时间超过2分钟的所有内容都会显示在这里'
-                }
+                  : '播放时间超过2分钟的所有内容都会显示在这里'}
               </p>
             </div>
           )}
@@ -1312,7 +1520,10 @@ export const UserMenu: React.FC = () => {
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const releaseDate = new Date(favorite.releaseDate);
-                const daysDiff = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                const daysDiff = Math.ceil(
+                  (releaseDate.getTime() - today.getTime()) /
+                    (1000 * 60 * 60 * 24),
+                );
 
                 // 根据天数差异动态更新显示文字
                 if (daysDiff < 0) {
@@ -1380,146 +1591,6 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
-  // 我的追更弹窗内容，卡片交互统一复用 VideoCard，设置区复用用户追更配置页面。
-  const watchingFollowsPanel = (
-    <>
-      <div
-        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-1000'
-        onClick={handleCloseWatchingFollows}
-        onTouchMove={(e) => {
-          e.preventDefault();
-        }}
-        onWheel={(e) => {
-          e.preventDefault();
-        }}
-        style={{ touchAction: 'none' }}
-      />
-
-      <div
-        className='fixed inset-x-2 top-1/2 z-1001 mx-auto max-h-[88vh] max-w-6xl -translate-y-1/2 transform overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:inset-x-4'
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className='flex max-h-[88vh] flex-col p-4 sm:p-6'>
-          <div className='mb-4 flex items-center justify-between'>
-            <h3 className='flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white'>
-              <ListChecks className='w-6 h-6 text-green-500' />
-              我的追更
-            </h3>
-            <button
-              onClick={handleCloseWatchingFollows}
-              className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
-              aria-label='关闭我的追更'
-            >
-              <X className='w-5 h-5' />
-            </button>
-          </div>
-
-          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800'>
-            <button
-              type='button'
-              onClick={() => setWatchingFollowsTab('list')}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                watchingFollowsTab === 'list'
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-300'
-              }`}
-            >
-              追更列表
-            </button>
-            <button
-              type='button'
-              onClick={() => setWatchingFollowsTab('settings')}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                watchingFollowsTab === 'settings'
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-300'
-              }`}
-            >
-              追更设置
-            </button>
-          </div>
-
-          <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
-            <div className='space-y-5'>
-              <section
-                className={
-                  watchingFollowsTab === 'list' ? 'block' : 'hidden'
-                }
-              >
-                <div className='mb-3 flex items-center justify-between gap-3'>
-                  <h4 className='text-base font-semibold text-gray-900 dark:text-white'>
-                    追更列表
-                  </h4>
-                  {watchingFollows.length > 0 && (
-                    <span className='text-xs text-gray-500 dark:text-gray-400'>
-                      共 {watchingFollows.length} 项
-                    </span>
-                  )}
-                </div>
-
-                <div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4'>
-                  {watchingFollows.map((follow) => {
-                    const update = watchingUpdates?.updatedSeries.find((series) =>
-                      compareContentIdentity(series, follow),
-                    );
-
-                    return (
-                      <VideoCard
-                        key={watchingFollowKey(follow.source, follow.id)}
-                        id={follow.id}
-                        title={follow.title}
-                        poster={follow.cover}
-                        year={follow.year}
-                        source={follow.source}
-                        source_name={
-                          watchingFollowSourceNames.get(follow.source) ||
-                          follow.source
-                        }
-                        episodes={update?.latestEpisodes}
-                        currentEpisode={update?.currentEpisode}
-                        from='follow'
-                        type={follow.type || ''}
-                        onDelete={() =>
-                          void deleteFollow(follow.source, follow.id)
-                        }
-                      />
-                    );
-                  })}
-                </div>
-
-                {watchingFollows.length === 0 && (
-                  <div className='py-12 text-center'>
-                    <ListChecks className='mx-auto mb-4 h-16 w-16 text-gray-300 dark:text-gray-600' />
-                    <p className='mb-2 text-gray-500 dark:text-gray-400'>
-                      暂无追更
-                    </p>
-                    <p className='text-xs text-gray-400 dark:text-gray-500'>
-                      在详情页点击追更按钮即可添加
-                    </p>
-                  </div>
-                )}
-
-                <div className='mt-6 border-t border-gray-200 pt-4 dark:border-gray-700'>
-                  <p className='text-center text-xs text-gray-500 dark:text-gray-400'>
-                    点击海报即可播放，长按或右键查看更多操作
-                  </p>
-                </div>
-              </section>
-
-              <aside
-                className={
-                  watchingFollowsTab === 'settings' ? 'block' : 'hidden'
-                }
-              >
-                <WatchingUpdateSettingsPage embedded />
-              </aside>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-
   const notificationsPanel = (
     <>
       <div
@@ -1535,11 +1606,15 @@ export const UserMenu: React.FC = () => {
       />
 
       <div
-        className='fixed inset-x-2 top-1/2 z-1001 mx-auto max-h-[88vh] max-w-6xl -translate-y-1/2 transform overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:inset-x-4'
+        className={`fixed inset-x-2 top-1/2 z-1001 mx-auto max-h-[88vh] max-w-6xl -translate-y-1/2 transform overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:inset-x-4 ${MOBILE_DIALOG_FRAME_CLASS}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className='flex max-h-[88vh] flex-col p-4 sm:p-6'>
-          <div className='mb-4 flex items-center justify-between'>
+        <div
+          className={`flex max-h-[88vh] flex-col p-4 sm:p-6 ${MOBILE_DIALOG_CONTENT_CLASS}`}
+        >
+          <div
+            className={`mb-4 flex items-center justify-between ${MOBILE_DIALOG_HEADER_CLASS}`}
+          >
             <h3 className='flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white'>
               <Bell className='h-6 w-6 text-blue-500' />
               通知中心
@@ -1592,9 +1667,7 @@ export const UserMenu: React.FC = () => {
           <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
             <div className='space-y-5'>
               <section
-                className={
-                  notificationsTab === 'list' ? 'block' : 'hidden'
-                }
+                className={notificationsTab === 'list' ? 'block' : 'hidden'}
               >
                 <NotificationCenterPage embedded />
               </section>
@@ -1630,10 +1703,11 @@ export const UserMenu: React.FC = () => {
         {/* 🔧 修改点：版本更新优先显示黄点，仅有更新提醒时显示红点 */}
         {userMenuIndicatorColor && (
           <div
-            className={`absolute top-[2px] right-[2px] w-2 h-2 rounded-full animate-pulse shadow-lg ${userMenuIndicatorColor === 'yellow'
-              ? 'bg-yellow-500 shadow-yellow-500/50'
-              : 'bg-red-500 shadow-red-500/50'
-              }`}
+            className={`absolute top-[2px] right-[2px] w-2 h-2 rounded-full animate-pulse shadow-lg ${
+              userMenuIndicatorColor === 'yellow'
+                ? 'bg-yellow-500 shadow-yellow-500/50'
+                : 'bg-red-500 shadow-red-500/50'
+            }`}
           ></div>
         )}
       </div>
@@ -1665,11 +1739,6 @@ export const UserMenu: React.FC = () => {
       {isFavoritesOpen &&
         mounted &&
         createPortal(favoritesPanel, document.body)}
-
-      {/* 使用 Portal 将我的追更面板渲染到 document.body */}
-      {isWatchingFollowsOpen &&
-        mounted &&
-        createPortal(watchingFollowsPanel, document.body)}
 
       {/* 使用 Portal 将通知中心面板渲染到 document.body */}
       {isNotificationsOpen &&

@@ -53,8 +53,8 @@ export type WatchingUpdateCheckLogExecutionStage = 'started' | 'finished';
 
 export interface WatchingUpdateCheckLogExecution {
   /**
-   * Stage 4H-H: stage distinguishes JobRunner start and finish audit records
-   * while preserving the existing operation/source model and historical logs.
+   * Stage 4H-H: records the JobRunner lifecycle before completion updates the
+   * same log entry to the finished stage.
    */
   stage?: WatchingUpdateCheckLogExecutionStage;
   startedAt: number;
@@ -79,6 +79,16 @@ export interface WatchingUpdateCheckLogResult {
   failureCount: number;
   updateFoundCount: number;
   updates: WatchingUpdateCheckLogUpdate[];
+  /**
+   * JobRunner preserves the scheduler's real return value here so execution
+   * logs retain more than the display-oriented aggregate counters above.
+   */
+  result?: unknown;
+  trigger?: 'cron' | 'manual-trigger';
+  checkedUsers?: string[];
+  updatedUsers?: string[];
+  failedUsers?: string[];
+  username?: string;
 }
 
 export interface WatchingUpdateCheckLogEntry {

@@ -36,6 +36,7 @@ export interface UserNotificationChannelInput {
 
 export interface UserNotificationSettings {
   version?: number;
+  notificationCenterEnabled?: boolean;
   inboxEnabled?: boolean;
   watchingUpdateFoundEnabled?: boolean;
   watchingUpdateFailedEnabled?: boolean;
@@ -45,6 +46,7 @@ export interface UserNotificationSettings {
 
 export interface NormalizedUserNotificationSettings {
   version: 2;
+  notificationCenterEnabled: boolean;
   inboxEnabled: boolean;
   watchingUpdateFoundEnabled: boolean;
   watchingUpdateFailedEnabled: boolean;
@@ -76,6 +78,7 @@ export const DEFAULT_SUBSCRIBED_EVENTS = [
 export const DEFAULT_NOTIFICATION_SETTINGS: NormalizedUserNotificationSettings =
   {
     version: 2,
+    notificationCenterEnabled: true,
     inboxEnabled: true,
     watchingUpdateFoundEnabled: true,
     watchingUpdateFailedEnabled: true,
@@ -246,6 +249,10 @@ export class NotificationSettingsRepository implements NotificationSettingsRepos
     }
 
     const settings = value as UserNotificationSettings;
+    const notificationCenterEnabled = booleanOrDefault(
+      settings.notificationCenterEnabled,
+      DEFAULT_NOTIFICATION_SETTINGS.notificationCenterEnabled,
+    );
     const inboxEnabled = booleanOrDefault(
       settings.inboxEnabled,
       DEFAULT_NOTIFICATION_SETTINGS.inboxEnabled,
@@ -260,6 +267,7 @@ export class NotificationSettingsRepository implements NotificationSettingsRepos
     );
     return {
       version: 2,
+      notificationCenterEnabled,
       inboxEnabled,
       watchingUpdateFoundEnabled,
       watchingUpdateFailedEnabled,

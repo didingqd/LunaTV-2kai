@@ -45,6 +45,9 @@ export async function POST(request: NextRequest) {
       (candidate) => candidate.id === parsed.data.channelId,
     );
     if (!channel) return errorResponse('Notification channel not found', 404);
+    if (!settings.notificationCenterEnabled) {
+      return errorResponse('Notification center disabled', 403);
+    }
     if (!channel.enabled)
       return errorResponse('Notification channel disabled', 403);
 

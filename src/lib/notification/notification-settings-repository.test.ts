@@ -47,6 +47,7 @@ describe('NotificationSettingsRepository', () => {
 
     await repository.save('alice', {
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: false,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: false,
@@ -54,6 +55,7 @@ describe('NotificationSettingsRepository', () => {
     });
     await repository.save('bob', {
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,
@@ -62,6 +64,7 @@ describe('NotificationSettingsRepository', () => {
 
     await expect(repository.getForUser('alice')).resolves.toEqual({
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: false,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: false,
@@ -79,6 +82,7 @@ describe('NotificationSettingsRepository', () => {
     });
     await expect(repository.getForUser('bob')).resolves.toEqual({
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,
@@ -110,6 +114,7 @@ describe('NotificationSettingsRepository', () => {
       }),
     ).toEqual({
       version: 2,
+      notificationCenterEnabled: true,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,

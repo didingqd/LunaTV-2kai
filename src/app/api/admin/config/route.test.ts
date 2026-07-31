@@ -111,7 +111,6 @@ function config(enabled: boolean): AdminConfig {
     SystemConfig: {
       updateCheckBackendEnabled: enabled,
       updateCheckSchedulerEnabled: true,
-      updateCheckCronInterval: 30 * 60 * 1000,
       updateCheckCronExpression: '*/30 * * * *',
       updateCheckTimezone: 'UTC',
       updateCheckLogRetentionCount: 200,

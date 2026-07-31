@@ -74,3 +74,20 @@ export function formatTime(seconds: number): string {
   }
   return `${pad(minutes)}:${pad(secs)}`;
 }
+
+export function formatDateTime(timestamp: number, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(timestamp));
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return `${values.get('year')}-${values.get('month')}-${values.get(
+    'day',
+  )} ${values.get('hour')}:${values.get('minute')}`;
+}

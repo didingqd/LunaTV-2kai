@@ -480,6 +480,7 @@ export default function UserPermissionSettingsModal({
                 userRole={user.role}
                 systemUpdateCheckEnabled={systemUpdateCheckEnabled}
                 onRefresh={onRefresh}
+                mode='admin-management'
               />
             </section>
           )}

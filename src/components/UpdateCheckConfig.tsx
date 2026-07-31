@@ -4,10 +4,18 @@ import { CheckCircle, LoaderCircle, Save, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AdminConfig } from '@/lib/admin.types';
+import { getNextRun, validateCronExpression } from '@/lib/scheduler/cron-utils';
+import {
+  SCHEDULER_TIMEZONE_PRESETS,
+  validateTimezone,
+} from '@/lib/scheduler/timezone-utils';
 
 interface UpdateCheckSettings {
   enabled: boolean;
-  updateCheckCronInterval: number;
+  schedulerEnabled: boolean;
+  cronExpression: string;
+  timezone: string;
+  logRetentionCount: number;
   batchSize: number;
   maxUsers: number;
   maxFollowPerUser: number;
@@ -15,18 +23,22 @@ interface UpdateCheckSettings {
 
 const DEFAULT_SETTINGS: UpdateCheckSettings = {
   enabled: false,
-  updateCheckCronInterval: 30 * 60 * 1000,
+  schedulerEnabled: true,
+  cronExpression: '*/30 * * * *',
+  timezone: 'UTC',
+  logRetentionCount: 200,
   batchSize: 100,
   maxUsers: 1000,
   maxFollowPerUser: 100,
 };
 
-const CRON_INTERVAL_OPTIONS = [
-  { value: 30 * 60 * 1000, label: '30 分钟' },
-  { value: 60 * 60 * 1000, label: '1 小时' },
-  { value: 6 * 60 * 60 * 1000, label: '6 小时' },
-  { value: 12 * 60 * 60 * 1000, label: '12 小时' },
-  { value: 24 * 60 * 60 * 1000, label: '24 小时' },
+const CRON_PRESETS = [
+  { value: '*/5 * * * *', label: '每5分钟' },
+  { value: '*/10 * * * *', label: '每10分钟' },
+  { value: '*/30 * * * *', label: '每30分钟' },
+  { value: '0 * * * *', label: '每小时' },
+  { value: '0 0 * * *', label: '每天凌晨' },
+  { value: '0 12 * * *', label: '每天中午' },
 ] as const;
 
 export default function UpdateCheckConfig() {
@@ -48,9 +60,16 @@ export default function UpdateCheckConfig() {
     if (role) setCanEditSystemConfig(role === 'owner');
     setSettings({
       enabled,
-      updateCheckCronInterval:
-        systemConfig?.updateCheckCronInterval ??
-        DEFAULT_SETTINGS.updateCheckCronInterval,
+      schedulerEnabled:
+        systemConfig?.updateCheckSchedulerEnabled ??
+        DEFAULT_SETTINGS.schedulerEnabled,
+      cronExpression:
+        systemConfig?.updateCheckCronExpression ??
+        DEFAULT_SETTINGS.cronExpression,
+      timezone: systemConfig?.updateCheckTimezone ?? DEFAULT_SETTINGS.timezone,
+      logRetentionCount:
+        systemConfig?.updateCheckLogRetentionCount ??
+        DEFAULT_SETTINGS.logRetentionCount,
       batchSize:
         systemConfig?.updateCheckBatchSize ?? DEFAULT_SETTINGS.batchSize,
       maxUsers: systemConfig?.updateCheckMaxUsers ?? DEFAULT_SETTINGS.maxUsers,
@@ -94,6 +113,15 @@ export default function UpdateCheckConfig() {
   }, [loadSettings]);
 
   const saveSettings = async () => {
+    if (!validateCronExpression(settings.cronExpression)) {
+      setMessage({ type: 'error', text: 'Cron 表达式格式无效' });
+      return;
+    }
+    if (!validateTimezone(settings.timezone)) {
+      setMessage({ type: 'error', text: '时区格式无效' });
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     try {
@@ -103,31 +131,34 @@ export default function UpdateCheckConfig() {
         SystemConfig: {
           ...adminConfig.SystemConfig,
           updateCheckBackendEnabled: settings.enabled,
-          updateCheckSchedulerEnabled:
-            adminConfig.SystemConfig?.updateCheckSchedulerEnabled ?? true,
-          updateCheckCronInterval: settings.updateCheckCronInterval,
-          updateCheckCronExpression:
-            adminConfig.SystemConfig?.updateCheckCronExpression ??
-            '*/30 * * * *',
-          updateCheckTimezone:
-            adminConfig.SystemConfig?.updateCheckTimezone ?? 'UTC',
-          updateCheckLogRetentionCount:
-            adminConfig.SystemConfig?.updateCheckLogRetentionCount ?? 200,
+          updateCheckSchedulerEnabled: settings.schedulerEnabled,
+          updateCheckCronExpression: settings.cronExpression,
+          updateCheckTimezone: settings.timezone,
+          updateCheckLogRetentionCount: settings.logRetentionCount,
           updateCheckBatchSize: settings.batchSize,
           updateCheckMaxUsers: settings.maxUsers,
           updateCheckMaxFollowPerUser: settings.maxFollowPerUser,
         },
       };
-      const response = await fetch('/api/admin/config', {
-        method: 'POST',
+      const response = await fetch('/api/admin/settings/update-check', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConfig),
+        body: JSON.stringify({ systemConfig: updatedConfig.SystemConfig }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || '保存追更配置失败');
       requestSequence.current += 1;
-      applyAdminConfig(data.Config ?? updatedConfig);
-      setMessage({ type: 'success', text: '追更后台计算配置已保存' });
+      applyAdminConfig({
+        ...adminConfig,
+        SystemConfig: data.SystemConfig ?? updatedConfig.SystemConfig,
+      });
+      setMessage({
+        type: 'success',
+        text: `追更后台计算配置已保存，${nextRunText(
+          settings.cronExpression,
+          settings.timezone,
+        )}`,
+      });
     } catch (error) {
       setMessage({
         type: 'error',
@@ -166,66 +197,145 @@ export default function UpdateCheckConfig() {
         </div>
       )}
 
-      <div className='flex items-center justify-between gap-4'>
-        <div>
-          <div className='font-medium text-gray-900 dark:text-gray-100'>
-            后端追更计算
-          </div>
-          <p className='mt-1 text-sm text-gray-600 dark:text-gray-400'>
-            {settings.enabled
-              ? '已启用。仅 owner 和已授权用户生成后台追更结果。'
-              : '已关闭。所有用户使用本地计算，服务器不执行追更任务。'}
-          </p>
-        </div>
-        <button
-          type='button'
-          role='switch'
-          aria-checked={settings.enabled}
-          aria-label='后端追更计算'
+      <div className='grid gap-4 md:grid-cols-2'>
+        <SwitchSetting
+          label='追更系统'
+          checked={settings.enabled}
           disabled={!canEditSystemConfig}
-          onClick={() =>
+          description={
+            settings.enabled
+              ? '系统默认启用。仅 owner 和已授权用户生成后台追更结果。'
+              : '系统默认关闭。用户追更配置保留，不会被重置。'
+          }
+          onChange={() =>
             setSettings((current) => ({
               ...current,
               enabled: !current.enabled,
             }))
           }
-          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-            settings.enabled
-              ? 'bg-green-600 dark:bg-green-600'
-              : 'bg-gray-200 dark:bg-gray-700'
-          }`}
-        >
-          <span
-            aria-hidden='true'
-            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-              settings.enabled ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
+        />
+        <SwitchSetting
+          label='自动调度'
+          checked={settings.schedulerEnabled}
+          disabled={!canEditSystemConfig}
+          description={
+            settings.schedulerEnabled
+              ? '按系统默认 Cron 唤醒，用户自定义 Cron 仍优先。'
+              : '暂停系统自动调度，保留所有用户级追更设置。'
+          }
+          onChange={() =>
+            setSettings((current) => ({
+              ...current,
+              schedulerEnabled: !current.schedulerEnabled,
+            }))
+          }
+        />
       </div>
 
-      <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
+      <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-3'>
         <label className='block'>
           <span className='mb-1.5 block text-sm text-gray-700 dark:text-gray-300'>
-            Cron 调度周期
+            Cron 预设
           </span>
           <select
-            value={settings.updateCheckCronInterval}
+            value={
+              CRON_PRESETS.some(
+                (option) => option.value === settings.cronExpression,
+              )
+                ? settings.cronExpression
+                : ''
+            }
             onChange={(event) =>
+              event.target.value &&
               setSettings((current) => ({
                 ...current,
-                updateCheckCronInterval: Number(event.target.value),
+                cronExpression: event.target.value,
               }))
             }
             className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
           >
-            {CRON_INTERVAL_OPTIONS.map((option) => (
+            <option value=''>自定义 Cron</option>
+            {CRON_PRESETS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
         </label>
+        <label className='block'>
+          <span className='mb-1.5 block text-sm text-gray-700 dark:text-gray-300'>
+            Linux Cron 表达式
+          </span>
+          <input
+            aria-label='Linux Cron 表达式'
+            value={settings.cronExpression}
+            onChange={(event) =>
+              setSettings((current) => ({
+                ...current,
+                cronExpression: event.target.value,
+              }))
+            }
+            className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+          />
+          <span className='mt-1 block text-xs text-gray-500'>
+            {nextRunText(settings.cronExpression, settings.timezone)}
+          </span>
+        </label>
+        <label className='block'>
+          <span className='mb-1.5 block text-sm text-gray-700 dark:text-gray-300'>
+            默认时区
+          </span>
+          <select
+            aria-label='默认时区'
+            value={
+              SCHEDULER_TIMEZONE_PRESETS.includes(
+                settings.timezone as (typeof SCHEDULER_TIMEZONE_PRESETS)[number],
+              )
+                ? settings.timezone
+                : ''
+            }
+            onChange={(event) =>
+              event.target.value &&
+              setSettings((current) => ({
+                ...current,
+                timezone: event.target.value,
+              }))
+            }
+            className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+          >
+            <option value=''>自定义时区</option>
+            {SCHEDULER_TIMEZONE_PRESETS.map((timezone) => (
+              <option key={timezone} value={timezone}>
+                {timezone}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className='block'>
+          <span className='mb-1.5 block text-sm text-gray-700 dark:text-gray-300'>
+            IANA 时区
+          </span>
+          <input
+            aria-label='IANA 时区'
+            value={settings.timezone}
+            onChange={(event) =>
+              setSettings((current) => ({
+                ...current,
+                timezone: event.target.value,
+              }))
+            }
+            className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+          />
+        </label>
+        <NumberSetting
+          label='日志留存数量'
+          value={settings.logRetentionCount}
+          min={50}
+          max={5000}
+          onChange={(logRetentionCount) =>
+            setSettings((current) => ({ ...current, logRetentionCount }))
+          }
+        />
         <NumberSetting
           label='单次任务数'
           value={settings.batchSize}
@@ -267,6 +377,60 @@ export default function UpdateCheckConfig() {
           <Save className='h-4 w-4' />
         )}
         保存配置
+      </button>
+    </div>
+  );
+}
+
+function nextRunText(cronExpression: string, timezone: string) {
+  if (!validateCronExpression(cronExpression)) return 'Cron 表达式无效';
+  if (!validateTimezone(timezone)) return '时区无效';
+  const nextRun = getNextRun(cronExpression, timezone);
+  return nextRun ? `下次执行：${nextRun.toLocaleString()}` : '无下一次执行时间';
+}
+
+function SwitchSetting({
+  label,
+  checked,
+  disabled,
+  description,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  description: string;
+  onChange: () => void;
+}) {
+  return (
+    <div className='flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700'>
+      <div>
+        <div className='font-medium text-gray-900 dark:text-gray-100'>
+          {label}
+        </div>
+        <p className='mt-1 text-sm text-gray-600 dark:text-gray-400'>
+          {description}
+        </p>
+      </div>
+      <button
+        type='button'
+        role='switch'
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onChange}
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+          checked
+            ? 'bg-green-600 dark:bg-green-600'
+            : 'bg-gray-200 dark:bg-gray-700'
+        }`}
+      >
+        <span
+          aria-hidden='true'
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+            checked ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
       </button>
     </div>
   );

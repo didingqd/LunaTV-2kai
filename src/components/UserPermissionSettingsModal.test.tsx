@@ -117,4 +117,73 @@ describe('UserPermissionSettingsModal', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/user');
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps admin trigger link management open after saving', async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    const onRefresh = jest.fn().mockResolvedValue(undefined);
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: false })),
+      )
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(
+        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: true })),
+      );
+
+    render(
+      <UserPermissionSettingsModal
+        user={user}
+        userGroups={[]}
+        sources={sources}
+        systemUpdateCheckEnabled={true}
+        onClose={jest.fn()}
+        onRefresh={onRefresh}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: '追更系统控制' }));
+    fireEvent.click(
+      await screen.findByRole('switch', { name: '允许触发链接' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
+
+    expect(await screen.findByText('追更系统设置已保存')).toBeInTheDocument();
+    expect(onRefresh).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('tabpanel', { name: '追更系统控制' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '允许触发链接' })).toBeChecked();
+  });
 });
+
+function jsonResponse(data: unknown) {
+  return {
+    ok: true,
+    json: async () => data,
+  } as Response;
+}
+
+function watchingUpdateConfigResponse({
+  allowTriggerLink,
+}: {
+  allowTriggerLink: boolean;
+}) {
+  return {
+    username: user.username,
+    permission: {
+      enabled: true,
+      allowCustomSchedule: true,
+      allowTriggerLink,
+    },
+    userConfig: null,
+    effective: {
+      enabled: true,
+      cronExpression: '*/30 * * * *',
+      timezone: 'UTC',
+    },
+    sources: {
+      cron: 'system',
+      timezone: 'system',
+    },
+  };
+}

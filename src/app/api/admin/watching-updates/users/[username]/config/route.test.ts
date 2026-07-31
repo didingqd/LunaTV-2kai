@@ -54,7 +54,6 @@ const previousStorageType = process.env.NEXT_PUBLIC_STORAGE_TYPE;
 const systemConfig = {
   updateCheckBackendEnabled: true,
   updateCheckSchedulerEnabled: true,
-  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckCronExpression: '*/30 * * * *',
   updateCheckTimezone: 'UTC',
   updateCheckLogRetentionCount: 200,
@@ -235,7 +234,9 @@ describe('user watching update config Management API', () => {
     expect(response.status).toBe(200);
     expect(saveAdminConfig).toHaveBeenCalledTimes(1);
     const saved = saveAdminConfig.mock.calls[0][0] as AdminConfig;
-    const alice = saved.UserConfig.Users.find((user) => user.username === 'alice');
+    const alice = saved.UserConfig.Users.find(
+      (user) => user.username === 'alice',
+    );
     expect(alice).toMatchObject({
       allowCustomSchedule: true,
       allowTriggerLink: false,
@@ -247,7 +248,9 @@ describe('user watching update config Management API', () => {
   });
 
   it('saves a valid cron expression through the service and reconciles', async () => {
-    updateUserConfigOverride.mockResolvedValue({ cronExpression: '0 */6 * * *' });
+    updateUserConfigOverride.mockResolvedValue({
+      cronExpression: '0 */6 * * *',
+    });
     getUserConfigOverride.mockResolvedValue({ cronExpression: '0 */6 * * *' });
 
     const response = await patchUserConfig('alice', {
@@ -277,7 +280,9 @@ describe('user watching update config Management API', () => {
   });
 
   it('returns 400 when the service rejects an invalid cron expression', async () => {
-    updateUserConfigOverride.mockRejectedValue(new Error('INVALID_CRON_EXPRESSION'));
+    updateUserConfigOverride.mockRejectedValue(
+      new Error('INVALID_CRON_EXPRESSION'),
+    );
 
     const response = await patchUserConfig('alice', {
       cronExpression: 'invalid',

@@ -36,7 +36,9 @@ function jobResult(
 describe('ManualTriggerUseCase', () => {
   it('runs the update check job through JobRunner', async () => {
     const run = jest.fn().mockResolvedValue(jobResult());
-    const useCase = new ManualTriggerUseCase(async () => adminConfig(), { run });
+    const useCase = new ManualTriggerUseCase(async () => adminConfig(), {
+      run,
+    });
 
     await expect(useCase.execute('alice')).resolves.toEqual({
       jobResult: jobResult(),
@@ -55,7 +57,9 @@ describe('ManualTriggerUseCase', () => {
 
   it('returns user not found before running the job', async () => {
     const run = jest.fn();
-    const useCase = new ManualTriggerUseCase(async () => adminConfig([]), { run });
+    const useCase = new ManualTriggerUseCase(async () => adminConfig([]), {
+      run,
+    });
 
     await expect(useCase.execute('alice')).rejects.toMatchObject({
       code: 'USER_NOT_FOUND',
@@ -79,7 +83,8 @@ describe('ManualTriggerUseCase', () => {
   it('rejects when scheduler is disabled', async () => {
     const run = jest.fn();
     const useCase = new ManualTriggerUseCase(
-      async () => adminConfig(undefined, { updateCheckSchedulerEnabled: false }),
+      async () =>
+        adminConfig(undefined, { updateCheckSchedulerEnabled: false }),
       { run },
     );
 
@@ -108,7 +113,8 @@ describe('ManualTriggerUseCase', () => {
   it('rejects when trigger links are not allowed', async () => {
     const run = jest.fn();
     const useCase = new ManualTriggerUseCase(
-      async () => adminConfig([user({ username: 'alice', allowTriggerLink: false })]),
+      async () =>
+        adminConfig([user({ username: 'alice', allowTriggerLink: false })]),
       { run },
     );
 
@@ -139,10 +145,11 @@ describe('ManualTriggerUseCase', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-
   it('passes sanitized trigger request metadata into JobRunner audit', async () => {
     const run = jest.fn().mockResolvedValue(jobResult());
-    const useCase = new ManualTriggerUseCase(async () => adminConfig(), { run });
+    const useCase = new ManualTriggerUseCase(async () => adminConfig(), {
+      run,
+    });
     const auditRequest = {
       method: 'POST',
       path: '/api/watching-updates/trigger',
@@ -174,7 +181,9 @@ describe('ManualTriggerUseCase', () => {
       schedulerResult: null,
     });
     const run = jest.fn().mockResolvedValue(running);
-    const useCase = new ManualTriggerUseCase(async () => adminConfig(), { run });
+    const useCase = new ManualTriggerUseCase(async () => adminConfig(), {
+      run,
+    });
 
     await expect(useCase.execute('alice')).resolves.toEqual({
       jobResult: running,
@@ -186,7 +195,6 @@ function systemConfig(overrides: Partial<AdminConfig['SystemConfig']> = {}) {
   return {
     updateCheckBackendEnabled: true,
     updateCheckSchedulerEnabled: true,
-    updateCheckCronInterval: 30 * 60 * 1000,
     updateCheckCronExpression: '*/30 * * * *',
     updateCheckTimezone: 'UTC',
     updateCheckLogRetentionCount: 200,

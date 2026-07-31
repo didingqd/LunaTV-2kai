@@ -46,7 +46,6 @@ const previousOwner = process.env.USERNAME;
 const systemConfig = {
   updateCheckBackendEnabled: true,
   updateCheckSchedulerEnabled: true,
-  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckCronExpression: '*/30 * * * *',
   updateCheckTimezone: 'UTC',
   updateCheckLogRetentionCount: 200,
@@ -163,9 +162,7 @@ describe('user watching update config API', () => {
     updateUserConfig.mockResolvedValue({ timezone: 'Asia/Tokyo' });
     getUserConfig.mockResolvedValue({ timezone: 'Asia/Tokyo' });
 
-    const response = await PATCH(
-      request('PATCH', { timezone: 'Asia/Tokyo' }),
-    );
+    const response = await PATCH(request('PATCH', { timezone: 'Asia/Tokyo' }));
 
     expect(response.status).toBe(200);
     expect(updateUserConfig).toHaveBeenCalledWith('alice', {

@@ -236,7 +236,6 @@ async function getInitConfig(
     SystemConfig: {
       updateCheckBackendEnabled: false,
       updateCheckSchedulerEnabled: true,
-      updateCheckCronInterval: 30 * 60 * 1000,
       updateCheckCronExpression: DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
       updateCheckTimezone: DEFAULT_SCHEDULER_TIMEZONE,
       updateCheckLogRetentionCount: 200,
@@ -405,8 +404,6 @@ export async function configSelfCheck(
       adminConfig.SystemConfig?.updateCheckBackendEnabled ?? false,
     updateCheckSchedulerEnabled:
       adminConfig.SystemConfig?.updateCheckSchedulerEnabled ?? true,
-    updateCheckCronInterval:
-      adminConfig.SystemConfig?.updateCheckCronInterval ?? 30 * 60 * 1000,
     updateCheckCronExpression: normalizeCronExpression(
       adminConfig.SystemConfig?.updateCheckCronExpression,
     ),

@@ -1,7 +1,6 @@
 export interface SystemConfig {
   updateCheckBackendEnabled: boolean;
   updateCheckSchedulerEnabled: boolean;
-  updateCheckCronInterval: number;
   updateCheckCronExpression: string;
   updateCheckTimezone: string;
   updateCheckLogRetentionCount: number;

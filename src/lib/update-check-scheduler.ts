@@ -13,15 +13,19 @@ import {
   type UpdateCheckUserAccessReader,
 } from './system-config-repository';
 import {
+  CachedWatchingUpdateNotificationStateRepository,
   CachedUpdateCheckTaskRepository,
   type UpdateCheckScheduleTaskRepository,
   type UpdateCheckTaskRepository,
+  type WatchingUpdateNotificationStateRepository,
 } from './update-check-repository';
 import {
   updateCheckService,
   type UpdateCheckService,
 } from './update-check-service';
 import type { UpdateCheckTask, UpdateResult } from './update-check-types';
+import { updateDiffAnalyzer } from './update-diff-analyzer';
+import { watchingUpdateNotificationBuilder } from './watching-update-notification-builder';
 
 type SchedulerTaskRepository = UpdateCheckTaskRepository &
   Pick<
@@ -67,6 +71,9 @@ export class UpdateCheckScheduler {
       typeof notificationDispatcher,
       'dispatch'
     > = notificationDispatcher,
+    private readonly notificationState: WatchingUpdateNotificationStateRepository = new CachedWatchingUpdateNotificationStateRepository(
+      db,
+    ),
   ) {}
 
   async run(
@@ -136,7 +143,7 @@ export class UpdateCheckScheduler {
         completedTasks.push(completedTask);
         if (result) succeeded += 1;
         else failed += 1;
-        await this.dispatchTaskNotification(completedTask);
+        await this.dispatchTaskFailureNotification(completedTask);
         if (options.onTaskComplete) {
           try {
             await options.onTaskComplete({ task, result });
@@ -148,6 +155,13 @@ export class UpdateCheckScheduler {
     };
     await Promise.all(
       Array.from({ length: Math.min(5, selectedTasks.length) }, worker),
+    );
+    await this.dispatchUpdateNotifications(
+      completedTasks,
+      settings,
+      usersById,
+      authorizedUsers,
+      ownerId,
     );
     await this.rescheduleSuccessfulTasks(
       completedTasks,
@@ -227,10 +241,81 @@ export class UpdateCheckScheduler {
     }
   }
 
-  private async dispatchTaskNotification(
+  private async dispatchUpdateNotifications(
+    completedTasks: CompletedTask[],
+    settings: SystemConfig,
+    usersById: Map<string, AdminConfig['UserConfig']['Users'][number]>,
+    authorizedUsers: Set<string>,
+    ownerId: string | undefined,
+  ): Promise<void> {
+    const resultsByUser = new Map<string, UpdateResult[]>();
+    for (const completedTask of completedTasks) {
+      if (!completedTask.result) continue;
+      const results = resultsByUser.get(completedTask.before.userId) ?? [];
+      results.push(completedTask.result);
+      resultsByUser.set(completedTask.before.userId, results);
+    }
+
+    for (const [userId, results] of resultsByUser) {
+      const checkedAt = Math.max(...results.map((result) => result.checkedAt));
+      const previousState = await this.notificationState.get(userId);
+      const analysis = updateDiffAnalyzer.analyze(
+        results.map((result) => ({
+          id: result.followId,
+          title: result.title,
+          episode: result.latestEpisode,
+        })),
+        previousState,
+        checkedAt,
+      );
+      const user = usersById.get(userId);
+      const timezone = resolveUserWatchingUpdateSchedule({
+        username: userId,
+        userUpdateCheckBackendEnabled: authorizedUsers.has(userId),
+        isOwner: userId === ownerId,
+        systemConfig: settings,
+        userConfig: user?.watchingUpdateConfig,
+        from: new Date(checkedAt),
+      }).timezone;
+      const content = watchingUpdateNotificationBuilder.build(
+        analysis,
+        checkedAt,
+        timezone,
+      );
+
+      try {
+        if (!content) continue;
+        const result = await this.notifications.dispatch({
+          userId,
+          type: NotificationMessageType.WATCHING_UPDATE_FOUND,
+          title: content.title,
+          content: content.content,
+          createdAt: checkedAt,
+          payload: {
+            newUpdates: analysis.newUpdates,
+            updatedHistory: analysis.updatedHistory,
+            checkedAt,
+            timezone,
+          },
+        });
+        if (!result.success) {
+          console.error(
+            'Update check notification dispatch failed',
+            result.errors,
+          );
+        }
+      } catch (error) {
+        console.error('Update check notification dispatch threw', error);
+      } finally {
+        await this.notificationState.save(userId, analysis.nextState);
+      }
+    }
+  }
+
+  private async dispatchTaskFailureNotification(
     completedTask: CompletedTask,
   ): Promise<void> {
-    const message = this.buildNotificationMessage(completedTask);
+    const message = this.buildUpdateFailedMessage(completedTask);
     if (!message) return;
 
     try {
@@ -246,59 +331,20 @@ export class UpdateCheckScheduler {
     }
   }
 
-  private buildNotificationMessage(
+  private buildUpdateFailedMessage(
     completedTask: CompletedTask,
   ): NotificationMessage | null {
-    if (completedTask.result?.hasUpdate) {
-      return this.buildUpdateFoundMessage(completedTask);
-    }
-
     if (
       typeof completedTask.after?.lastErrorAt === 'number' &&
       completedTask.after.lastErrorAt !== completedTask.before.lastErrorAt
     ) {
-      return this.buildUpdateFailedMessage(completedTask);
+      return this.buildFailureNotificationMessage(completedTask);
     }
 
     return null;
   }
 
-  private buildUpdateFoundMessage(
-    completedTask: CompletedTask,
-  ): NotificationMessage {
-    const result = completedTask.result as UpdateResult;
-    const releasedEpisodeCount = Math.max(
-      0,
-      result.metadata.releasedEpisodeCount ?? 0,
-    );
-    const previousEpisode = Math.max(
-      0,
-      result.latestEpisode - releasedEpisodeCount,
-    );
-    const sourceName = result.metadata.sourceName ?? completedTask.before.source;
-
-    return {
-      userId: completedTask.before.userId,
-      type: NotificationMessageType.WATCHING_UPDATE_FOUND,
-      title: `《${result.title}》发现更新`,
-      content: `${sourceName} 已从 ${previousEpisode} 集更新到 ${result.latestEpisode} 集，检查时间：${formatNotificationTime(
-        result.checkedAt,
-      )}`,
-      createdAt: result.checkedAt,
-      payload: {
-        resourceId: result.resourceId,
-        source: result.source,
-        previousEpisode,
-        latestEpisode: result.latestEpisode,
-        releasedEpisodeCount,
-        taskId: completedTask.before.id,
-        followId: completedTask.before.followId,
-        checkedAt: result.checkedAt,
-      },
-    };
-  }
-
-  private buildUpdateFailedMessage(
+  private buildFailureNotificationMessage(
     completedTask: CompletedTask,
   ): NotificationMessage {
     const failedAt =

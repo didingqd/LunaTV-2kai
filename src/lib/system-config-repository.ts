@@ -15,7 +15,6 @@ import {
 export const DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG: SystemConfig = {
   updateCheckBackendEnabled: false,
   updateCheckSchedulerEnabled: true,
-  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckCronExpression: DEFAULT_UPDATE_CHECK_CRON_EXPRESSION,
   updateCheckTimezone: DEFAULT_SCHEDULER_TIMEZONE,
   updateCheckLogRetentionCount: 200,
@@ -23,14 +22,6 @@ export const DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG: SystemConfig = {
   updateCheckMaxUsers: 1000,
   updateCheckMaxFollowPerUser: 100,
 };
-
-export const UPDATE_CHECK_CRON_INTERVAL_OPTIONS = [
-  30 * 60 * 1000,
-  60 * 60 * 1000,
-  6 * 60 * 60 * 1000,
-  12 * 60 * 60 * 1000,
-  24 * 60 * 60 * 1000,
-] as const;
 
 export interface SystemConfigStore {
   getAdminConfig(): Promise<AdminConfig | null>;
@@ -66,11 +57,6 @@ export function normalizeUpdateCheckSystemConfig(
       value?.updateCheckSchedulerEnabled === undefined
         ? DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckSchedulerEnabled
         : value.updateCheckSchedulerEnabled === true,
-    updateCheckCronInterval: UPDATE_CHECK_CRON_INTERVAL_OPTIONS.includes(
-      value?.updateCheckCronInterval as (typeof UPDATE_CHECK_CRON_INTERVAL_OPTIONS)[number],
-    )
-      ? (value?.updateCheckCronInterval as number)
-      : DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronInterval,
     updateCheckCronExpression: normalizeCronExpression(
       value?.updateCheckCronExpression,
       DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronExpression,

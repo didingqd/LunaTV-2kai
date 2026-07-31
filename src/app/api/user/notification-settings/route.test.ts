@@ -26,6 +26,7 @@ const toPublicSettings =
   notificationSettingsService.toPublicSettings as jest.Mock;
 
 const defaultSettings = {
+  notificationCenterEnabled: true,
   inboxEnabled: true,
   watchingUpdateFoundEnabled: true,
   watchingUpdateFailedEnabled: true,
@@ -104,6 +105,17 @@ describe('user notification settings API', () => {
     expect(save).toHaveBeenCalledWith('alice', {
       inboxEnabled: false,
       watchingUpdateFailedEnabled: false,
+    });
+  });
+
+  it('saves the notification center switch independently', async () => {
+    const response = await PATCH(
+      request('PATCH', { notificationCenterEnabled: false }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(save).toHaveBeenCalledWith('alice', {
+      notificationCenterEnabled: false,
     });
   });
 

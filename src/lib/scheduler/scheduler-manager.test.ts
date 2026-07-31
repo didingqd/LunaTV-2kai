@@ -164,10 +164,8 @@ describe('SchedulerManager', () => {
     expect(jest.getTimerCount()).toBe(1);
   });
 
-
-
   it('triggers cron audit logs when the Docker scheduler wakes', async () => {
-    const auditLogger = { record: jest.fn().mockResolvedValue(undefined) };
+    const auditLogger = { record: jest.fn().mockResolvedValue('audit-1') };
     const scheduler = {
       run: jest.fn().mockResolvedValue({
         inspected: 0,
@@ -211,7 +209,7 @@ describe('SchedulerManager', () => {
         }),
         execution: expect.objectContaining({ stage: 'finished' }),
       }),
-      {},
+      { id: 'audit-1', replaceExisting: true },
     );
   });
 

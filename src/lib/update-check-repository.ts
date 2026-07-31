@@ -3,6 +3,7 @@ import type {
   UpdateObservation,
   UpdateResult,
 } from './update-check-types';
+import type { WatchingUpdateNotificationState } from './watching-update-notification-types';
 
 export interface UpdateCacheStore {
   getCache(key: string): Promise<unknown | null>;
@@ -43,8 +44,18 @@ export interface UpdateCheckScheduleTaskRepository {
   ): Promise<number>;
 }
 
+export interface WatchingUpdateNotificationStateRepository {
+  get(userId: string): Promise<WatchingUpdateNotificationState>;
+  save(
+    userId: string,
+    state: WatchingUpdateNotificationState,
+  ): Promise<void>;
+  deleteForUser(userId: string): Promise<void>;
+}
+
 const RESULT_PREFIX = 'watching-update:results:v1:';
 const OBSERVATION_PREFIX = 'watching-update:observations:v1:';
+const NOTIFICATION_STATE_PREFIX = 'watching-update:notification-state:v1:';
 const TASK_INDEX_KEY = 'watching-update:tasks:v1:index';
 const TASK_PREFIX = 'watching-update:tasks:v1:item:';
 const USER_TASK_PREFIX = 'watching-update:tasks:v1:user:';
@@ -95,6 +106,17 @@ function asIdList(value: unknown): string[] {
 function asMap<T>(value: unknown): Record<string, T> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, T>;
+}
+
+function asNotificationState(value: unknown): WatchingUpdateNotificationState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { snapshots: [], history: [] };
+  }
+  const state = value as Partial<WatchingUpdateNotificationState>;
+  return {
+    snapshots: Array.isArray(state.snapshots) ? state.snapshots : [],
+    history: Array.isArray(state.history) ? state.history : [],
+  };
 }
 
 async function queuedWrite<T>(
@@ -194,6 +216,32 @@ export class CachedUpdateObservationRepository implements UpdateObservationRepos
 
   async deleteForUser(userId: string): Promise<void> {
     await this.store.deleteCache(userKey(OBSERVATION_PREFIX, userId));
+  }
+}
+
+export class CachedWatchingUpdateNotificationStateRepository
+  implements WatchingUpdateNotificationStateRepository
+{
+  constructor(private readonly store: UpdateCacheStore) {}
+
+  async get(userId: string): Promise<WatchingUpdateNotificationState> {
+    return asNotificationState(
+      await this.store.getCache(userKey(NOTIFICATION_STATE_PREFIX, userId)),
+    );
+  }
+
+  async save(
+    userId: string,
+    state: WatchingUpdateNotificationState,
+  ): Promise<void> {
+    const key = userKey(NOTIFICATION_STATE_PREFIX, userId);
+    await queuedWrite(key, async () => {
+      await this.store.setCache(key, state);
+    });
+  }
+
+  async deleteForUser(userId: string): Promise<void> {
+    await this.store.deleteCache(userKey(NOTIFICATION_STATE_PREFIX, userId));
   }
 }
 

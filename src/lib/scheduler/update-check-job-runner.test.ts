@@ -53,7 +53,9 @@ function clock(...values: number[]) {
 }
 
 function noAuditRunner(
-  run: jest.Mock | { run: jest.Mock | (() => Promise<UpdateCheckSchedulerResult>) },
+  run:
+    | jest.Mock
+    | { run: jest.Mock | (() => Promise<UpdateCheckSchedulerResult>) },
   now: () => number,
 ) {
   const scheduler = 'run' in run ? run : { run };
@@ -112,7 +114,7 @@ describe('UpdateCheckJobRunner', () => {
   });
 
   it('records start and finish audit logs around the scheduler run', async () => {
-    const auditLogger = { record: jest.fn().mockResolvedValue(undefined) };
+    const auditLogger = { record: jest.fn().mockResolvedValue('audit-1') };
     const run = jest.fn(async ({ onTaskComplete }) => {
       await onTaskComplete({ task: auditTask, result: auditResult });
       return schedulerResult;
@@ -165,18 +167,31 @@ describe('UpdateCheckJobRunner', () => {
           updateFoundCount: 1,
         }),
       }),
-      { userIds: ['alice'] },
+      {
+        id: 'audit-1',
+        replaceExisting: true,
+        userIds: ['alice'],
+      },
     );
+    expect(auditLogger.record.mock.calls[1]?.[0].result).toMatchObject({
+      trigger: 'cron',
+      checkedUsers: ['alice'],
+      updatedUsers: ['alice'],
+      failedUsers: [],
+      result: schedulerResult,
+    });
   });
 
   it('returns failure metadata when the scheduler throws', async () => {
-    const runner = noAuditRunner(
+    const auditLogger = { record: jest.fn().mockResolvedValue('audit-2') };
+    const runner = new UpdateCheckJobRunner(
       {
         run: jest.fn(async () => {
           throw new Error('scheduler failed');
         }),
       },
       clock(2_000, 2_040),
+      auditLogger,
     );
 
     await expect(runner.run({ trigger: 'cron' })).resolves.toEqual({
@@ -189,6 +204,21 @@ describe('UpdateCheckJobRunner', () => {
       error: 'scheduler failed',
       schedulerResult: null,
     });
+    expect(auditLogger.record).toHaveBeenCalledTimes(2);
+    expect(auditLogger.record).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        execution: expect.objectContaining({
+          stage: 'finished',
+          success: false,
+          error: 'scheduler failed',
+        }),
+        result: expect.objectContaining({
+          trigger: 'cron',
+          result: null,
+        }),
+      }),
+      { id: 'audit-2', replaceExisting: true },
+    );
   });
 
   it('rejects a concurrent run immediately without running the scheduler twice', async () => {

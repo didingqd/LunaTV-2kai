@@ -83,40 +83,48 @@ export class WatchingUpdateCheckLogService {
 
   async record(
     entry: Omit<WatchingUpdateCheckLogEntry, 'id'>,
-    options: { userIds?: string[] } = {},
-  ): Promise<void> {
-    if (!storageIsAvailable()) return;
+    options: {
+      id?: string;
+      replaceExisting?: boolean;
+      userIds?: string[];
+    } = {},
+  ): Promise<string | null> {
+    if (!storageIsAvailable()) return null;
+    const id = options.id ?? createLogId();
+    const retentionCount = await this.getRetentionCount();
     const userIds = uniqueUserIds([
       entry.request.userId,
       ...(options.userIds ?? []),
     ]);
     if (userIds.length === 0) {
-      await this.repository.appendGlobal(
-        {
-          ...entry,
-          id: createLogId(),
-        },
-        await this.getRetentionCount(),
-      );
-      return;
+      const log = { ...entry, id };
+      if (options.replaceExisting) {
+        await this.repository.replaceGlobal(log, retentionCount);
+      } else {
+        await this.repository.appendGlobal(log, retentionCount);
+      }
+      return id;
     }
 
+    if (options.replaceExisting) await this.repository.removeGlobal(id);
     await Promise.all(
       userIds.map(async (userId) => {
-        await this.repository.appendForUser(
-          userId,
-          {
-            ...entry,
-            id: createLogId(),
-            request: {
-              ...entry.request,
-              userId,
-            },
+        const log = {
+          ...entry,
+          id,
+          request: {
+            ...entry.request,
+            userId,
           },
-          await this.getRetentionCount(),
-        );
+        };
+        if (options.replaceExisting) {
+          await this.repository.replaceForUser(userId, log, retentionCount);
+        } else {
+          await this.repository.appendForUser(userId, log, retentionCount);
+        }
       }),
     );
+    return id;
   }
 
   async list(query?: WatchingUpdateCheckLogQuery) {

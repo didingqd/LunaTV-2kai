@@ -129,6 +129,42 @@ function createAuditRequest(
   };
 }
 
+function createExecutionResult(
+  options: UpdateCheckJobRunnerOptions,
+  result: UpdateCheckJobRunnerResult,
+  auditTasks: CompletedAuditTask[],
+) {
+  const checkedUsers = uniqueUserIds(
+    auditTasks.map((item) => item.task.userId),
+  );
+  const updatedUsers = uniqueUserIds(
+    auditTasks
+      .filter((item) => item.result?.hasUpdate)
+      .map((item) => item.task.userId),
+  );
+  const failedUsers = uniqueUserIds(
+    auditTasks
+      .filter((item) => item.result === null)
+      .map((item) => item.task.userId),
+  );
+
+  if (options.trigger === 'cron') {
+    return {
+      trigger: 'cron' as const,
+      checkedUsers,
+      updatedUsers,
+      failedUsers,
+      result: result.schedulerResult,
+    };
+  }
+
+  return {
+    trigger: 'manual-trigger' as const,
+    ...(options.requestedBy ? { username: options.requestedBy } : {}),
+    result: result.schedulerResult,
+  };
+}
+
 export class UpdateCheckJobRunner {
   private running = false;
 
@@ -142,6 +178,7 @@ export class UpdateCheckJobRunner {
     options: UpdateCheckJobRunnerOptions,
   ): Promise<UpdateCheckJobRunnerResult> {
     const auditTasks: CompletedAuditTask[] = [];
+    let auditLogId: string | null = null;
     const onTaskComplete: UpdateCheckSchedulerOptions['onTaskComplete'] =
       async (value) => {
         auditTasks.push({ task: value.task, result: value.result });
@@ -150,7 +187,7 @@ export class UpdateCheckJobRunner {
 
     if (this.running) {
       const rejectedAt = this.now();
-      await this.recordAuditLog({
+      auditLogId = await this.recordAuditLog({
         options,
         stage: 'started',
         startedAt: rejectedAt,
@@ -176,13 +213,14 @@ export class UpdateCheckJobRunner {
         stage: 'finished',
         result,
         auditTasks,
+        auditLogId,
       });
       return result;
     }
 
     this.running = true;
     const startedAt = this.now();
-    await this.recordAuditLog({
+    auditLogId = await this.recordAuditLog({
       options,
       stage: 'started',
       startedAt,
@@ -232,6 +270,7 @@ export class UpdateCheckJobRunner {
       stage: 'finished',
       result,
       auditTasks,
+      auditLogId,
     });
     this.running = false;
     return result;
@@ -245,17 +284,21 @@ export class UpdateCheckJobRunner {
     success?: boolean;
     result?: UpdateCheckJobRunnerResult;
     auditTasks: CompletedAuditTask[];
-  }): Promise<void> {
-    if (!this.auditLogger) return;
+    auditLogId?: string | null;
+  }): Promise<string | null> {
+    if (!this.auditLogger) return null;
     try {
       const source =
-        input.options.audit?.source ?? auditSourceForTrigger(input.options.trigger);
+        input.options.audit?.source ??
+        auditSourceForTrigger(input.options.trigger);
       const operation =
         input.options.audit?.operation ??
         auditOperationForTrigger(input.options.trigger);
       const request = createAuditRequest(input.options, source);
-      const startedAt = input.result?.startedAt ?? input.startedAt ?? this.now();
-      const finishedAt = input.result?.finishedAt ?? input.finishedAt ?? startedAt;
+      const startedAt =
+        input.result?.startedAt ?? input.startedAt ?? this.now();
+      const finishedAt =
+        input.result?.finishedAt ?? input.finishedAt ?? startedAt;
       const schedulerResult = input.result?.schedulerResult;
       const completedResults = input.auditTasks.flatMap((item) =>
         item.result ? [item.result] : [],
@@ -270,16 +313,16 @@ export class UpdateCheckJobRunner {
       const checkedCount =
         input.stage === 'started'
           ? 0
-          : schedulerResult?.inspected ?? input.auditTasks.length;
+          : (schedulerResult?.inspected ?? input.auditTasks.length);
       const successCount =
         input.stage === 'started'
           ? 0
-          : schedulerResult?.succeeded ?? completedResults.length;
+          : (schedulerResult?.succeeded ?? completedResults.length);
       const failureCount =
         input.stage === 'started'
           ? 0
-          : schedulerResult?.failed ??
-            Math.max(0, input.auditTasks.length - completedResults.length);
+          : (schedulerResult?.failed ??
+            Math.max(0, input.auditTasks.length - completedResults.length));
 
       const entry: Omit<WatchingUpdateCheckLogEntry, 'id'> = {
         source,
@@ -294,20 +337,34 @@ export class UpdateCheckJobRunner {
           success: input.success ?? input.result?.success ?? false,
           ...(input.result?.error ? { error: input.result.error } : {}),
         },
-        result: createWatchingUpdateCheckLogResult({
-          checkedCount,
-          successCount,
-          failureCount,
-          results: input.stage === 'started' ? [] : completedResults,
-        }),
+        result: {
+          ...createWatchingUpdateCheckLogResult({
+            checkedCount,
+            successCount,
+            failureCount,
+            results: input.stage === 'started' ? [] : completedResults,
+          }),
+          ...(input.stage === 'finished' && input.result
+            ? createExecutionResult(
+                input.options,
+                input.result,
+                input.auditTasks,
+              )
+            : {}),
+        },
       };
 
-      await this.auditLogger.record(
-        entry,
-        userIds.length > 0 ? { userIds } : {},
-      );
+      return await this.auditLogger.record(entry, {
+        ...(userIds.length > 0 ? { userIds } : {}),
+        ...(input.auditLogId ? { id: input.auditLogId } : {}),
+        ...(input.stage === 'finished' ? { replaceExisting: true } : {}),
+      });
     } catch (error) {
-      console.error('Failed to record watching update check job audit log', error);
+      console.error(
+        'Failed to record watching update check job audit log',
+        error,
+      );
+      return null;
     }
   }
 }

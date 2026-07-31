@@ -21,7 +21,6 @@ import type { UpdateCheckTask, UpdateResult } from './update-check-types';
 const enabledConfig: SystemConfig = {
   updateCheckBackendEnabled: true,
   updateCheckSchedulerEnabled: true,
-  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckCronExpression: '*/30 * * * *',
   updateCheckTimezone: 'UTC',
   updateCheckLogRetentionCount: 200,
@@ -103,7 +102,7 @@ function successfulService(
     checkTask: async (task: UpdateCheckTask) => {
       await tasks.save({
         ...task,
-        nextCheckAt: checkedAt + enabledConfig.updateCheckCronInterval,
+        nextCheckAt: checkedAt + 1,
         attempt: 0,
         updatedAt: checkedAt,
         lastSuccessAt: checkedAt,
@@ -350,7 +349,7 @@ describe('UpdateCheckScheduler', () => {
     expect(await tasks.get(task.id)).toEqual(failedTask);
   });
 
-  it('overrides the legacy interval after a successful check', async () => {
+  it('overrides the service-level next run after a successful check', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
     await tasks.save(task);
@@ -369,9 +368,7 @@ describe('UpdateCheckScheduler', () => {
     expect((await tasks.get(task.id))?.nextCheckAt).toBe(
       new Date('2026-07-30T18:00:00.000Z').getTime(),
     );
-    expect((await tasks.get(task.id))?.nextCheckAt).not.toBe(
-      runAt + enabledConfig.updateCheckCronInterval,
-    );
+    expect((await tasks.get(task.id))?.nextCheckAt).not.toBe(runAt + 1);
   });
 
   it('reschedules a successful task even when its result is null', async () => {
@@ -507,9 +504,13 @@ describe('UpdateCheckScheduler', () => {
     const dispatch = createDispatch();
     await tasks.save(task);
 
-    await createScheduler(tasks, successfulService(tasks, runAt, updateResult()), {
-      notifications: { dispatch },
-    }).run({ now: runAt });
+    await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult()),
+      {
+        notifications: { dispatch },
+      },
+    ).run({ now: runAt });
 
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -529,9 +530,9 @@ describe('UpdateCheckScheduler', () => {
             nextCheckAt: runAt + 5 * 60 * 1000,
             attempt: 1,
             updatedAt: runAt,
-          lastErrorAt: runAt,
-          lastError:
-            'Error: Provider timeout https://example.com/detail Authorization: Bearer secret Cookie: sid=1',
+            lastErrorAt: runAt,
+            lastError:
+              'Error: Provider timeout https://example.com/detail Authorization: Bearer secret Cookie: sid=1',
           });
           return null;
         },
@@ -577,7 +578,9 @@ describe('UpdateCheckScheduler', () => {
     >(async () => {
       throw new Error('dispatcher failed');
     });
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     await tasks.save(task);
 
     const result = await createScheduler(
@@ -611,7 +614,9 @@ describe('UpdateCheckScheduler', () => {
       failed: 1,
       errors: [{ channel: 'inbox', message: 'inbox failed' }],
     });
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     await tasks.save(task);
     const scheduler = createScheduler(
       tasks,
@@ -620,10 +625,13 @@ describe('UpdateCheckScheduler', () => {
         notifications: { dispatch },
       },
     );
-    const runner = new UpdateCheckJobRunner(scheduler, (() => {
-      const values = [1_000, 1_020];
-      return () => values.shift() ?? 1_020;
-    })());
+    const runner = new UpdateCheckJobRunner(
+      scheduler,
+      (() => {
+        const values = [1_000, 1_020];
+        return () => values.shift() ?? 1_020;
+      })(),
+    );
 
     const result = await runner.run({ trigger: 'cron' });
 
@@ -672,7 +680,9 @@ function updateResult(overrides: Partial<UpdateResult> = {}): UpdateResult {
   };
 }
 
-function createDispatch(result: NotificationDispatchResult = dispatchSuccess()) {
+function createDispatch(
+  result: NotificationDispatchResult = dispatchSuccess(),
+) {
   return jest.fn<Promise<NotificationDispatchResult>, [NotificationMessage]>(
     async () => result,
   );

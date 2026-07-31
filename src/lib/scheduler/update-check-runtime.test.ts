@@ -8,7 +8,6 @@ function systemConfig(overrides: Partial<SystemConfig> = {}): SystemConfig {
   return {
     updateCheckBackendEnabled: true,
     updateCheckSchedulerEnabled: true,
-    updateCheckCronInterval: 30 * 60 * 1000,
     updateCheckCronExpression: '*/30 * * * *',
     updateCheckTimezone: 'UTC',
     updateCheckLogRetentionCount: 200,

@@ -174,7 +174,6 @@ describe('UpdateCheckService', () => {
         getUpdateCheckConfig: async () => ({
           updateCheckBackendEnabled: true,
           updateCheckSchedulerEnabled: true,
-          updateCheckCronInterval: 2_000,
           updateCheckCronExpression: '*/30 * * * *',
           updateCheckTimezone: 'UTC',
           updateCheckLogRetentionCount: 200,
@@ -183,6 +182,18 @@ describe('UpdateCheckService', () => {
           updateCheckMaxFollowPerUser: 100,
         }),
       },
+      loadAdminConfig: async () =>
+        ({
+          UserConfig: {
+            Users: [
+              {
+                username: 'alice',
+                role: 'user',
+                updateCheckBackendEnabled: true,
+              },
+            ],
+          },
+        }) as never,
       now: () => now,
     });
     await service.onFollowCreated(follow, 'alice');
@@ -326,7 +337,9 @@ describe('UpdateCheckService', () => {
     facts.playRecord = null;
 
     expect(await service.checkTask(task)).toBeNull();
-    expect((await tasks.get(task.id))?.nextCheckAt).toBe(3000);
+    expect((await tasks.get(task.id))?.nextCheckAt).toBe(
+      new Date('1970-01-01T00:30:00.000Z').getTime(),
+    );
     expect(await results.get('alice', task.followId)).toBeNull();
   });
 

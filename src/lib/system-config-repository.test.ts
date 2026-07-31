@@ -9,19 +9,6 @@ import {
 } from './system-config-repository';
 
 describe('AdminSystemConfigRepository', () => {
-  it('normalizes the supported cron intervals and rejects unknown values', () => {
-    expect(
-      normalizeUpdateCheckSystemConfig({
-        updateCheckCronInterval: 6 * 60 * 60 * 1000,
-      }).updateCheckCronInterval,
-    ).toBe(6 * 60 * 60 * 1000);
-    expect(
-      normalizeUpdateCheckSystemConfig({
-        updateCheckCronInterval: 123,
-      }).updateCheckCronInterval,
-    ).toBe(DEFAULT_UPDATE_CHECK_SYSTEM_CONFIG.updateCheckCronInterval);
-  });
-
   it('normalizes scheduler metadata and log retention defaults', () => {
     expect(normalizeUpdateCheckSystemConfig({})).toMatchObject({
       updateCheckSchedulerEnabled: true,
@@ -89,7 +76,6 @@ describe('AdminSystemConfigRepository', () => {
     const expected = {
       updateCheckBackendEnabled: true,
       updateCheckSchedulerEnabled: true,
-      updateCheckCronInterval: 12 * 60 * 60 * 1000,
       updateCheckCronExpression: '*/30 * * * *',
       updateCheckTimezone: 'UTC',
       updateCheckLogRetentionCount: 200,

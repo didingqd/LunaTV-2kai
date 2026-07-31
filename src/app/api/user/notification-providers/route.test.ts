@@ -27,12 +27,28 @@ describe('user notification providers API', () => {
         type: 'inbox',
         name: '站内通知',
         configSchema: { fields: [] },
+        capabilities: {
+          canCreate: false,
+          canEdit: true,
+          canDelete: false,
+          canTest: false,
+          canToggle: true,
+          canSend: true,
+        },
       },
       {
         type: 'wechat_work',
         name: '企业微信',
         configSchema: {
           fields: [{ key: 'webhookUrl', type: 'url', label: 'Webhook 地址' }],
+        },
+        capabilities: {
+          canCreate: true,
+          canEdit: true,
+          canDelete: true,
+          canTest: true,
+          canToggle: true,
+          canSend: true,
         },
       },
     ]);
@@ -47,15 +63,19 @@ describe('user notification providers API', () => {
         expect.objectContaining({
           type: 'inbox',
           displayName: '站内通知',
-          icon: 'inbox',
           configSchema: { fields: [] },
-          capabilities: expect.objectContaining({ canDelete: false }),
+          capabilities: expect.objectContaining({
+            canDelete: false,
+            canSend: true,
+          }),
         }),
         expect.objectContaining({
           type: 'wechat_work',
           displayName: '企业微信',
-          icon: 'building-2',
-          capabilities: expect.objectContaining({ canCreate: true }),
+          capabilities: expect.objectContaining({
+            canCreate: true,
+            canSend: true,
+          }),
         }),
       ],
     });

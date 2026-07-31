@@ -80,6 +80,10 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
     settings: UserNotificationSettings,
   ): Promise<NormalizedUserNotificationSettings> {
     const current = await this.repository.getForUser(userId);
+    const nextNotificationCenterEnabled =
+      typeof settings.notificationCenterEnabled === 'boolean'
+        ? settings.notificationCenterEnabled
+        : current.notificationCenterEnabled;
     const nextInboxEnabled =
       typeof settings.inboxEnabled === 'boolean'
         ? settings.inboxEnabled
@@ -125,6 +129,7 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
       version: 2,
       ...current,
       ...settings,
+      notificationCenterEnabled: nextNotificationCenterEnabled,
       inboxEnabled: nextInboxEnabled,
       channels,
       updatedAt: this.now(),
@@ -139,9 +144,11 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
   }
 
   async shouldDispatch(message: NotificationMessage): Promise<boolean> {
+    const settings = await this.repository.getForUser(message.userId);
+    if (!settings.notificationCenterEnabled) return false;
+
     const eventType = getLegacyEventType(message.type);
     if (!eventType) return true;
-    const settings = await this.repository.getForUser(message.userId);
     return settings.channels.some(
       (channel) =>
         channel.enabled && channel.subscribedEvents.includes(eventType),
@@ -153,6 +160,7 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
   ): Promise<UserNotificationChannelConfig[]> {
     if (!event.userId) return [];
     const settings = await this.repository.getForUser(event.userId);
+    if (!settings.notificationCenterEnabled) return [];
     return settings.channels.filter(
       (channel) =>
         channel.enabled && channel.subscribedEvents.includes(event.type),
@@ -163,6 +171,7 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
     userId: string,
   ): Promise<UserNotificationChannelConfig[]> {
     const settings = await this.repository.getForUser(userId);
+    if (!settings.notificationCenterEnabled) return [];
     return settings.channels.filter((channel) => channel.enabled);
   }
 

@@ -64,7 +64,9 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
-function displaySource(value: WatchingUpdateCheckLogSource | undefined): string {
+function displaySource(
+  value: WatchingUpdateCheckLogSource | undefined,
+): string {
   if (!value) return '-';
   return sourceLabels[value] ?? value;
 }
@@ -228,6 +230,9 @@ function LogDetailsModal({
                 value={entry.result?.updateFoundCount}
               />
             </dl>
+            <div className='mt-4'>
+              <JsonBlock value={entry.result} />
+            </div>
           </section>
 
           <section>

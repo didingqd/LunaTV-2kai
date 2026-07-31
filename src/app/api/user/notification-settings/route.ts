@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 
 const patchSchema = z
   .object({
+    notificationCenterEnabled: z.boolean().optional(),
     inboxEnabled: z.boolean().optional(),
     watchingUpdateFoundEnabled: z.boolean().optional(),
     watchingUpdateFailedEnabled: z.boolean().optional(),

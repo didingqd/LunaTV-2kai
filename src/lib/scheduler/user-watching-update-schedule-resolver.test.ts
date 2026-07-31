@@ -7,7 +7,6 @@ import { resolveUserWatchingUpdateSchedule } from './user-watching-update-schedu
 const systemConfig: SystemConfig = {
   updateCheckBackendEnabled: true,
   updateCheckSchedulerEnabled: true,
-  updateCheckCronInterval: 30 * 60 * 1000,
   updateCheckCronExpression: '*/30 * * * *',
   updateCheckTimezone: 'UTC',
   updateCheckLogRetentionCount: 200,

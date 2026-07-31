@@ -1,4 +1,5 @@
 import type { PlayRecord, WatchingFollow } from './types';
+import type { AdminConfig } from './admin.types';
 import {
   calculateWatchingUpdate,
   watchedEpisodesForRecord,
@@ -22,6 +23,7 @@ import {
 } from './update-check-types';
 import type { LatestEpisodeProviderRegistry } from './latest-episode-provider';
 import { db } from './db';
+import { getConfig } from './config';
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
@@ -30,6 +32,7 @@ import {
   updateCheckCapabilityService,
   type UpdateCheckCapabilityReader,
 } from './update-check-capability';
+import { resolveUserWatchingUpdateSchedule } from './scheduler/user-watching-update-schedule-resolver';
 import {
   watchCompletionThresholdPreference,
   type WatchCompletionThresholdReader,
@@ -60,6 +63,7 @@ export interface UpdateCheckServiceDependencies {
   config?: UpdateCheckConfigReader;
   capability?: UpdateCheckCapabilityReader;
   completionThreshold?: WatchCompletionThresholdReader;
+  loadAdminConfig?: () => Promise<AdminConfig>;
   now?: () => number;
 }
 
@@ -89,6 +93,7 @@ export class UpdateCheckService {
   private readonly config: UpdateCheckConfigReader;
   private readonly capability: UpdateCheckCapabilityReader;
   private readonly completionThreshold: WatchCompletionThresholdReader;
+  private readonly loadAdminConfig: () => Promise<AdminConfig>;
   private readonly clock: () => number;
 
   constructor(dependencies: UpdateCheckServiceDependencies = {}) {
@@ -102,6 +107,7 @@ export class UpdateCheckService {
     this.capability = dependencies.capability ?? updateCheckCapabilityService;
     this.completionThreshold =
       dependencies.completionThreshold ?? watchCompletionThresholdPreference;
+    this.loadAdminConfig = dependencies.loadAdminConfig ?? getConfig;
     this.clock = dependencies.now ?? Date.now;
   }
 
@@ -440,9 +446,10 @@ export class UpdateCheckService {
     const current = await this.tasks.get(id);
     if (!current) return;
     const config = await this.config.getUpdateCheckConfig();
+    const schedule = await this.resolveNextSchedule(userId, checkedAt, config);
     await this.tasks.save({
       ...current,
-      nextCheckAt: checkedAt + config.updateCheckCronInterval,
+      nextCheckAt: schedule.nextRunAt ?? checkedAt,
       attempt: 0,
       updatedAt: checkedAt,
       lastSuccessAt: checkedAt,
@@ -468,6 +475,39 @@ export class UpdateCheckService {
       lastErrorAt: now,
       lastError: errorMessage(error),
     });
+  }
+
+  private async resolveNextSchedule(
+    userId: string,
+    checkedAt: number,
+    systemConfig: Awaited<
+      ReturnType<UpdateCheckConfigReader['getUpdateCheckConfig']>
+    >,
+  ) {
+    try {
+      const adminConfig = await this.loadAdminConfig();
+      const user = adminConfig.UserConfig.Users.find(
+        (candidate) => candidate.username === userId,
+      );
+      return resolveUserWatchingUpdateSchedule({
+        username: userId,
+        userUpdateCheckBackendEnabled:
+          userId === process.env.USERNAME ||
+          user?.updateCheckBackendEnabled === true,
+        isOwner: userId === process.env.USERNAME || user?.role === 'owner',
+        systemConfig,
+        userConfig: user?.watchingUpdateConfig,
+        from: new Date(checkedAt),
+      });
+    } catch {
+      return resolveUserWatchingUpdateSchedule({
+        username: userId,
+        userUpdateCheckBackendEnabled: true,
+        isOwner: userId === process.env.USERNAME,
+        systemConfig,
+        from: new Date(checkedAt),
+      });
+    }
   }
 
   private async getProviders(): Promise<LatestEpisodeProviderRegistry> {
