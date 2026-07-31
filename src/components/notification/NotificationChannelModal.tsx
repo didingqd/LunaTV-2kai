@@ -1,7 +1,9 @@
 import { Check, X } from 'lucide-react';
 
+import { NOTIFICATION_EVENT_METAS } from '@/lib/notification/notification-event-metadata';
+
 import {
-  NOTIFICATION_EVENT_METAS,
+  NOTIFICATION_DELIVERY_STATUS_LABELS,
   type NotificationProviderMeta,
 } from '../notification-settings-provider-ui';
 import { NotificationConfigSection } from './NotificationConfigSection';
@@ -101,14 +103,18 @@ export function NotificationChannelModal({
                 </div>
               </div>
 
-              {!provider.capabilities.canSend && (
-                <div
-                  role='status'
-                  className='rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200'
-                >
-                  可保存并校验配置，发送能力待实现。
-                </div>
-              )}
+              <div
+                role='status'
+                className={`rounded-xl border px-4 py-3 text-sm ${
+                  provider.deliveryStatus === 'active'
+                    ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-200'
+                    : provider.deliveryStatus === 'preview'
+                      ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200'
+                      : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-200'
+                }`}
+              >
+                {NOTIFICATION_DELIVERY_STATUS_LABELS[provider.deliveryStatus]}
+              </div>
 
               <NotificationConfigSection
                 form={form}

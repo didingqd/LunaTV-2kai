@@ -125,7 +125,14 @@ export class SchedulerManager {
     this.timer = null;
     try {
       if (await this.loadEnabled()) {
-        await this.jobRunner.run({ trigger: 'cron' });
+        const earliestNextCheckAt =
+          await this.tasks.findEarliestNextCheckAt();
+        if (
+          earliestNextCheckAt !== null &&
+          earliestNextCheckAt <= this.now()
+        ) {
+          await this.jobRunner.run({ trigger: 'cron' });
+        }
       }
     } catch (error) {
       this.logger?.error?.(

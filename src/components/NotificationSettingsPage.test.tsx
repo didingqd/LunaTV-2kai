@@ -42,6 +42,10 @@ const providers = [
   {
     type: 'inbox',
     displayName: '站内通知',
+    description: '在 LunaTV 站内通知中心接收消息。',
+    icon: 'inbox',
+    group: '官方',
+    sortOrder: 10,
     configSchema: { fields: [] },
     capabilities: {
       canCreate: false,
@@ -51,10 +55,15 @@ const providers = [
       canToggle: true,
       canSend: true,
     },
+    deliveryStatus: 'active',
   },
   {
     type: 'wechat_work',
     displayName: '企业微信',
+    description: '发送通知到企业微信群机器人。',
+    icon: 'building-2',
+    group: '官方',
+    sortOrder: 20,
     configSchema: {
       fields: [
         {
@@ -73,6 +82,7 @@ const providers = [
       canToggle: true,
       canSend: true,
     },
+    deliveryStatus: 'active',
   },
 ];
 

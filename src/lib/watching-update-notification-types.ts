@@ -1,31 +1,39 @@
-export interface UpdateCheckSnapshot {
-  id: string;
-  title: string;
+export interface NotificationSnapshot {
+  followId: string;
   episode: number;
 }
 
-export interface UpdateHistory {
-  id: string;
-  title: string;
+export interface NotificationHistory {
+  followId: string;
   fromEpisode: number;
   toEpisode: number;
   updatedAt: string;
 }
 
 export interface WatchingUpdateNotificationState {
-  snapshots: UpdateCheckSnapshot[];
-  history: UpdateHistory[];
+  snapshots: NotificationSnapshot[];
+  history: NotificationHistory[];
+}
+
+export interface WatchingUpdateNotificationCandidate {
+  followId: string;
+  title: string;
+  episode: number;
 }
 
 export interface WatchingUpdateChange {
-  id: string;
+  followId: string;
   title: string;
   fromEpisode: number;
   toEpisode: number;
 }
 
+export interface WatchingUpdateHistory extends WatchingUpdateChange {
+  updatedAt: string;
+}
+
 export interface UpdateDiffAnalysis {
   newUpdates: WatchingUpdateChange[];
-  updatedHistory: UpdateHistory[];
+  updatedHistory: WatchingUpdateHistory[];
   nextState: WatchingUpdateNotificationState;
 }

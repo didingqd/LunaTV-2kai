@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS } from '@/lib/notification/notification-event-metadata';
 
 import { NotificationChannelList } from './notification/NotificationChannelList';
 import { NotificationChannelModal } from './notification/NotificationChannelModal';
@@ -22,7 +23,6 @@ import type {
   NotificationSettings,
 } from './notification/notification-settings-types';
 import {
-  DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
   type BackendNotificationProviderMeta,
   type NotificationProviderMeta,
   mergeNotificationProviderMeta,
@@ -105,7 +105,7 @@ function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
   return {
     mode: 'create',
     providerType: provider.type,
-    name: provider.defaultName,
+    name: provider.displayName,
     subscribedEvents: [...DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS],
     config: { ...provider.defaultConfig },
     originalConfig: {},

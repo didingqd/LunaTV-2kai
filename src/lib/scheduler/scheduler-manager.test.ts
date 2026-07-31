@@ -102,7 +102,7 @@ describe('SchedulerManager', () => {
     expect(jobRunner.run).not.toHaveBeenCalled();
   });
 
-  it('waits at most 60 seconds when no tasks exist', async () => {
+  it('wakes every 60 seconds without running the job when no tasks exist', async () => {
     const { manager, jobRunner } = createManager({ earliest: null });
 
     manager.start();
@@ -114,7 +114,30 @@ describe('SchedulerManager', () => {
 
     jest.advanceTimersByTime(1);
     await flushTimers();
-    expect(jobRunner.run).toHaveBeenCalledWith({ trigger: 'cron' });
+    expect(jobRunner.run).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(1);
+  });
+
+  it('does not write a cron audit log when no task is due', async () => {
+    const auditLogger = { record: jest.fn().mockResolvedValue('audit-1') };
+    const scheduler = { run: jest.fn() };
+    const jobRunner = new UpdateCheckJobRunner(scheduler, () => 0, auditLogger);
+    const manager = new SchedulerManager({
+      tasks: { findEarliestNextCheckAt: jest.fn().mockResolvedValue(null) },
+      jobRunner,
+      loadEnabled: jest.fn().mockResolvedValue(true),
+      now: () => 0,
+      logger: { debug: jest.fn(), error: jest.fn() },
+    });
+
+    manager.start();
+    await flushTimers();
+    jest.advanceTimersByTime(60_000);
+    await flushTimers();
+    manager.stop();
+
+    expect(scheduler.run).not.toHaveBeenCalled();
+    expect(auditLogger.record).not.toHaveBeenCalled();
   });
 
   it('reload wakes earlier when a new earlier task appears', async () => {
@@ -152,6 +175,7 @@ describe('SchedulerManager', () => {
       }),
     });
     tasks.findEarliestNextCheckAt
+      .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0)
       .mockResolvedValue(60_000);
 
@@ -217,6 +241,7 @@ describe('SchedulerManager', () => {
     const { manager, tasks, jobRunner } = createManager({ earliest: 0 });
     jobRunner.run.mockRejectedValueOnce(new Error('boom'));
     tasks.findEarliestNextCheckAt
+      .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(0)
       .mockResolvedValue(60_000);
 

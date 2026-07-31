@@ -1,4 +1,4 @@
-import type { NotificationEventMeta } from '../notification-settings-provider-ui';
+import type { NotificationEventMeta } from '@/lib/notification/notification-event-metadata';
 
 interface NotificationEventSelectorProps {
   events: NotificationEventMeta[];

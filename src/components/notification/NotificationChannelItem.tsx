@@ -1,6 +1,9 @@
 import { Edit3, LoaderCircle, Send, Trash2 } from 'lucide-react';
 
-import type { NotificationProviderMeta } from '../notification-settings-provider-ui';
+import {
+  NOTIFICATION_DELIVERY_STATUS_LABELS,
+  type NotificationProviderMeta,
+} from '../notification-settings-provider-ui';
 import { NotificationToggleSwitch } from './NotificationToggleSwitch';
 import type { NotificationChannelConfig } from './notification-settings-types';
 
@@ -64,11 +67,17 @@ export function NotificationChannelItem({
         <p className='mt-1 truncate text-sm text-gray-500 dark:text-gray-400'>
           {provider.displayName}
         </p>
-        {!provider.capabilities.canSend && (
-          <p className='mt-1 text-xs font-medium text-amber-700 dark:text-amber-300'>
-            发送能力待实现
-          </p>
-        )}
+        <p
+          className={`mt-1 text-xs font-medium ${
+            provider.deliveryStatus === 'active'
+              ? 'text-green-700 dark:text-green-300'
+              : provider.deliveryStatus === 'preview'
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-gray-600 dark:text-gray-300'
+          }`}
+        >
+          {NOTIFICATION_DELIVERY_STATUS_LABELS[provider.deliveryStatus]}
+        </p>
       </div>
 
       <div className='flex flex-col items-end gap-3 sm:flex-row sm:items-center'>

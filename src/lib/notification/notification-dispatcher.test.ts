@@ -4,7 +4,9 @@ import type { NotificationChannel } from './notification-channel';
 import { NotificationDispatcher } from './notification-dispatcher';
 import { NotificationChannelType } from './notification-settings-repository';
 import {
+  NotificationEventType,
   NotificationMessageType,
+  type NotificationEvent,
   type NotificationMessage,
 } from './notification-types';
 
@@ -38,6 +40,17 @@ function createDispatcher(shouldDispatch = true) {
   return new NotificationDispatcher({
     shouldDispatch: jest.fn(async () => shouldDispatch),
   });
+}
+
+function createEvent(overrides: Partial<NotificationEvent> = {}): NotificationEvent {
+  return {
+    id: 'event-1',
+    type: NotificationEventType.WATCHING_UPDATE_FOUND,
+    userId: 'alice',
+    data: { title: 'Debug' },
+    createdAt: 1_000,
+    ...overrides,
+  };
 }
 
 describe('NotificationDispatcher', () => {
@@ -245,5 +258,26 @@ describe('NotificationDispatcher', () => {
     });
     expect(wechatSend).toHaveBeenCalledTimes(1);
     expect(inboxSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches notification events through the manager path', async () => {
+    const emit = jest.fn(async () => ({
+      success: true,
+      totalChannels: 1,
+      succeeded: 1,
+      failed: 0,
+      errors: [],
+    }));
+    const dispatcher = new NotificationDispatcher(undefined, { emit });
+    const event = createEvent();
+
+    await expect(dispatcher.dispatchEvent(event)).resolves.toEqual({
+      success: true,
+      totalChannels: 1,
+      succeeded: 1,
+      failed: 0,
+      errors: [],
+    });
+    expect(emit).toHaveBeenCalledWith(event);
   });
 });

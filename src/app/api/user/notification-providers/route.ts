@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { notificationProviderRegistry } from '@/lib/notification/notification-provider-bootstrap';
-import { getNotificationProviderPresentation } from '@/lib/notification/notification-provider-presentation';
+import { buildNotificationProvidersPayload } from '@/lib/notification/notification-provider-api';
 
 export const runtime = 'nodejs';
 
@@ -28,20 +27,7 @@ export async function GET(request: NextRequest) {
   const admin = requireNotificationSettingsAdmin(request);
   if ('error' in admin) return admin.error;
 
-  // ProviderRegistry is authoritative for supported types, validation schema and
-  // capabilities. Presentation metadata contributes only descriptions/icons.
-  const providers = notificationProviderRegistry.list().map((provider) => {
-    const presentation = getNotificationProviderPresentation(provider.type);
-    return {
-      type: provider.type,
-      displayName: provider.name,
-      description: presentation.description,
-      icon: presentation.icon,
-      configSchema: provider.configSchema,
-      capabilities: provider.capabilities,
-      deliveryStatus: provider.capabilities.canSend ? 'active' : 'preview',
-    };
+  return NextResponse.json(buildNotificationProvidersPayload(), {
+    headers: noStoreHeaders,
   });
-
-  return NextResponse.json({ providers }, { headers: noStoreHeaders });
 }

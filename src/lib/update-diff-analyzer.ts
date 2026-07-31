@@ -1,54 +1,88 @@
 import type {
-  UpdateCheckSnapshot,
   UpdateDiffAnalysis,
-  UpdateHistory,
+  NotificationHistory,
+  NotificationSnapshot,
   WatchingUpdateChange,
+  WatchingUpdateHistory,
+  WatchingUpdateNotificationCandidate,
   WatchingUpdateNotificationState,
 } from './watching-update-notification-types';
 
-function sortByTitle<T extends { id: string; title: string }>(items: T[]): T[] {
+function sortByTitle<T extends { followId: string; title: string }>(
+  items: T[],
+): T[] {
   return [...items].sort(
     (left, right) =>
       left.title.localeCompare(right.title, 'zh-CN') ||
-      left.id.localeCompare(right.id),
+      left.followId.localeCompare(right.followId),
   );
 }
 
-function normalizeEpisode(value: number): number {
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+function sortByFollowId<T extends { followId: string }>(items: T[]): T[] {
+  return [...items].sort((left, right) =>
+    left.followId.localeCompare(right.followId),
+  );
+}
+
+function normalizeEpisode(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
 }
 
 function normalizeSnapshot(
-  snapshot: UpdateCheckSnapshot,
-): UpdateCheckSnapshot | null {
-  const id = snapshot.id.trim();
-  const title = snapshot.title.trim();
+  snapshot: NotificationSnapshot,
+): NotificationSnapshot | null {
+  const followId =
+    typeof snapshot.followId === 'string' ? snapshot.followId.trim() : '';
   const episode = normalizeEpisode(snapshot.episode);
-  if (!id || !title || episode <= 0) return null;
-  return { id, title, episode };
+  if (!followId || episode <= 0) return null;
+  return { followId, episode };
 }
 
 function snapshotMap(
-  snapshots: UpdateCheckSnapshot[],
-): Map<string, UpdateCheckSnapshot> {
-  const values = new Map<string, UpdateCheckSnapshot>();
+  snapshots: NotificationSnapshot[],
+): Map<string, NotificationSnapshot> {
+  const values = new Map<string, NotificationSnapshot>();
   for (const item of snapshots) {
     const snapshot = normalizeSnapshot(item);
     if (!snapshot) continue;
-    const existing = values.get(snapshot.id);
+    const existing = values.get(snapshot.followId);
     if (!existing || snapshot.episode >= existing.episode) {
-      values.set(snapshot.id, snapshot);
+      values.set(snapshot.followId, snapshot);
     }
   }
   return values;
 }
 
-function historyMap(history: UpdateHistory[]): Map<string, UpdateHistory> {
-  const values = new Map<string, UpdateHistory>();
+function candidateMap(
+  candidates: WatchingUpdateNotificationCandidate[],
+): Map<string, WatchingUpdateNotificationCandidate> {
+  const values = new Map<string, WatchingUpdateNotificationCandidate>();
+  for (const candidate of candidates) {
+    const followId =
+      typeof candidate.followId === 'string' ? candidate.followId.trim() : '';
+    const title =
+      typeof candidate.title === 'string' ? candidate.title.trim() : '';
+    const episode = normalizeEpisode(candidate.episode);
+    if (!followId || !title || episode <= 0) continue;
+    const normalized = { followId, title, episode };
+    const existing = values.get(followId);
+    if (!existing || normalized.episode >= existing.episode) {
+      values.set(followId, normalized);
+    }
+  }
+  return values;
+}
+
+function historyMap(
+  history: NotificationHistory[],
+): Map<string, NotificationHistory> {
+  const values = new Map<string, NotificationHistory>();
   for (const item of history) {
-    const id = item.id.trim();
-    const title = item.title.trim();
-    if (!id || !title) continue;
+    const followId =
+      typeof item.followId === 'string' ? item.followId.trim() : '';
+    if (!followId) continue;
     if (
       !Number.isFinite(item.fromEpisode) ||
       !Number.isFinite(item.toEpisode) ||
@@ -56,10 +90,9 @@ function historyMap(history: UpdateHistory[]): Map<string, UpdateHistory> {
     ) {
       continue;
     }
-    values.set(id, {
+    values.set(followId, {
       ...item,
-      id,
-      title,
+      followId,
       fromEpisode: Math.max(0, Math.floor(item.fromEpisode)),
       toEpisode: Math.floor(item.toEpisode),
     });
@@ -69,50 +102,62 @@ function historyMap(history: UpdateHistory[]): Map<string, UpdateHistory> {
 
 export class UpdateDiffAnalyzer {
   analyze(
-    currentSnapshots: UpdateCheckSnapshot[],
+    currentCandidates: WatchingUpdateNotificationCandidate[],
     previousState: WatchingUpdateNotificationState,
     checkedAt: number,
   ): UpdateDiffAnalysis {
     const previousSnapshots = snapshotMap(previousState.snapshots);
-    const current = snapshotMap(currentSnapshots);
+    const current = candidateMap(currentCandidates);
     const history = historyMap(previousState.history);
     const newUpdates: WatchingUpdateChange[] = [];
+    const nextSnapshots = new Map(previousSnapshots);
 
-    for (const snapshot of current.values()) {
-      const previousEpisode = previousSnapshots.get(snapshot.id)?.episode ?? 0;
-      if (snapshot.episode <= previousEpisode) continue;
+    for (const candidate of current.values()) {
+      const previous = previousSnapshots.get(candidate.followId);
+      if (!previous) {
+        nextSnapshots.set(candidate.followId, {
+          followId: candidate.followId,
+          episode: candidate.episode,
+        });
+        continue;
+      }
+      if (candidate.episode <= previous.episode) continue;
 
       const change = {
-        id: snapshot.id,
-        title: snapshot.title,
-        fromEpisode: previousEpisode,
-        toEpisode: snapshot.episode,
+        followId: candidate.followId,
+        title: candidate.title,
+        fromEpisode: previous.episode,
+        toEpisode: candidate.episode,
       };
       newUpdates.push(change);
-      history.set(snapshot.id, {
-        ...change,
+      history.set(candidate.followId, {
+        followId: candidate.followId,
+        fromEpisode: previous.episode,
+        toEpisode: candidate.episode,
         updatedAt: new Date(checkedAt).toISOString(),
+      });
+      nextSnapshots.set(candidate.followId, {
+        followId: candidate.followId,
+        episode: candidate.episode,
       });
     }
 
-    const newUpdateIds = new Set(newUpdates.map((item) => item.id));
-    const updatedHistory = sortByTitle(
-      [...current.keys()].flatMap((id) => {
-        const item = history.get(id);
-        return item && !newUpdateIds.has(id) ? [item] : [];
+    const newUpdateIds = new Set(newUpdates.map((item) => item.followId));
+    const updatedHistory = sortByTitle<WatchingUpdateHistory>(
+      [...current.values()].flatMap((candidate) => {
+        const item = history.get(candidate.followId);
+        return item && !newUpdateIds.has(candidate.followId)
+          ? [{ ...item, title: candidate.title }]
+          : [];
       }),
     );
-    const nextSnapshots = new Map(previousSnapshots);
-    for (const snapshot of current.values()) {
-      nextSnapshots.set(snapshot.id, snapshot);
-    }
 
     return {
       newUpdates: sortByTitle(newUpdates),
       updatedHistory,
       nextState: {
-        snapshots: sortByTitle([...nextSnapshots.values()]),
-        history: sortByTitle([...history.values()]),
+        snapshots: sortByFollowId([...nextSnapshots.values()]),
+        history: sortByFollowId([...history.values()]),
       },
     };
   }

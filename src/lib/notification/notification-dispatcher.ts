@@ -14,6 +14,7 @@ import type {
 import type {
   NotificationDispatchError,
   NotificationDispatchResult,
+  NotificationEvent,
   NotificationMessage,
 } from './notification-types';
 
@@ -96,6 +97,15 @@ export class NotificationDispatcher {
     }
 
     return this.dispatchLegacyChannels(message);
+  }
+
+  async dispatchEvent(
+    event: NotificationEvent,
+  ): Promise<NotificationDispatchResult> {
+    if (!this.manager) {
+      throw new Error('NOTIFICATION_EVENT_DISPATCH_UNAVAILABLE');
+    }
+    return this.manager.emit(event);
   }
 
   private async dispatchLegacyChannels(

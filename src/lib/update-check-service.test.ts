@@ -19,8 +19,10 @@ import type {
   UpdateCheckTaskRepository,
   UpdateObservationRepository,
   UpdateResultRepository,
+  WatchingUpdateNotificationStateRepository,
 } from './update-check-repository';
 import type { UpdateFactsRepository } from './update-check-service';
+import type { WatchingUpdateNotificationState } from './watching-update-notification-types';
 
 const follow: WatchingFollow = {
   source: 'source-a',
@@ -86,6 +88,29 @@ class MemoryObservations implements UpdateObservationRepository {
   }
 }
 
+class MemoryNotificationState implements WatchingUpdateNotificationStateRepository {
+  values = new Map<string, WatchingUpdateNotificationState>();
+
+  async get(userId: string) {
+    return this.values.get(userId) ?? { snapshots: [], history: [] };
+  }
+  async save(userId: string, state: WatchingUpdateNotificationState) {
+    this.values.set(userId, state);
+  }
+  async deleteForFollow(userId: string, followId: string) {
+    const state = await this.get(userId);
+    this.values.set(userId, {
+      snapshots: state.snapshots.filter(
+        (snapshot) => snapshot.followId !== followId,
+      ),
+      history: state.history.filter((item) => item.followId !== followId),
+    });
+  }
+  async deleteForUser(userId: string) {
+    this.values.delete(userId);
+  }
+}
+
 class MemoryTasks implements UpdateCheckTaskRepository {
   values = new Map<string, UpdateCheckTask>();
   async get(id: string) {
@@ -110,13 +135,13 @@ class MemoryTasks implements UpdateCheckTaskRepository {
 
 class MemoryFacts implements UpdateFactsRepository {
   playRecord: PlayRecord | null = record;
-  watchingFollow: WatchingFollow = follow;
+  watchingFollow: WatchingFollow | null = follow;
 
   async getWatchingFollow() {
     return this.watchingFollow;
   }
   async getAllWatchingFollows() {
-    return { follow: this.watchingFollow };
+    return this.watchingFollow ? { follow: this.watchingFollow } : {};
   }
   async getPlayRecord() {
     return this.playRecord;
@@ -130,6 +155,7 @@ describe('UpdateCheckService', () => {
   let results: MemoryResults;
   let observations: MemoryObservations;
   let tasks: MemoryTasks;
+  let notificationState: MemoryNotificationState;
   let facts: MemoryFacts;
   let service: UpdateCheckService;
   let thresholdByUser: Map<string, number>;
@@ -141,6 +167,7 @@ describe('UpdateCheckService', () => {
     results = new MemoryResults();
     observations = new MemoryObservations();
     tasks = new MemoryTasks();
+    notificationState = new MemoryNotificationState();
     facts = new MemoryFacts();
     thresholdByUser = new Map();
     const provider: LatestEpisodeProvider = {
@@ -155,6 +182,7 @@ describe('UpdateCheckService', () => {
       results,
       observations,
       tasks,
+      notificationState,
       providers: {
         get: () => provider,
       } as unknown as LatestEpisodeProviderRegistry,
@@ -343,17 +371,32 @@ describe('UpdateCheckService', () => {
     expect(await results.get('alice', task.followId)).toBeNull();
   });
 
-  it('removes cached result, observation and task when a follow is disabled', async () => {
+  it('removes cached update and notification state when a follow is disabled', async () => {
     const task = [...tasks.values.values()][0];
     await service.checkTask(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: task.followId, episode: 12 }],
+      history: [
+        {
+          followId: task.followId,
+          fromEpisode: 10,
+          toEpisode: 12,
+          updatedAt: '2026-07-31T12:00:00.000Z',
+        },
+      ],
+    });
     await service.onFollowUpdated({ ...follow, enabled: false }, 'alice');
 
     expect(await results.get('alice', task.followId)).toBeNull();
     expect(await observations.get('alice', task.followId)).toBeNull();
     expect(await tasks.get(task.id)).toBeNull();
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [],
+      history: [],
+    });
   });
 
-  it('cleans only calculated update data when user permission is disabled', async () => {
+  it('cleans update and notification state when user permission is disabled', async () => {
     const task = [...tasks.values.values()][0];
     await service.processObservation({
       userId: 'alice',
@@ -363,12 +406,66 @@ describe('UpdateCheckService', () => {
       latestEpisode: 11,
       observedAt: 1000,
     });
+    await notificationState.save('alice', {
+      snapshots: [{ followId: task.followId, episode: 11 }],
+      history: [],
+    });
 
     await service.onUserPermissionDisabled('alice');
 
     expect(await results.get('alice', task.followId)).toBeNull();
     expect(await observations.get('alice', task.followId)).toBeNull();
     expect(await tasks.get(task.id)).toBeNull();
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [],
+      history: [],
+    });
+  });
+
+  it('clears notification state before scheduling a newly created follow', async () => {
+    const task = [...tasks.values.values()][0];
+    await notificationState.save('alice', {
+      snapshots: [{ followId: task.followId, episode: 12 }],
+      history: [
+        {
+          followId: task.followId,
+          fromEpisode: 10,
+          toEpisode: 12,
+          updatedAt: '2026-07-31T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await service.onFollowCreated(follow, 'alice');
+
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [],
+      history: [],
+    });
+  });
+
+  it('cleans notification state when a scheduled follow no longer exists', async () => {
+    const task = [...tasks.values.values()][0];
+    await notificationState.save('alice', {
+      snapshots: [{ followId: task.followId, episode: 12 }],
+      history: [
+        {
+          followId: task.followId,
+          fromEpisode: 10,
+          toEpisode: 12,
+          updatedAt: '2026-07-31T12:00:00.000Z',
+        },
+      ],
+    });
+    facts.watchingFollow = null;
+
+    await service.checkTask(task);
+
+    expect(await tasks.get(task.id)).toBeNull();
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [],
+      history: [],
+    });
   });
 
   it('does not create task, observation or result when capability is local', async () => {
@@ -378,6 +475,7 @@ describe('UpdateCheckService', () => {
       results,
       observations,
       tasks: localTasks,
+      notificationState,
       capability: {
         getCapability: async () => ({
           enabled: false,

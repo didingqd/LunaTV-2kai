@@ -6,6 +6,7 @@ import {
 } from './watching-update-calculation';
 import { watchingFollowStorageKey } from './watching-follow';
 import {
+  CachedWatchingUpdateNotificationStateRepository,
   CachedUpdateCheckTaskRepository,
   CachedUpdateObservationRepository,
   CachedUpdateResultRepository,
@@ -13,6 +14,7 @@ import {
   type UpdateCheckTaskRepository,
   type UpdateObservationRepository,
   type UpdateResultRepository,
+  type WatchingUpdateNotificationStateRepository,
 } from './update-check-repository';
 import {
   DEFAULT_UPDATE_CHECK_EXPIRE_MS,
@@ -59,6 +61,7 @@ export interface UpdateCheckServiceDependencies {
   results?: UpdateResultRepository;
   observations?: UpdateObservationRepository;
   tasks?: UpdateCheckTaskRepository;
+  notificationState?: WatchingUpdateNotificationStateRepository;
   providers?: LatestEpisodeProviderRegistry;
   config?: UpdateCheckConfigReader;
   capability?: UpdateCheckCapabilityReader;
@@ -89,6 +92,7 @@ export class UpdateCheckService {
   private readonly results: UpdateResultRepository;
   private readonly observations: UpdateObservationRepository;
   private readonly tasks: UpdateCheckTaskRepository;
+  private readonly notificationState: WatchingUpdateNotificationStateRepository;
   private providers?: LatestEpisodeProviderRegistry;
   private readonly config: UpdateCheckConfigReader;
   private readonly capability: UpdateCheckCapabilityReader;
@@ -102,6 +106,9 @@ export class UpdateCheckService {
     this.observations =
       dependencies.observations ?? new CachedUpdateObservationRepository(db);
     this.tasks = dependencies.tasks ?? new CachedUpdateCheckTaskRepository(db);
+    this.notificationState =
+      dependencies.notificationState ??
+      new CachedWatchingUpdateNotificationStateRepository(db);
     this.providers = dependencies.providers;
     this.config = dependencies.config ?? systemConfigRepository;
     this.capability = dependencies.capability ?? updateCheckCapabilityService;
@@ -136,6 +143,10 @@ export class UpdateCheckService {
   }
 
   async onFollowCreated(follow: WatchingFollow, userId: string): Promise<void> {
+    await this.notificationState.deleteForFollow(
+      userId,
+      watchingFollowStorageKey(follow.source, follow.id),
+    );
     if (!(await this.isBackendEnabled(userId))) return;
     await this.scheduleFollow(userId, follow, true);
   }
@@ -159,6 +170,7 @@ export class UpdateCheckService {
       this.results.delete(userId, followId),
       this.observations.delete(userId, followId),
       this.tasks.delete(updateCheckTaskId(userId, followId)),
+      this.notificationState.deleteForFollow(userId, followId),
     ]);
   }
 
@@ -534,6 +546,7 @@ export class UpdateCheckService {
       this.results.deleteForUser(userId),
       this.observations.deleteForUser(userId),
       this.tasks.deleteForUser(userId),
+      this.notificationState.deleteForUser(userId),
     ]);
   }
 

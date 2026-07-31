@@ -260,14 +260,25 @@ export class UpdateCheckScheduler {
       const checkedAt = Math.max(...results.map((result) => result.checkedAt));
       const previousState = await this.notificationState.get(userId);
       const analysis = updateDiffAnalyzer.analyze(
-        results.map((result) => ({
-          id: result.followId,
-          title: result.title,
-          episode: result.latestEpisode,
-        })),
+        results.flatMap((result) => {
+          const episode = result.metadata?.effectiveLatestEpisode;
+          return Number.isFinite(episode) && episode > 0
+            ? [
+                {
+                  followId: result.followId,
+                  title: result.title,
+                  episode,
+                },
+              ]
+            : [];
+        }),
         previousState,
         checkedAt,
       );
+      if (analysis.newUpdates.length === 0) {
+        await this.notificationState.save(userId, analysis.nextState);
+        continue;
+      }
       const user = usersById.get(userId);
       const timezone = resolveUserWatchingUpdateSchedule({
         username: userId,
@@ -282,9 +293,12 @@ export class UpdateCheckScheduler {
         checkedAt,
         timezone,
       );
+      if (!content) {
+        await this.notificationState.save(userId, analysis.nextState);
+        continue;
+      }
 
       try {
-        if (!content) continue;
         const result = await this.notifications.dispatch({
           userId,
           type: NotificationMessageType.WATCHING_UPDATE_FOUND,
@@ -303,11 +317,11 @@ export class UpdateCheckScheduler {
             'Update check notification dispatch failed',
             result.errors,
           );
+          continue;
         }
+        await this.notificationState.save(userId, analysis.nextState);
       } catch (error) {
         console.error('Update check notification dispatch threw', error);
-      } finally {
-        await this.notificationState.save(userId, analysis.nextState);
       }
     }
   }

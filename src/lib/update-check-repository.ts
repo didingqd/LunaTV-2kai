@@ -46,10 +46,8 @@ export interface UpdateCheckScheduleTaskRepository {
 
 export interface WatchingUpdateNotificationStateRepository {
   get(userId: string): Promise<WatchingUpdateNotificationState>;
-  save(
-    userId: string,
-    state: WatchingUpdateNotificationState,
-  ): Promise<void>;
+  save(userId: string, state: WatchingUpdateNotificationState): Promise<void>;
+  deleteForFollow(userId: string, followId: string): Promise<void>;
   deleteForUser(userId: string): Promise<void>;
 }
 
@@ -219,9 +217,7 @@ export class CachedUpdateObservationRepository implements UpdateObservationRepos
   }
 }
 
-export class CachedWatchingUpdateNotificationStateRepository
-  implements WatchingUpdateNotificationStateRepository
-{
+export class CachedWatchingUpdateNotificationStateRepository implements WatchingUpdateNotificationStateRepository {
   constructor(private readonly store: UpdateCacheStore) {}
 
   async get(userId: string): Promise<WatchingUpdateNotificationState> {
@@ -237,6 +233,24 @@ export class CachedWatchingUpdateNotificationStateRepository
     const key = userKey(NOTIFICATION_STATE_PREFIX, userId);
     await queuedWrite(key, async () => {
       await this.store.setCache(key, state);
+    });
+  }
+
+  async deleteForFollow(userId: string, followId: string): Promise<void> {
+    const key = userKey(NOTIFICATION_STATE_PREFIX, userId);
+    await queuedWrite(key, async () => {
+      const state = asNotificationState(await this.store.getCache(key));
+      const snapshots = state.snapshots.filter(
+        (snapshot) => snapshot.followId !== followId,
+      );
+      const history = state.history.filter(
+        (item) => item.followId !== followId,
+      );
+      if (snapshots.length === 0 && history.length === 0) {
+        await this.store.deleteCache(key);
+        return;
+      }
+      await this.store.setCache(key, { snapshots, history });
     });
   }
 

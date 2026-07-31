@@ -11,9 +11,11 @@ import type {
 } from './notification/notification-types';
 import { UpdateCheckJobRunner } from './scheduler/update-check-job-runner';
 import {
+  CachedWatchingUpdateNotificationStateRepository,
   CachedUpdateCheckTaskRepository,
   type UpdateCheckScheduleTaskRepository,
   type UpdateCheckTaskRepository,
+  type WatchingUpdateNotificationStateRepository,
 } from './update-check-repository';
 import { UpdateCheckScheduler } from './update-check-scheduler';
 import type { UpdateCheckTask, UpdateResult } from './update-check-types';
@@ -96,7 +98,7 @@ function createAdminConfig(
 function successfulService(
   tasks: SchedulerTasks,
   checkedAt = runAt,
-  result: UpdateResult | null = {} as UpdateResult,
+  result: UpdateResult | null = updateResult(),
 ) {
   return {
     checkTask: async (task: UpdateCheckTask) => {
@@ -129,6 +131,7 @@ function createScheduler(
         errors: Array<{ channel: string; message: string }>;
       }>;
     };
+    notificationState?: WatchingUpdateNotificationStateRepository;
   } = {},
 ) {
   return new UpdateCheckScheduler(
@@ -140,6 +143,8 @@ function createScheduler(
     permissionsFor(...(options.permissions ?? ['alice'])),
     async () => createAdminConfig(options.users),
     options.notifications ?? noopNotifications,
+    options.notificationState ??
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache()),
   );
 }
 
@@ -463,17 +468,34 @@ describe('UpdateCheckScheduler', () => {
     );
   });
 
-  it('sends a notification when a check finds new episodes', async () => {
+  it('sends one summary notification from the effective latest episode', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
     const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: 'follow-1', episode: 100 }],
+      history: [],
+    });
 
     await createScheduler(
       tasks,
-      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+      successfulService(
+        tasks,
+        runAt,
+        updateResult({
+          latestEpisode: 99,
+          metadata: {
+            ...updateResult().metadata,
+            effectiveLatestEpisode: 101,
+          },
+        }),
+      ),
       {
         notifications: { dispatch },
+        notificationState,
       },
     ).run({ now: runAt });
 
@@ -481,38 +503,212 @@ describe('UpdateCheckScheduler', () => {
     expect(dispatch).toHaveBeenCalledWith({
       userId: 'alice',
       type: 'WATCHING_UPDATE_FOUND',
-      title: '《Demo Show》发现更新',
+      title: '更新提醒',
       content:
-        'Source A 已从 10 集更新到 12 集，检查时间：2026-07-30T12:01:00.000Z',
+        '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
       createdAt: runAt,
       payload: {
-        resourceId: 'video-1',
-        source: 'source-a',
-        previousEpisode: 10,
-        latestEpisode: 12,
-        releasedEpisodeCount: 2,
-        taskId: 'task-1',
-        followId: 'follow-1',
+        newUpdates: [
+          {
+            followId: 'follow-1',
+            title: 'Demo Show',
+            fromEpisode: 100,
+            toEpisode: 101,
+          },
+        ],
+        updatedHistory: [],
         checkedAt: runAt,
+        timezone: 'UTC',
       },
     });
   });
 
-  it('does not send a notification when no update is found', async () => {
+  it('does not notify for the first completed check and stores its baseline', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
     const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     await tasks.save(task);
+
+    await createScheduler(
+      tasks,
+      successfulService(
+        tasks,
+        runAt,
+        updateResult({
+          latestEpisode: 99,
+          metadata: {
+            ...updateResult().metadata,
+            effectiveLatestEpisode: 100,
+          },
+        }),
+      ),
+      {
+        notifications: { dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [{ followId: 'follow-1', episode: 100 }],
+      history: [],
+    });
+  });
+
+  it('does not send a notification when the effective episode snapshot is unchanged', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: 'follow-1', episode: 12 }],
+      history: [
+        {
+          followId: 'follow-1',
+          fromEpisode: 10,
+          toEpisode: 12,
+          updatedAt: '2026-07-30T12:00:00.000Z',
+        },
+      ],
+    });
 
     await createScheduler(
       tasks,
       successfulService(tasks, runAt, updateResult()),
       {
         notifications: { dispatch },
+        notificationState,
       },
     ).run({ now: runAt });
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('merges updates for multiple titles into one notification', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const first = createTask({
+      id: 'task-one-piece',
+      followId: 'follow-one-piece',
+      resourceId: 'one-piece',
+    });
+    const second = createTask({
+      id: 'task-naruto',
+      followId: 'follow-naruto',
+      resourceId: 'naruto',
+    });
+    const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    await tasks.save(first);
+    await tasks.save(second);
+    await notificationState.save('alice', {
+      snapshots: [
+        { followId: 'follow-one-piece', episode: 11 },
+        { followId: 'follow-naruto', episode: 13 },
+      ],
+      history: [],
+    });
+
+    await createScheduler(
+      tasks,
+      {
+        checkTask: async (task) => {
+          await tasks.save({
+            ...task,
+            nextCheckAt: runAt + 1,
+            updatedAt: runAt,
+            lastSuccessAt: runAt,
+          });
+          return updateResult({
+            followId: task.followId,
+            resourceId: task.resourceId,
+            title: task.resourceId === 'one-piece' ? '海贼王' : '火影忍者',
+            latestEpisode: task.resourceId === 'one-piece' ? 8 : 9,
+            metadata: {
+              ...updateResult().metadata,
+              effectiveLatestEpisode: task.resourceId === 'one-piece' ? 12 : 14,
+            },
+          });
+        },
+      },
+      {
+        notifications: { dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      title: '更新提醒',
+      content: expect.stringContaining(
+        '海贼王    11集 → 12集\n火影忍者    13集 → 14集',
+      ),
+    });
+  });
+
+  it('keeps notification state unchanged when dispatch fails so the next check retries it', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    const failedDispatch = createDispatch({
+      success: false,
+      totalChannels: 1,
+      succeeded: 0,
+      failed: 1,
+      errors: [{ channel: 'webhook', message: 'unavailable' }],
+    });
+    await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: 'follow-1', episode: 100 }],
+      history: [],
+    });
+    const nextResult = updateResult({
+      metadata: {
+        ...updateResult().metadata,
+        effectiveLatestEpisode: 101,
+      },
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+    await createScheduler(tasks, successfulService(tasks, runAt, nextResult), {
+      notifications: { dispatch: failedDispatch },
+      notificationState,
+    }).run({ now: runAt });
+
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [{ followId: 'follow-1', episode: 100 }],
+      history: [],
+    });
+
+    await tasks.save({ ...task, nextCheckAt: runAt });
+    const successfulDispatch = createDispatch();
+    await createScheduler(
+      tasks,
+      successfulService(tasks, runAt + 1, nextResult),
+      {
+        notifications: { dispatch: successfulDispatch },
+        notificationState,
+      },
+    ).run({ now: runAt + 1 });
+
+    expect(successfulDispatch).toHaveBeenCalledTimes(1);
+    expect(await notificationState.get('alice')).toEqual({
+      snapshots: [{ followId: 'follow-1', episode: 101 }],
+      history: [
+        {
+          followId: 'follow-1',
+          fromEpisode: 100,
+          toEpisode: 101,
+          updatedAt: '2026-07-30T12:01:00.000Z',
+        },
+      ],
+    });
+    errorSpy.mockRestore();
   });
 
   it('sends a failure notification when the task error changes', async () => {
@@ -572,6 +768,8 @@ describe('UpdateCheckScheduler', () => {
   it('does not fail the scheduler when notification dispatch throws', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     const dispatch = jest.fn<
       Promise<NotificationDispatchResult>,
       [NotificationMessage]
@@ -582,12 +780,17 @@ describe('UpdateCheckScheduler', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
     await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: 'follow-1', episode: 11 }],
+      history: [],
+    });
 
     const result = await createScheduler(
       tasks,
       successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
       {
         notifications: { dispatch },
+        notificationState,
       },
     ).run({ now: runAt });
 
@@ -607,6 +810,8 @@ describe('UpdateCheckScheduler', () => {
   it('keeps job runner success when notification dispatch fails', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     const dispatch = createDispatch({
       success: false,
       totalChannels: 1,
@@ -618,11 +823,16 @@ describe('UpdateCheckScheduler', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
     await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [{ followId: 'follow-1', episode: 11 }],
+      history: [],
+    });
     const scheduler = createScheduler(
       tasks,
       successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
       {
         notifications: { dispatch },
+        notificationState,
       },
     );
     const runner = new UpdateCheckJobRunner(
