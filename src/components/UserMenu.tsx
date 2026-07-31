@@ -16,6 +16,7 @@ import {
   Settings,
   Shield,
   SlidersHorizontal,
+  ToggleLeft,
   Tv,
   User,
   Users,
@@ -65,6 +66,8 @@ interface AuthInfo {
   role?: 'owner' | 'admin' | 'user';
 }
 
+const USER_NOTIFICATIONS_ENDPOINT = '/api/user/notifications';
+
 export const UserMenu: React.FC = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -77,6 +80,7 @@ export const UserMenu: React.FC = () => {
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isWatchingFollowsOpen, setIsWatchingFollowsOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
+  const [notificationUnread, setNotificationUnread] = useState(0);
   const [storageType, setStorageType] = useState<string>(() => {
     // 🔧 优化：直接从 RUNTIME_CONFIG 读取初始值，避免默认值导致的多次渲染
     if (typeof window !== 'undefined') {
@@ -229,6 +233,37 @@ export const UserMenu: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!authInfo?.username || storageType === 'localstorage') {
+      setNotificationUnread(0);
+      return;
+    }
+
+    let active = true;
+    fetch(USER_NOTIFICATIONS_ENDPOINT, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json().catch(() => null)) as {
+          unread?: unknown;
+        } | null;
+      })
+      .then((data) => {
+        if (!active) return;
+        const unread =
+          typeof data?.unread === 'number' && Number.isFinite(data.unread)
+            ? Math.max(0, Math.floor(data.unread))
+            : 0;
+        setNotificationUnread(unread);
+      })
+      .catch(() => {
+        if (active) setNotificationUnread(0);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authInfo?.username, storageType]);
+
   // 🚀 观影室配置和下载配置由 TanStack Query 自动管理
 
   // 🚀 版本检查由 TanStack Query 自动管理
@@ -290,6 +325,22 @@ export const UserMenu: React.FC = () => {
     setIsOpen(false);
     // 修改点：用户菜单常用入口接入统一浏览器直跳策略，覆盖 /release-calendar
     navigateWithBrowserPreference({ href: '/release-calendar', routerPush: (href) => router.push(href) });
+  };
+
+  const handleNotifications = () => {
+    setIsOpen(false);
+    navigateWithBrowserPreference({
+      href: '/notifications',
+      routerPush: (href) => router.push(href),
+    });
+  };
+
+  const handleNotificationSettings = () => {
+    setIsOpen(false);
+    navigateWithBrowserPreference({
+      href: '/notification-settings',
+      routerPush: (href) => router.push(href),
+    });
   };
 
   const handleWatchingUpdates = () => {
@@ -633,6 +684,27 @@ export const UserMenu: React.FC = () => {
           </button>
 
           {/* 管理面板按钮 */}
+          <button
+            onClick={handleNotifications}
+            className='relative flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 transition-[background-color] duration-150 ease-in-out hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+          >
+            <Bell className='h-4 w-4 text-gray-500 dark:text-gray-400' />
+            <span className='font-medium'>通知中心</span>
+            {notificationUnread > 0 && (
+              <span className='ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white'>
+                {notificationUnread > 99 ? '99+' : notificationUnread}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={handleNotificationSettings}
+            className='relative flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 transition-[background-color] duration-150 ease-in-out hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+          >
+            <ToggleLeft className='h-4 w-4 text-gray-500 dark:text-gray-400' />
+            <span className='font-medium'>通知设置</span>
+          </button>
+
           {showWatchingUpdates && (
             <button
               onClick={handleWatchingUpdateSettings}

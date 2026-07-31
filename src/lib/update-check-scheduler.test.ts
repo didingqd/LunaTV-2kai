@@ -5,6 +5,10 @@ jest.mock('./latest-episode-provider', () => ({
 }));
 
 import type { AdminConfig, SystemConfig } from './admin.types';
+import type {
+  NotificationDispatchResult,
+  NotificationMessage,
+} from './notification/notification-types';
 import { UpdateCheckJobRunner } from './scheduler/update-check-job-runner';
 import {
   CachedUpdateCheckTaskRepository,
@@ -49,6 +53,10 @@ type SchedulerTasks = UpdateCheckTaskRepository &
     UpdateCheckScheduleTaskRepository,
     'listTasksByUser' | 'batchUpdateNextCheckAt'
   >;
+
+const noopNotifications = {
+  dispatch: async () => dispatchSuccess(),
+};
 
 function permissionsFor(...userIds: string[]) {
   return {
@@ -113,6 +121,15 @@ function createScheduler(
     settings?: SystemConfig;
     users?: AdminConfig['UserConfig']['Users'];
     permissions?: string[];
+    notifications?: {
+      dispatch(message: NotificationMessage): Promise<{
+        success: boolean;
+        totalChannels: number;
+        succeeded: number;
+        failed: number;
+        errors: Array<{ channel: string; message: string }>;
+      }>;
+    };
   } = {},
 ) {
   return new UpdateCheckScheduler(
@@ -123,6 +140,7 @@ function createScheduler(
     },
     permissionsFor(...(options.permissions ?? ['alice'])),
     async () => createAdminConfig(options.users),
+    options.notifications ?? noopNotifications,
   );
 }
 
@@ -447,4 +465,225 @@ describe('UpdateCheckScheduler', () => {
       new Date('2026-07-30T12:30:00.000Z').getTime(),
     );
   });
+
+  it('sends a notification when a check finds new episodes', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    await tasks.save(task);
+
+    await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+      {
+        notifications: { dispatch },
+      },
+    ).run({ now: runAt });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      userId: 'alice',
+      type: 'WATCHING_UPDATE_FOUND',
+      title: '《Demo Show》发现更新',
+      content:
+        'Source A 已从 10 集更新到 12 集，检查时间：2026-07-30T12:01:00.000Z',
+      createdAt: runAt,
+      payload: {
+        resourceId: 'video-1',
+        source: 'source-a',
+        previousEpisode: 10,
+        latestEpisode: 12,
+        releasedEpisodeCount: 2,
+        taskId: 'task-1',
+        followId: 'follow-1',
+        checkedAt: runAt,
+      },
+    });
+  });
+
+  it('does not send a notification when no update is found', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    await tasks.save(task);
+
+    await createScheduler(tasks, successfulService(tasks, runAt, updateResult()), {
+      notifications: { dispatch },
+    }).run({ now: runAt });
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('sends a failure notification when the task error changes', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    await tasks.save(task);
+
+    await createScheduler(
+      tasks,
+      {
+        checkTask: async () => {
+          await tasks.save({
+            ...task,
+            nextCheckAt: runAt + 5 * 60 * 1000,
+            attempt: 1,
+            updatedAt: runAt,
+          lastErrorAt: runAt,
+          lastError:
+            'Error: Provider timeout https://example.com/detail Authorization: Bearer secret Cookie: sid=1',
+          });
+          return null;
+        },
+      },
+      {
+        notifications: { dispatch },
+      },
+    ).run({ now: runAt });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      userId: 'alice',
+      type: 'WATCHING_UPDATE_FAILED',
+      title: '追更检查失败',
+      content:
+        'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
+      createdAt: runAt,
+      payload: {
+        resourceId: 'video-1',
+        source: 'source-a',
+        taskId: 'task-1',
+        followId: 'follow-1',
+        failedAt: runAt,
+        error:
+          'Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]',
+      },
+    });
+    expect(JSON.stringify(dispatch.mock.calls[0][0])).not.toContain(
+      'https://example.com',
+    );
+    expect(JSON.stringify(dispatch.mock.calls[0][0])).not.toContain(
+      'Bearer secret',
+    );
+    expect(JSON.stringify(dispatch.mock.calls[0][0])).not.toContain('sid=1');
+  });
+
+  it('does not fail the scheduler when notification dispatch throws', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = jest.fn<
+      Promise<NotificationDispatchResult>,
+      [NotificationMessage]
+    >(async () => {
+      throw new Error('dispatcher failed');
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await tasks.save(task);
+
+    const result = await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+      {
+        notifications: { dispatch },
+      },
+    ).run({ now: runAt });
+
+    expect(result).toMatchObject({
+      inspected: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Update check notification dispatch threw',
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('keeps job runner success when notification dispatch fails', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch({
+      success: false,
+      totalChannels: 1,
+      succeeded: 0,
+      failed: 1,
+      errors: [{ channel: 'inbox', message: 'inbox failed' }],
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await tasks.save(task);
+    const scheduler = createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+      {
+        notifications: { dispatch },
+      },
+    );
+    const runner = new UpdateCheckJobRunner(scheduler, (() => {
+      const values = [1_000, 1_020];
+      return () => values.shift() ?? 1_020;
+    })());
+
+    const result = await runner.run({ trigger: 'cron' });
+
+    expect(result).toMatchObject({
+      trigger: 'cron',
+      running: false,
+      success: true,
+      schedulerResult: {
+        inspected: 1,
+        succeeded: 1,
+        failed: 0,
+      },
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Update check notification dispatch failed',
+      [{ channel: 'inbox', message: 'inbox failed' }],
+    );
+    errorSpy.mockRestore();
+  });
 });
+
+function updateResult(overrides: Partial<UpdateResult> = {}): UpdateResult {
+  return {
+    userId: 'alice',
+    followId: 'follow-1',
+    source: 'source-a',
+    resourceId: 'video-1',
+    title: 'Demo Show',
+    latestEpisode: 12,
+    watchedEpisode: 10,
+    unwatchedCount: 2,
+    hasUpdate: false,
+    checkedAt: runAt,
+    expireAt: runAt + 60 * 60 * 1000,
+    status: 'fresh',
+    revision: 1,
+    metadata: {
+      algorithmVersion: 1,
+      completionThreshold: 0.9,
+      baselineEpisode: 10,
+      effectiveLatestEpisode: 12,
+      releasedEpisodeCount: 2,
+      sourceName: 'Source A',
+    },
+    ...overrides,
+  };
+}
+
+function createDispatch(result: NotificationDispatchResult = dispatchSuccess()) {
+  return jest.fn<Promise<NotificationDispatchResult>, [NotificationMessage]>(
+    async () => result,
+  );
+}
+
+function dispatchSuccess(): NotificationDispatchResult {
+  return {
+    success: true,
+    totalChannels: 1,
+    succeeded: 1,
+    failed: 0,
+    errors: [],
+  };
+}

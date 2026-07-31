@@ -2,14 +2,18 @@
 
 import type { NotificationChannel } from './notification-channel';
 import { NotificationDispatcher } from './notification-dispatcher';
-import type { NotificationMessage } from './notification-types';
+import { NotificationChannelType } from './notification-settings-repository';
+import {
+  NotificationMessageType,
+  type NotificationMessage,
+} from './notification-types';
 
 function createMessage(
   overrides: Partial<NotificationMessage> = {},
 ): NotificationMessage {
   return {
     userId: 'alice',
-    type: 'watching-update',
+    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
     title: 'New episode',
     content: 'Episode 10 is available.',
     createdAt: 1_000,
@@ -30,9 +34,15 @@ function createChannel(
   };
 }
 
+function createDispatcher(shouldDispatch = true) {
+  return new NotificationDispatcher({
+    shouldDispatch: jest.fn(async () => shouldDispatch),
+  });
+}
+
 describe('NotificationDispatcher', () => {
   it('registers channels and lists them in registration order', () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
     const inbox = createChannel('inbox', jest.fn());
     const email = createChannel('email', jest.fn());
 
@@ -43,7 +53,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('unregisters a channel by name', () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
     const inbox = createChannel('inbox', jest.fn());
     const email = createChannel('email', jest.fn());
 
@@ -55,7 +65,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('dispatches to multiple channels sequentially', async () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
     const calls: string[] = [];
 
     dispatcher.register(
@@ -90,7 +100,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('continues dispatching after a channel throws', async () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
     const sendAfterFailure = jest.fn(async () => undefined);
 
     dispatcher.register(
@@ -118,7 +128,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('returns a fallback error message for non-Error throws', async () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
 
     dispatcher.register(
       createChannel('webhook', async () => {
@@ -141,7 +151,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('returns a successful empty result when no channels are registered', async () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
 
     await expect(dispatcher.dispatch(createMessage())).resolves.toEqual({
       success: true,
@@ -153,7 +163,7 @@ describe('NotificationDispatcher', () => {
   });
 
   it('passes the original message object to each channel unchanged', async () => {
-    const dispatcher = new NotificationDispatcher();
+    const dispatcher = createDispatcher();
     const message = createMessage();
     const firstSend = jest.fn<ReturnType<NotificationChannel['send']>, Parameters<NotificationChannel['send']>>(
       async () => undefined,
@@ -172,5 +182,68 @@ describe('NotificationDispatcher', () => {
     expect(secondSend).toHaveBeenCalledWith(message);
     expect(firstSend.mock.calls[0][0]).toBe(message);
     expect(secondSend.mock.calls[0][0]).toBe(message);
+  });
+
+  it('skips channels when notification settings block the message', async () => {
+    const dispatcher = createDispatcher(false);
+    const send = jest.fn(async () => undefined);
+    dispatcher.register(createChannel('inbox', send));
+
+    await expect(dispatcher.dispatch(createMessage())).resolves.toEqual({
+      success: true,
+      totalChannels: 1,
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('dispatches configured channel instances and continues after one fails', async () => {
+    const inboxSend = jest.fn(async () => undefined);
+    const wechatSend = jest.fn(async () => {
+      throw new Error('wechat failed');
+    });
+    const dispatcher = new NotificationDispatcher({
+      shouldDispatch: jest.fn(async () => true),
+      getEnabledChannelConfigsForUser: jest.fn(async () => [
+        {
+          id: 'wc-1',
+          type: NotificationChannelType.WECHAT_WORK,
+          name: '企业微信',
+          enabled: true,
+          config: {
+            webhookUrl:
+              'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+          },
+        },
+        {
+          id: 'inbox',
+          type: NotificationChannelType.INBOX,
+          name: '站内通知',
+          enabled: true,
+          config: {},
+        },
+      ]),
+    });
+    dispatcher.registerChannelFactory(NotificationChannelType.WECHAT_WORK, () =>
+      createChannel('wechat_work', wechatSend),
+    );
+    dispatcher.register(createChannel(NotificationChannelType.INBOX, inboxSend));
+
+    await expect(dispatcher.dispatch(createMessage())).resolves.toEqual({
+      success: false,
+      totalChannels: 2,
+      succeeded: 1,
+      failed: 1,
+      errors: [
+        {
+          channel: '企业微信',
+          message: 'wechat failed',
+        },
+      ],
+    });
+    expect(wechatSend).toHaveBeenCalledTimes(1);
+    expect(inboxSend).toHaveBeenCalledTimes(1);
   });
 });
