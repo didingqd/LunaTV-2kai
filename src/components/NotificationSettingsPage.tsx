@@ -1,25 +1,39 @@
 'use client';
 
 import {
-  Bell,
   Check,
+  CheckCircle2,
+  Edit3,
   LoaderCircle,
   MessageSquarePlus,
   RotateCcw,
-  Save,
   Trash2,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+
+import {
+  DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
+  NOTIFICATION_EVENT_METAS,
+  NOTIFICATION_PROVIDER_METAS,
+  getCreatableNotificationProviderMetas,
+  getNotificationProviderMeta,
+  type NotificationProviderMeta,
+} from './notification-settings-provider-ui';
 
 interface NotificationChannelConfig {
   id: string;
-  type: 'inbox' | 'wechat_work';
+  type: string;
   name: string;
   enabled: boolean;
+  subscribedEvents?: string[];
   config: Record<string, unknown>;
 }
 
 interface NotificationSettings {
+  version?: number;
   inboxEnabled: boolean;
   watchingUpdateFoundEnabled: boolean;
   watchingUpdateFailedEnabled: boolean;
@@ -31,6 +45,22 @@ interface SettingsResponse {
   settings: NotificationSettings;
 }
 
+interface ChannelFormState {
+  mode: 'create' | 'edit';
+  channelId?: string;
+  providerType: string;
+  name: string;
+  subscribedEvents: string[];
+  config: Record<string, string>;
+  originalConfig: Record<string, string>;
+}
+
+interface ChannelTestResult {
+  status: 'success' | 'error';
+  message: string;
+  time: number;
+}
+
 const NOTIFICATION_SETTINGS_ENDPOINT = '/api/user/notification-settings';
 const NOTIFICATION_CHANNELS_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/channels`;
 const NOTIFICATION_TEST_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/test`;
@@ -39,45 +69,126 @@ async function readSettingsResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) throw new Error('请先登录后修改通知设置');
-    if (response.status === 400) throw new Error(data.error || '通知设置格式无效');
+    if (response.status === 403) throw new Error('只有管理员可以修改通知设置');
+    if (response.status === 400)
+      throw new Error(data.error || '通知设置格式无效');
     throw new Error(data.error || '通知设置请求失败');
   }
   return data as SettingsResponse;
 }
 
-function SettingToggle({
-  checked,
-  description,
-  disabled,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  description: string;
-  disabled: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className='flex items-start gap-3 rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900'>
-      <input
-        type='checkbox'
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className='mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-950'
-      />
-      <span className='min-w-0'>
-        <span className='block text-sm font-medium text-gray-900 dark:text-gray-100'>
-          {label}
-        </span>
-        <span className='mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
-          {description}
-        </span>
-      </span>
-    </label>
+function isAdminRole(role?: string) {
+  return role === 'owner' || role === 'admin';
+}
+
+function getCompatibleSubscribedEvents(
+  channel: NotificationChannelConfig,
+  settings: NotificationSettings,
+) {
+  if (Array.isArray(channel.subscribedEvents)) return channel.subscribedEvents;
+
+  // 仅用于旧数据兼容展示：UI 保存时只写每个渠道自己的 subscribedEvents，
+  // 不再渲染或提交 watchingUpdateFoundEnabled / watchingUpdateFailedEnabled 大表单。
+  const events: string[] = [];
+  if (settings.watchingUpdateFoundEnabled) events.push('watching.update_found');
+  if (settings.watchingUpdateFailedEnabled)
+    events.push('watching.update_failed');
+  return events;
+}
+
+function normalizeConfigForForm(
+  provider: NotificationProviderMeta,
+  source: Record<string, unknown>,
+) {
+  return provider.configSchema.fields.reduce<Record<string, string>>(
+    (config, field) => {
+      const value = source[field.key];
+      config[field.key] =
+        typeof value === 'string'
+          ? value
+          : (provider.defaultConfig[field.key] ?? '');
+      return config;
+    },
+    {},
   );
+}
+
+function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
+  return {
+    mode: 'create',
+    providerType: provider.type,
+    name: provider.defaultName,
+    subscribedEvents: [...DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS],
+    config: { ...provider.defaultConfig },
+    originalConfig: {},
+  };
+}
+
+function buildEditForm(
+  channel: NotificationChannelConfig,
+  settings: NotificationSettings,
+): ChannelFormState {
+  const provider = getNotificationProviderMeta(channel.type);
+  const config = normalizeConfigForForm(provider, channel.config);
+  return {
+    mode: 'edit',
+    channelId: channel.id,
+    providerType: channel.type,
+    name: channel.name,
+    subscribedEvents: getCompatibleSubscribedEvents(channel, settings),
+    config,
+    originalConfig: config,
+  };
+}
+
+function toggleEventSubscription(events: string[], eventType: string) {
+  const next = new Set(events);
+  if (next.has(eventType)) next.delete(eventType);
+  else next.add(eventType);
+  return Array.from(next);
+}
+
+function hasConfigPatch(form: ChannelFormState) {
+  const provider = getNotificationProviderMeta(form.providerType);
+  return provider.configSchema.fields.some(
+    (field) => form.config[field.key] !== form.originalConfig[field.key],
+  );
+}
+
+function buildConfigPatch(form: ChannelFormState) {
+  const provider = getNotificationProviderMeta(form.providerType);
+  return provider.configSchema.fields.reduce<Record<string, string>>(
+    (patch, field) => {
+      const nextValue = form.config[field.key] ?? '';
+      if (
+        form.mode === 'create' ||
+        nextValue !== form.originalConfig[field.key]
+      ) {
+        patch[field.key] = nextValue;
+      }
+      return patch;
+    },
+    {},
+  );
+}
+
+function isFormValid(form: ChannelFormState) {
+  const provider = getNotificationProviderMeta(form.providerType);
+  if (!form.name.trim()) return false;
+  return provider.configSchema.fields.every((field) => {
+    if (!field.required) return true;
+    return Boolean((form.config[field.key] ?? '').trim());
+  });
+}
+
+function formatTestTime(value: number) {
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export default function NotificationSettingsPage({
@@ -86,18 +197,29 @@ export default function NotificationSettingsPage({
   embedded?: boolean;
 } = {}) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
-  const [draft, setDraft] = useState<NotificationSettings | null>(null);
-  const [addingWeChatWork, setAddingWeChatWork] = useState(false);
-  const [newChannelName, setNewChannelName] = useState('企业微信');
-  const [newWebhookUrl, setNewWebhookUrl] = useState('');
-  const [editingWebhookById, setEditingWebhookById] = useState<
-    Record<string, string>
-  >({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [channelSavingId, setChannelSavingId] = useState<string | null>(null);
+  const [providerPickerOpen, setProviderPickerOpen] = useState(false);
+  const [form, setForm] = useState<ChannelFormState | null>(null);
+  const [testResults, setTestResults] = useState<
+    Record<string, ChannelTestResult>
+  >({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [canManageSettings, setCanManageSettings] = useState(false);
+
+  const creatableProviders = useMemo(
+    () => getCreatableNotificationProviderMetas(),
+    [],
+  );
+
+  useEffect(() => {
+    const auth = getAuthInfoFromBrowserCookie();
+    setCanManageSettings(isAdminRole(auth?.role));
+    setAuthChecked(true);
+  }, []);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -108,8 +230,8 @@ export default function NotificationSettingsPage({
       });
       const data = await readSettingsResponse(response);
       setSettings(data.settings);
-      setDraft(data.settings);
-      setEditingWebhookById({});
+      setForm(null);
+      setProviderPickerOpen(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '通知设置请求失败');
     } finally {
@@ -118,43 +240,19 @@ export default function NotificationSettingsPage({
   }, []);
 
   useEffect(() => {
+    if (!authChecked) return;
+    if (!canManageSettings) {
+      setLoading(false);
+      setSettings(null);
+      return;
+    }
     void loadSettings();
-  }, [loadSettings]);
-
-  const updateDraft = (field: keyof NotificationSettings, value: boolean) => {
-    setDraft((current) => (current ? { ...current, [field]: value } : current));
-    setMessage(null);
-  };
+  }, [authChecked, canManageSettings, loadSettings]);
 
   const applySettings = (next: NotificationSettings) => {
     setSettings(next);
-    setDraft(next);
-    setEditingWebhookById({});
-  };
-
-  const saveSettings = async () => {
-    if (!draft) return;
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const response = await fetch(NOTIFICATION_SETTINGS_ENDPOINT, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inboxEnabled: draft.inboxEnabled,
-          watchingUpdateFoundEnabled: draft.watchingUpdateFoundEnabled,
-          watchingUpdateFailedEnabled: draft.watchingUpdateFailedEnabled,
-        }),
-      });
-      const data = await readSettingsResponse(response);
-      applySettings(data.settings);
-      setMessage('通知设置已保存');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '通知设置保存失败');
-    } finally {
-      setSaving(false);
-    }
+    setForm(null);
+    setProviderPickerOpen(false);
   };
 
   const restoreDefault = async () => {
@@ -175,30 +273,44 @@ export default function NotificationSettingsPage({
     }
   };
 
-  const createWeChatWorkChannel = async () => {
+  const saveChannelForm = async () => {
+    if (!form || !isFormValid(form)) return;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(NOTIFICATION_CHANNELS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'wechat_work',
-          name: newChannelName,
-          config: {
-            webhookUrl: newWebhookUrl,
-          },
-        }),
-      });
+      const configPatch = buildConfigPatch(form);
+      const body: Record<string, unknown> = {
+        name: form.name.trim(),
+        subscribedEvents: form.subscribedEvents,
+      };
+      if (form.mode === 'create') {
+        body.type = form.providerType;
+        body.config = configPatch;
+      } else if (hasConfigPatch(form)) {
+        body.config = configPatch;
+      }
+      const response = await fetch(
+        form.mode === 'create'
+          ? NOTIFICATION_CHANNELS_ENDPOINT
+          : `${NOTIFICATION_CHANNELS_ENDPOINT}/${form.channelId}`,
+        {
+          method: form.mode === 'create' ? 'POST' : 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
       const data = await readSettingsResponse(response);
       applySettings(data.settings);
-      setAddingWeChatWork(false);
-      setNewChannelName('企业微信');
-      setNewWebhookUrl('');
-      setMessage('通知方式已添加');
+      setMessage(form.mode === 'create' ? '通知方式已添加' : '通知方式已更新');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '通知方式添加失败');
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : form.mode === 'create'
+            ? '通知方式添加失败'
+            : '通知方式更新失败',
+      );
     } finally {
       setSaving(false);
     }
@@ -212,11 +324,14 @@ export default function NotificationSettingsPage({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
+      const response = await fetch(
+        `${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        },
+      );
       const data = await readSettingsResponse(response);
       applySettings(data.settings);
       setMessage('通知方式已更新');
@@ -232,9 +347,12 @@ export default function NotificationSettingsPage({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(
+        `${NOTIFICATION_CHANNELS_ENDPOINT}/${channel.id}`,
+        {
+          method: 'DELETE',
+        },
+      );
       const data = await readSettingsResponse(response);
       applySettings(data.settings);
       setMessage('通知方式已删除');
@@ -256,24 +374,205 @@ export default function NotificationSettingsPage({
         body: JSON.stringify({ channelId: channel.id }),
       });
       await readSettingsResponse(response);
+      setTestResults((current) => ({
+        ...current,
+        [channel.id]: {
+          status: 'success',
+          message: '测试通知已发送',
+          time: Date.now(),
+        },
+      }));
       setMessage('测试通知已发送');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '测试通知发送失败');
+      const reasonMessage =
+        reason instanceof Error ? reason.message : '测试通知发送失败';
+      setTestResults((current) => ({
+        ...current,
+        [channel.id]: {
+          status: 'error',
+          message: reasonMessage,
+          time: Date.now(),
+        },
+      }));
+      setError(reasonMessage);
     } finally {
       setChannelSavingId(null);
     }
   };
 
-  const hasChanges =
-    Boolean(settings && draft) &&
-    (settings?.inboxEnabled !== draft?.inboxEnabled ||
-      settings?.watchingUpdateFoundEnabled !==
-        draft?.watchingUpdateFoundEnabled ||
-      settings?.watchingUpdateFailedEnabled !==
-        draft?.watchingUpdateFailedEnabled);
+  const openCreateForm = (provider: NotificationProviderMeta) => {
+    if (!provider.capabilities.canCreate) return;
+    setForm(buildCreateForm(provider));
+    setProviderPickerOpen(false);
+    setMessage(null);
+    setError(null);
+  };
 
-  const getChannelTypeLabel = (type: NotificationChannelConfig['type']) =>
-    type === 'wechat_work' ? '企业微信' : '站内通知';
+  const openEditForm = (channel: NotificationChannelConfig) => {
+    if (!settings) return;
+    const provider = getNotificationProviderMeta(channel.type);
+    if (!provider.capabilities.canEdit) return;
+    setForm(buildEditForm(channel, settings));
+    setProviderPickerOpen(false);
+    setMessage(null);
+    setError(null);
+  };
+
+  const renderChannelForm = () => {
+    if (!form) return null;
+    const provider = getNotificationProviderMeta(form.providerType);
+    const Icon = provider.icon;
+    const title = form.mode === 'create' ? '添加通知方式' : '编辑通知方式';
+
+    return (
+      <section className='rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20'>
+        <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
+          <div className='flex items-start gap-3'>
+            <span className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'>
+              <Icon className='h-5 w-5' />
+            </span>
+            <div>
+              <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                {title} · {provider.displayName}
+              </h3>
+              <p className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                配置项由 Provider Schema 统一驱动；事件订阅保存到当前通知方式的
+                subscribedEvents。
+              </p>
+            </div>
+          </div>
+          <button
+            type='button'
+            onClick={() => setForm(null)}
+            disabled={saving}
+            className='inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-white hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200'
+            aria-label='关闭配置'
+          >
+            <X className='h-4 w-4' />
+          </button>
+        </div>
+
+        <div className='mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'>
+          <label className='flex flex-col gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200'>
+            渠道名称
+            <input
+              aria-label='渠道名称'
+              value={form.name}
+              disabled={saving}
+              onChange={(event) =>
+                setForm((current) =>
+                  current ? { ...current, name: event.target.value } : current,
+                )
+              }
+              className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+            />
+          </label>
+
+          {provider.configSchema.fields.map((field) => (
+            <label
+              key={field.key}
+              className='flex flex-col gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200'
+            >
+              {field.label}
+              <input
+                aria-label={field.label}
+                type={field.type}
+                required={field.required}
+                value={form.config[field.key] ?? ''}
+                disabled={saving}
+                onChange={(event) =>
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          config: {
+                            ...current.config,
+                            [field.key]: event.target.value,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                placeholder={field.placeholder}
+                className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+              />
+              {field.description && (
+                <span className='text-xs font-normal leading-5 text-gray-500 dark:text-gray-400'>
+                  {field.description}
+                </span>
+              )}
+            </label>
+          ))}
+        </div>
+
+        <div className='mt-5 rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/60'>
+          <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+            订阅事件
+          </div>
+          <div className='mt-3 grid gap-2 md:grid-cols-2'>
+            {NOTIFICATION_EVENT_METAS.map((eventMeta) => {
+              const checked = form.subscribedEvents.includes(eventMeta.type);
+              return (
+                <label
+                  key={eventMeta.type}
+                  className='flex items-start gap-3 rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800'
+                >
+                  <input
+                    type='checkbox'
+                    aria-label={eventMeta.label}
+                    checked={checked}
+                    disabled={saving}
+                    onChange={() =>
+                      setForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              subscribedEvents: toggleEventSubscription(
+                                current.subscribedEvents,
+                                eventMeta.type,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    className='mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-950'
+                  />
+                  <span>
+                    <span className='block font-medium text-gray-800 dark:text-gray-100'>
+                      {eventMeta.label}
+                    </span>
+                    <span className='mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                      {eventMeta.description}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className='mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end'>
+          <button
+            type='button'
+            disabled={saving}
+            onClick={() => setForm(null)}
+            className='rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            取消
+          </button>
+          <button
+            type='button'
+            disabled={saving || !isFormValid(form)}
+            onClick={saveChannelForm}
+            className='inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
+          >
+            {saving && <LoaderCircle className='h-4 w-4 animate-spin' />}
+            保存通知方式
+          </button>
+        </div>
+      </section>
+    );
+  };
 
   return (
     <main
@@ -293,12 +592,20 @@ export default function NotificationSettingsPage({
         <header className='border-b border-gray-200 pb-4 dark:border-gray-800'>
           <div className='flex items-center gap-3'>
             <span className='inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'>
-              <Bell className='h-5 w-5' />
+              <CheckCircle2 className='h-5 w-5' />
             </span>
             <div>
-              <h1 className={embedded ? 'text-lg font-semibold tracking-normal' : 'text-2xl font-semibold tracking-normal'}>通知设置</h1>
+              <h1
+                className={
+                  embedded
+                    ? 'text-lg font-semibold tracking-normal'
+                    : 'text-2xl font-semibold tracking-normal'
+                }
+              >
+                通知设置
+              </h1>
               <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                管理站内通知和追更通知接收偏好
+                以通知方式为单位管理启停、测试和事件订阅
               </p>
             </div>
           </div>
@@ -308,6 +615,12 @@ export default function NotificationSettingsPage({
           <div className='flex items-center gap-2 rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'>
             <LoaderCircle className='h-4 w-4 animate-spin' />
             正在加载通知设置
+          </div>
+        )}
+
+        {!loading && !canManageSettings && (
+          <div className='rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200'>
+            通知设置仅管理员可见。普通用户仍可在通知中心查看自己的通知列表。
           </div>
         )}
 
@@ -324,217 +637,236 @@ export default function NotificationSettingsPage({
           </div>
         )}
 
-        {draft && (
+        {settings && canManageSettings && (
           <>
             <section className='space-y-3'>
-              <div>
-                <div className='flex items-center justify-between gap-3'>
-                  <div>
-                    <h2 className='text-base font-semibold'>通知方式</h2>
-                    <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                      管理站内通知和企业微信等通知渠道
-                    </p>
-                  </div>
-                  <button
-                    type='button'
-                    onClick={() => setAddingWeChatWork(true)}
-                    disabled={saving || addingWeChatWork}
-                    className='inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
-                  >
-                    <MessageSquarePlus className='h-4 w-4' />
-                    添加通知方式
-                  </button>
+              <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                <div>
+                  <h2 className='text-base font-semibold'>通知方式</h2>
+                  <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+                    每个通知方式独立配置、独立启停，并订阅自己需要接收的事件。
+                  </p>
                 </div>
+                <button
+                  type='button'
+                  onClick={() => {
+                    setProviderPickerOpen((open) => !open);
+                    setForm(null);
+                  }}
+                  disabled={saving}
+                  className='inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
+                >
+                  <MessageSquarePlus className='h-4 w-4' />
+                  添加通知方式
+                </button>
               </div>
 
-              {draft.channels.map((channel) => {
-                const pending = channelSavingId === channel.id;
-                const editableWebhook =
-                  editingWebhookById[channel.id] ??
-                  (typeof channel.config.webhookUrl === 'string'
-                    ? channel.config.webhookUrl
-                    : '');
-                return (
-                  <div
-                    key={channel.id}
-                    className='rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900'
-                  >
-                    <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                      <div className='min-w-0'>
-                        <div className='flex flex-wrap items-center gap-2'>
-                          <span className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                            {channel.name}
-                          </span>
-                          <span className='rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300'>
-                            {getChannelTypeLabel(channel.type)}
-                          </span>
-                          <span
-                            className={`rounded-md px-2 py-0.5 text-xs ${
-                              channel.enabled
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                            }`}
-                          >
-                            {channel.enabled ? '已启用' : '已禁用'}
-                          </span>
-                        </div>
-                        {channel.type === 'wechat_work' && (
-                          <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
-                            Webhook：
-                            {typeof channel.config.webhookUrl === 'string'
-                              ? channel.config.webhookUrl
-                              : '未配置'}
-                          </p>
-                        )}
-                      </div>
-                      <div className='flex flex-wrap gap-2'>
+              {providerPickerOpen && (
+                <div className='rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900'>
+                  <div className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                    选择通知方式
+                  </div>
+                  <p className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                    先选择 Provider，再进入对应 Schema
+                    生成的配置界面，避免把所有渠道字段堆在同一张表单。
+                  </p>
+                  <div className='mt-3 grid gap-3 md:grid-cols-2'>
+                    {NOTIFICATION_PROVIDER_METAS.map((provider) => {
+                      const Icon = provider.icon;
+                      const disabled = !provider.capabilities.canCreate;
+                      return (
                         <button
+                          key={provider.type}
                           type='button'
-                          disabled={pending || saving}
-                          onClick={() =>
-                            updateChannel(channel, {
-                              enabled: !channel.enabled,
-                            })
-                          }
-                          className='rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
+                          disabled={saving || disabled}
+                          onClick={() => openCreateForm(provider)}
+                          className='flex items-start gap-3 rounded-lg border border-gray-200 p-4 text-left transition-colors hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:hover:border-blue-800 dark:hover:bg-blue-950/20'
                         >
-                          {channel.enabled ? '禁用' : '启用'}
+                          <span className='inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'>
+                            <Icon className='h-5 w-5' />
+                          </span>
+                          <span className='min-w-0'>
+                            <span className='block text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                              {provider.displayName}
+                            </span>
+                            <span className='mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                              {provider.description}
+                            </span>
+                            {disabled && (
+                              <span className='mt-2 inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400'>
+                                系统默认或暂不可新增
+                              </span>
+                            )}
+                          </span>
                         </button>
-                        {channel.type === 'wechat_work' && (
-                          <button
-                            type='button'
-                            disabled={pending || saving || !channel.enabled}
-                            onClick={() => sendTest(channel)}
-                            className='rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
-                          >
-                            测试发送
-                          </button>
-                        )}
-                        {channel.type !== 'inbox' && (
-                          <button
-                            type='button'
-                            disabled={pending || saving}
-                            onClick={() => deleteChannel(channel)}
-                            className='inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30'
-                          >
-                            <Trash2 className='h-3.5 w-3.5' />
-                            删除
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {channel.type === 'wechat_work' && (
-                      <div className='mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]'>
-                        <input
-                          aria-label={`${channel.name}名称`}
-                          value={channel.name}
-                          disabled={pending || saving}
-                          onChange={(event) =>
-                            updateChannel(channel, { name: event.target.value })
-                          }
-                          className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
-                        />
-                        <input
-                          aria-label={`${channel.name}Webhook URL`}
-                          value={editableWebhook}
-                          disabled={pending || saving}
-                          onChange={(event) =>
-                            setEditingWebhookById((current) => ({
-                              ...current,
-                              [channel.id]: event.target.value,
-                            }))
-                          }
-                          placeholder='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'
-                          className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
-                        />
-                        <button
-                          type='button'
-                          disabled={pending || saving}
-                          onClick={() =>
-                            updateChannel(channel, {
-                              config: { webhookUrl: editableWebhook },
-                            })
-                          }
-                          className='rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                        >
-                          保存渠道
-                        </button>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
-
-              {addingWeChatWork && (
-                <div className='rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20'>
-                  <h3 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                    添加企业微信
-                  </h3>
-                  <div className='mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'>
-                    <input
-                      aria-label='通知方式名称'
-                      value={newChannelName}
-                      disabled={saving}
-                      onChange={(event) => setNewChannelName(event.target.value)}
-                      className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
-                    />
-                    <input
-                      aria-label='企业微信 Webhook URL'
-                      value={newWebhookUrl}
-                      disabled={saving}
-                      onChange={(event) => setNewWebhookUrl(event.target.value)}
-                      placeholder='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'
-                      className='rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
-                    />
-                  </div>
-                  <div className='mt-3 flex justify-end gap-2'>
-                    <button
-                      type='button'
-                      disabled={saving}
-                      onClick={() => setAddingWeChatWork(false)}
-                      className='rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                    >
-                      取消
-                    </button>
-                    <button
-                      type='button'
-                      disabled={saving || !newWebhookUrl.trim()}
-                      onClick={createWeChatWorkChannel}
-                      className='rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-                    >
-                      创建
-                    </button>
-                  </div>
+                  {creatableProviders.length === 0 && (
+                    <p className='mt-3 text-xs text-gray-500 dark:text-gray-400'>
+                      当前没有可新增的通知方式。
+                    </p>
+                  )}
                 </div>
               )}
-            </section>
 
-            <section className='space-y-3'>
-              <div>
-                <h2 className='text-base font-semibold'>追更通知</h2>
-                <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                  控制追更检查结果是否生成通知
-                </p>
+              {renderChannelForm()}
+
+              <div className='grid gap-3'>
+                {settings.channels.map((channel) => {
+                  const provider = getNotificationProviderMeta(channel.type);
+                  const Icon = provider.icon;
+                  const pending = channelSavingId === channel.id;
+                  const subscribedEvents = getCompatibleSubscribedEvents(
+                    channel,
+                    settings,
+                  );
+                  const testResult = testResults[channel.id];
+                  return (
+                    <article
+                      key={channel.id}
+                      className='rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900'
+                    >
+                      <div className='flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between'>
+                        <div className='flex min-w-0 gap-3'>
+                          <span className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'>
+                            <Icon className='h-5 w-5' />
+                          </span>
+                          <div className='min-w-0'>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <h3 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+                                {provider.displayName}
+                              </h3>
+                              <span className='rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300'>
+                                {channel.name}
+                              </span>
+                              <span
+                                className={`rounded-md px-2 py-0.5 text-xs ${
+                                  channel.enabled
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                    : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                                }`}
+                              >
+                                {channel.enabled ? '启用' : '关闭'}
+                              </span>
+                            </div>
+                            <p className='mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400'>
+                              {provider.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className='flex flex-wrap items-center gap-2'>
+                          {provider.capabilities.canToggle && (
+                            <label className='inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 dark:border-gray-700 dark:text-gray-200'>
+                              <input
+                                type='checkbox'
+                                role='switch'
+                                aria-label={`启停 ${channel.name}`}
+                                checked={channel.enabled}
+                                disabled={pending || saving}
+                                onChange={() =>
+                                  updateChannel(channel, {
+                                    enabled: !channel.enabled,
+                                  })
+                                }
+                                className='h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-950'
+                              />
+                              {channel.enabled ? '关闭' : '启用'}
+                            </label>
+                          )}
+                          {provider.capabilities.canTest && (
+                            <button
+                              type='button'
+                              disabled={pending || saving || !channel.enabled}
+                              onClick={() => sendTest(channel)}
+                              className='rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
+                            >
+                              {pending ? '处理中' : '测试'}
+                            </button>
+                          )}
+                          {provider.capabilities.canEdit && (
+                            <button
+                              type='button'
+                              disabled={pending || saving}
+                              onClick={() => openEditForm(channel)}
+                              className='inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'
+                            >
+                              <Edit3 className='h-3.5 w-3.5' />
+                              编辑
+                            </button>
+                          )}
+                          {provider.capabilities.canDelete && (
+                            <button
+                              type='button'
+                              disabled={pending || saving}
+                              onClick={() => deleteChannel(channel)}
+                              className='inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30'
+                            >
+                              <Trash2 className='h-3.5 w-3.5' />
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className='mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'>
+                        <div className='rounded-md border border-gray-200 p-3 dark:border-gray-800'>
+                          <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'>
+                            订阅事件
+                          </div>
+                          <div className='mt-3 grid gap-2 sm:grid-cols-2'>
+                            {NOTIFICATION_EVENT_METAS.map((eventMeta) => {
+                              const enabled = subscribedEvents.includes(
+                                eventMeta.type,
+                              );
+                              return (
+                                <div
+                                  key={eventMeta.type}
+                                  className='flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200'
+                                >
+                                  {enabled ? (
+                                    <Check className='h-4 w-4 text-emerald-500' />
+                                  ) : (
+                                    <X className='h-4 w-4 text-gray-400' />
+                                  )}
+                                  <span>{eventMeta.label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className='rounded-md border border-gray-200 p-3 dark:border-gray-800'>
+                          <div className='text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'>
+                            最近测试结果
+                          </div>
+                          <div className='mt-3 text-sm text-gray-700 dark:text-gray-200'>
+                            {testResult ? (
+                              <div
+                                className={
+                                  testResult.status === 'success'
+                                    ? 'text-emerald-600 dark:text-emerald-300'
+                                    : 'text-red-600 dark:text-red-300'
+                                }
+                              >
+                                <div>{testResult.message}</div>
+                                <div className='mt-1 text-xs opacity-80'>
+                                  {formatTestTime(testResult.time)}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className='text-gray-500 dark:text-gray-400'>
+                                暂无测试记录
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-              <SettingToggle
-                label='发现更新'
-                description='追更检查发现新剧集时通知我。'
-                checked={draft.watchingUpdateFoundEnabled}
-                disabled={saving}
-                onChange={(checked) =>
-                  updateDraft('watchingUpdateFoundEnabled', checked)
-                }
-              />
-              <SettingToggle
-                label='检查失败'
-                description='追更检查遇到资源站异常或解析失败时通知我。'
-                checked={draft.watchingUpdateFailedEnabled}
-                disabled={saving}
-                onChange={(checked) =>
-                  updateDraft('watchingUpdateFailedEnabled', checked)
-                }
-              />
             </section>
 
             <div className='flex flex-col gap-2 border-t border-gray-200 pt-5 dark:border-gray-800 sm:flex-row sm:justify-end'>
@@ -546,19 +878,6 @@ export default function NotificationSettingsPage({
               >
                 <RotateCcw className='h-4 w-4' />
                 恢复默认
-              </button>
-              <button
-                type='button'
-                onClick={saveSettings}
-                disabled={saving || !hasChanges}
-                className='inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-              >
-                {saving ? (
-                  <LoaderCircle className='h-4 w-4 animate-spin' />
-                ) : (
-                  <Save className='h-4 w-4' />
-                )}
-                保存
               </button>
             </div>
           </>

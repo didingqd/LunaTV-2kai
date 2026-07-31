@@ -45,6 +45,11 @@ describe('ManualTriggerUseCase', () => {
     expect(run).toHaveBeenCalledWith({
       trigger: 'manual',
       requestedBy: 'alice',
+      audit: {
+        source: 'trigger',
+        operation: 'manual-trigger',
+        userIds: ['alice'],
+      },
     });
   });
 
@@ -132,6 +137,33 @@ describe('ManualTriggerUseCase', () => {
       code: 'TRIGGER_LINK_DISABLED',
     } satisfies Partial<ManualTriggerUseCaseError>);
     expect(run).not.toHaveBeenCalled();
+  });
+
+
+  it('passes sanitized trigger request metadata into JobRunner audit', async () => {
+    const run = jest.fn().mockResolvedValue(jobResult());
+    const useCase = new ManualTriggerUseCase(async () => adminConfig(), { run });
+    const auditRequest = {
+      method: 'POST',
+      path: '/api/watching-updates/trigger',
+      userId: 'alice',
+      requestedBy: 'alice',
+      trigger: 'manual',
+      client: {},
+    };
+
+    await useCase.execute('alice', { auditRequest });
+
+    expect(run).toHaveBeenCalledWith({
+      trigger: 'manual',
+      requestedBy: 'alice',
+      audit: {
+        source: 'trigger',
+        operation: 'manual-trigger',
+        request: auditRequest,
+        userIds: ['alice'],
+      },
+    });
   });
 
   it('returns JobRunner single-flight result unchanged', async () => {

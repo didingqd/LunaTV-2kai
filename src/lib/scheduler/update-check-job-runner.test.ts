@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import type { UpdateCheckSchedulerResult } from '@/lib/update-check-scheduler';
+import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 
 import { UpdateCheckJobRunner } from './update-check-job-runner';
 
@@ -11,15 +12,58 @@ const schedulerResult: UpdateCheckSchedulerResult = {
   oldestDueAt: 100,
 };
 
+const auditTask: UpdateCheckTask = {
+  id: 'task-1',
+  userId: 'alice',
+  followId: 'follow-1',
+  source: 'douban',
+  resourceId: 'resource-1',
+  nextCheckAt: 100,
+  attempt: 0,
+  createdAt: 90,
+  updatedAt: 95,
+};
+
+const auditResult: UpdateResult = {
+  userId: 'alice',
+  followId: 'follow-1',
+  source: 'douban',
+  resourceId: 'resource-1',
+  title: '????',
+  latestEpisode: 2,
+  watchedEpisode: 1,
+  unwatchedCount: 1,
+  hasUpdate: true,
+  checkedAt: 120,
+  expireAt: 220,
+  status: 'stale',
+  revision: 1,
+  metadata: {
+    algorithmVersion: 1,
+    completionThreshold: 0,
+    baselineEpisode: 1,
+    effectiveLatestEpisode: 2,
+    releasedEpisodeCount: 2,
+  },
+};
+
 function clock(...values: number[]) {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)];
 }
 
+function noAuditRunner(
+  run: jest.Mock | { run: jest.Mock | (() => Promise<UpdateCheckSchedulerResult>) },
+  now: () => number,
+) {
+  const scheduler = 'run' in run ? run : { run };
+  return new UpdateCheckJobRunner(scheduler, now, null);
+}
+
 describe('UpdateCheckJobRunner', () => {
   it('runs the scheduler and returns its result unchanged', async () => {
     const run = jest.fn(async () => schedulerResult);
-    const runner = new UpdateCheckJobRunner({ run }, clock(1_000, 1_025));
+    const runner = noAuditRunner(run, clock(1_000, 1_025));
 
     const result = await runner.run({
       trigger: 'cron',
@@ -28,7 +72,10 @@ describe('UpdateCheckJobRunner', () => {
     });
 
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith({ limit: 25 });
+    expect(run).toHaveBeenCalledWith({
+      limit: 25,
+      onTaskComplete: expect.any(Function),
+    });
     expect(result).toEqual({
       trigger: 'cron',
       requestedBy: 'system',
@@ -45,19 +92,89 @@ describe('UpdateCheckJobRunner', () => {
   it('passes task completion callback through to the scheduler', async () => {
     const run = jest.fn(async () => schedulerResult);
     const onTaskComplete = jest.fn();
-    const runner = new UpdateCheckJobRunner({ run }, clock(1_000, 1_025));
+    const runner = noAuditRunner(run, clock(1_000, 1_025));
 
     await runner.run({ trigger: 'cron', onTaskComplete });
 
-    expect(run).toHaveBeenCalledWith({ onTaskComplete });
+    const schedulerOptions = (run as jest.Mock).mock.calls[0]?.[0] as {
+      onTaskComplete?: (value: {
+        task: UpdateCheckTask;
+        result: UpdateResult | null;
+      }) => Promise<void>;
+    };
+    const wrappedCallback = schedulerOptions.onTaskComplete;
+    expect(wrappedCallback).toEqual(expect.any(Function));
+    await wrappedCallback?.({ task: auditTask, result: auditResult });
+    expect(onTaskComplete).toHaveBeenCalledWith({
+      task: auditTask,
+      result: auditResult,
+    });
+  });
+
+  it('records start and finish audit logs around the scheduler run', async () => {
+    const auditLogger = { record: jest.fn().mockResolvedValue(undefined) };
+    const run = jest.fn(async ({ onTaskComplete }) => {
+      await onTaskComplete({ task: auditTask, result: auditResult });
+      return schedulerResult;
+    });
+    const runner = new UpdateCheckJobRunner(
+      { run },
+      clock(1_000, 1_025),
+      auditLogger,
+    );
+
+    await runner.run({ trigger: 'cron', requestedBy: 'docker' });
+
+    expect(auditLogger.record).toHaveBeenCalledTimes(2);
+    expect(auditLogger.record).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        source: 'cron',
+        operation: 'scheduled-check',
+        request: expect.objectContaining({
+          method: 'SCHEDULED',
+          path: 'scheduler://update-checks',
+          requestedBy: 'docker',
+          trigger: 'cron',
+        }),
+        execution: expect.objectContaining({
+          stage: 'started',
+          startedAt: 1_000,
+          finishedAt: 1_000,
+          success: true,
+        }),
+      }),
+      {},
+    );
+    expect(auditLogger.record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        source: 'cron',
+        operation: 'scheduled-check',
+        execution: expect.objectContaining({
+          stage: 'finished',
+          startedAt: 1_000,
+          finishedAt: 1_025,
+          durationMs: 25,
+          success: true,
+        }),
+        result: expect.objectContaining({
+          checkedCount: 3,
+          successCount: 2,
+          failureCount: 1,
+          updateFoundCount: 1,
+        }),
+      }),
+      { userIds: ['alice'] },
+    );
   });
 
   it('returns failure metadata when the scheduler throws', async () => {
-    const runner = new UpdateCheckJobRunner(
+    const runner = noAuditRunner(
       {
-        run: async () => {
+        run: jest.fn(async () => {
           throw new Error('scheduler failed');
-        },
+        }),
       },
       clock(2_000, 2_040),
     );
@@ -80,10 +197,7 @@ describe('UpdateCheckJobRunner', () => {
       finish = resolve;
     });
     const run = jest.fn(() => pending);
-    const runner = new UpdateCheckJobRunner(
-      { run },
-      clock(3_000, 3_010, 3_050),
-    );
+    const runner = noAuditRunner(run, clock(3_000, 3_010, 3_050));
 
     const firstRun = runner.run({ trigger: 'cron' });
     const secondResult = await runner.run({
@@ -118,10 +232,7 @@ describe('UpdateCheckJobRunner', () => {
       .fn()
       .mockRejectedValueOnce(new Error('first failed'))
       .mockResolvedValueOnce(schedulerResult);
-    const runner = new UpdateCheckJobRunner(
-      { run },
-      clock(4_000, 4_010, 4_020, 4_030),
-    );
+    const runner = noAuditRunner(run, clock(4_000, 4_010, 4_020, 4_030));
 
     const first = await runner.run({ trigger: 'cron' });
     const second = await runner.run({ trigger: 'cron' });

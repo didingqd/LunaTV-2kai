@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { NotificationDispatcher } from './notification-dispatcher';
 import { InboxNotificationChannel } from './inbox-notification-channel';
@@ -6,7 +6,7 @@ import {
   InboxNotificationRepository,
   type InboxNotificationStore,
 } from './inbox-notification-repository';
-import { notificationDispatcher } from './notification-dispatcher';
+import { notificationProviderRegistry } from './notification-provider-bootstrap';
 import { NotificationMessageType } from './notification-types';
 
 class MemoryInboxNotificationStore implements InboxNotificationStore {
@@ -63,7 +63,9 @@ describe('InboxNotificationChannel', () => {
     const dispatcher = new NotificationDispatcher({
       shouldDispatch: jest.fn(async () => true),
     });
-    dispatcher.register(new InboxNotificationChannel(repository, () => 'inbox-2'));
+    dispatcher.register(
+      new InboxNotificationChannel(repository, () => 'inbox-2'),
+    );
 
     const result = await dispatcher.dispatch({
       userId: 'alice',
@@ -83,9 +85,9 @@ describe('InboxNotificationChannel', () => {
     await expect(repository.listForUser('alice')).resolves.toHaveLength(1);
   });
 
-  it('registers inbox on the shared dispatcher singleton', () => {
-    expect(
-      notificationDispatcher.getChannels().some((channel) => channel.name === 'inbox'),
-    ).toBe(true);
+  it('registers inbox on the shared provider registry singleton', () => {
+    expect(notificationProviderRegistry.get('inbox')?.getDisplayName()).toBe(
+      '\u7ad9\u5185\u901a\u77e5',
+    );
   });
 });

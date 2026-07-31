@@ -1,7 +1,10 @@
 /** @jest-environment node */
 
 import { SchedulerManager } from './scheduler-manager';
-import type { UpdateCheckJobRunnerResult } from './update-check-job-runner';
+import {
+  UpdateCheckJobRunner,
+  type UpdateCheckJobRunnerResult,
+} from './update-check-job-runner';
 
 function jobResult(
   overrides: Partial<UpdateCheckJobRunnerResult> = {},
@@ -159,6 +162,57 @@ describe('SchedulerManager', () => {
 
     expect(jobRunner.run).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(1);
+  });
+
+
+
+  it('triggers cron audit logs when the Docker scheduler wakes', async () => {
+    const auditLogger = { record: jest.fn().mockResolvedValue(undefined) };
+    const scheduler = {
+      run: jest.fn().mockResolvedValue({
+        inspected: 0,
+        succeeded: 0,
+        failed: 0,
+        oldestDueAt: null,
+      }),
+    };
+    const jobRunner = new UpdateCheckJobRunner(
+      scheduler,
+      (() => {
+        const values = [100, 120];
+        let index = 0;
+        return () => values[Math.min(index++, values.length - 1)];
+      })(),
+      auditLogger,
+    );
+    const manager = new SchedulerManager({
+      tasks: { findEarliestNextCheckAt: jest.fn().mockResolvedValue(0) },
+      jobRunner,
+      loadEnabled: jest.fn().mockResolvedValue(true),
+      now: () => 0,
+      logger: { debug: jest.fn(), error: jest.fn() },
+    });
+
+    manager.start();
+    await flushTimers();
+    jest.advanceTimersByTime(0);
+    await flushTimers();
+    manager.stop();
+
+    expect(scheduler.run).toHaveBeenCalledTimes(1);
+    expect(auditLogger.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'cron',
+        operation: 'scheduled-check',
+        request: expect.objectContaining({
+          method: 'SCHEDULED',
+          path: 'scheduler://update-checks',
+          trigger: 'cron',
+        }),
+        execution: expect.objectContaining({ stage: 'finished' }),
+      }),
+      {},
+    );
   });
 
   it('continues after the job runner throws', async () => {

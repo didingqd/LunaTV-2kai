@@ -23,11 +23,14 @@ function parseLimit(value: string | null): number | null {
 function parseSource(
   value: string | null,
 ): WatchingUpdateCheckLogSource | undefined | null {
+  // Stage 4H-H: keep query parsing aligned with the source union so the
+  // admin endpoint can filter trigger-link audit records without special cases.
   if (value === null || value === '') return undefined;
   return value === 'cron' ||
     value === 'app' ||
     value === 'web' ||
-    value === 'admin'
+    value === 'admin' ||
+    value === 'trigger'
     ? value
     : null;
 }

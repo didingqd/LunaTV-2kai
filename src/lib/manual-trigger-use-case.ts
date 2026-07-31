@@ -6,6 +6,7 @@ import {
   type UpdateCheckJobRunnerResult,
 } from './scheduler/update-check-job-runner';
 import { resolveUserWatchingUpdateConfig } from './user-watching-update-config-resolver';
+import type { WatchingUpdateCheckLogRequest } from './watching-update-check-log-types';
 
 export type ManualTriggerUseCaseErrorCode =
   | 'USER_NOT_FOUND'
@@ -25,6 +26,14 @@ export interface ManualTriggerUseCaseResult {
   jobResult: UpdateCheckJobRunnerResult;
 }
 
+export interface ManualTriggerUseCaseOptions {
+  /**
+   * Stage 4H-H: the API route can pass sanitized request metadata into the
+   * JobRunner audit log without exposing trigger-token secrets to persistence.
+   */
+  auditRequest?: WatchingUpdateCheckLogRequest;
+}
+
 type JobRunner = Pick<UpdateCheckJobRunner, 'run'>;
 
 export class ManualTriggerUseCase {
@@ -33,7 +42,10 @@ export class ManualTriggerUseCase {
     private readonly jobRunner: JobRunner = updateCheckJobRunner,
   ) {}
 
-  async execute(userId: string): Promise<ManualTriggerUseCaseResult> {
+  async execute(
+    userId: string,
+    options: ManualTriggerUseCaseOptions = {},
+  ): Promise<ManualTriggerUseCaseResult> {
     const config = await this.loadConfig();
     const user = config.UserConfig.Users.find(
       (candidate) => candidate.username === userId,
@@ -66,6 +78,12 @@ export class ManualTriggerUseCase {
       jobResult: await this.jobRunner.run({
         trigger: 'manual',
         requestedBy: user.username,
+        audit: {
+          source: 'trigger',
+          operation: 'manual-trigger',
+          ...(options.auditRequest ? { request: options.auditRequest } : {}),
+          userIds: [user.username],
+        },
       }),
     };
   }

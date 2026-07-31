@@ -58,6 +58,16 @@ describe('GET /api/admin/watching-update-check-logs', () => {
     expect(listLogs).not.toHaveBeenCalled();
   });
 
+  it('accepts trigger source filters', async () => {
+    await GET(request('?source=trigger'));
+
+    expect(listLogs).toHaveBeenCalledWith({
+      limit: 200,
+      source: 'trigger',
+      userId: undefined,
+    });
+  });
+
   it('rejects invalid query parameters', async () => {
     const response = await GET(request('?limit=5001'));
 

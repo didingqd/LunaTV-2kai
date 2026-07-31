@@ -26,6 +26,16 @@ jest.mock('@/lib/update-check-service', () => ({
     checkTask: jest.fn(),
   },
 }));
+jest.mock('@/lib/watching-update-check-log-service', () => ({
+  createWatchingUpdateCheckLogResult: jest.fn((value) => ({
+    checkedCount: value.checkedCount,
+    successCount: value.successCount,
+    failureCount: value.failureCount,
+    updateFoundCount: 0,
+    updates: [],
+  })),
+  watchingUpdateCheckLogService: { record: jest.fn() },
+}));
 
 import {
   manualTriggerUseCase,
@@ -33,11 +43,13 @@ import {
 } from '@/lib/manual-trigger-use-case';
 import { triggerTokenService } from '@/lib/trigger-token-service';
 import { updateCheckService } from '@/lib/update-check-service';
+import { watchingUpdateCheckLogService } from '@/lib/watching-update-check-log-service';
 import { POST } from './route';
 
 const verify = triggerTokenService.verify as jest.Mock;
 const execute = manualTriggerUseCase.execute as jest.Mock;
 const checkTask = updateCheckService.checkTask as jest.Mock;
+const recordLog = watchingUpdateCheckLogService.record as jest.Mock;
 
 const verified = { tokenId: 'token-1', userId: 'alice', lastUsedAt: 2000 };
 const schedulerResult = {
@@ -58,10 +70,17 @@ const jobResult = {
 };
 
 describe('watching updates external trigger API', () => {
+  let consoleError: jest.SpyInstance;
+
   beforeEach(() => {
     jest.resetAllMocks();
+    consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
     verify.mockResolvedValue(verified);
     execute.mockResolvedValue({ jobResult });
+  });
+
+  afterEach(() => {
+    consoleError.mockRestore();
   });
 
   it('executes a manual trigger with Authorization Bearer token', async () => {
@@ -69,7 +88,18 @@ describe('watching updates external trigger API', () => {
 
     expect(response.status).toBe(200);
     expect(verify).toHaveBeenCalledWith('token.secret');
-    expect(execute).toHaveBeenCalledWith('alice');
+    expect(execute).toHaveBeenCalledWith(
+      'alice',
+      expect.objectContaining({
+        auditRequest: expect.objectContaining({
+          method: 'POST',
+          path: '/api/watching-updates/trigger',
+          userId: 'alice',
+          requestedBy: 'alice',
+          trigger: 'manual',
+        }),
+      }),
+    );
     expect(checkTask).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
       success: true,
@@ -83,6 +113,7 @@ describe('watching updates external trigger API', () => {
       failed: 1,
       oldestDueAt: 1500,
     });
+    expect(recordLog).not.toHaveBeenCalled();
   });
 
   it('executes with X-Trigger-Token header', async () => {
@@ -90,7 +121,16 @@ describe('watching updates external trigger API', () => {
 
     expect(response.status).toBe(200);
     expect(verify).toHaveBeenCalledWith('token.secret');
-    expect(execute).toHaveBeenCalledWith('alice');
+    expect(execute).toHaveBeenCalledWith(
+      'alice',
+      expect.objectContaining({
+        auditRequest: expect.objectContaining({
+          userId: 'alice',
+          requestedBy: 'alice',
+          trigger: 'manual',
+        }),
+      }),
+    );
   });
 
   it('does not accept cookies or username input', async () => {
@@ -114,6 +154,28 @@ describe('watching updates external trigger API', () => {
     expect(missing.status).toBe(401);
     expect(invalid.status).toBe(401);
     expect(execute).not.toHaveBeenCalled();
+    expect(recordLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'trigger',
+        operation: 'manual-trigger',
+        execution: expect.objectContaining({
+          stage: 'finished',
+          success: false,
+          error: 'TRIGGER_TOKEN_NOT_FOUND',
+        }),
+      }),
+      {},
+    );
+    expect(recordLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'trigger',
+        operation: 'manual-trigger',
+        execution: expect.objectContaining({
+          error: 'TRIGGER_TOKEN_INVALID',
+        }),
+      }),
+      {},
+    );
   });
 
   it('returns 401 for disabled and expired tokens', async () => {
@@ -135,6 +197,18 @@ describe('watching updates external trigger API', () => {
     const response = await POST(request({ authorization: 'Bearer token.secret' }));
 
     expect(response.status).toBe(403);
+    expect(recordLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'trigger',
+        operation: 'manual-trigger',
+        request: expect.objectContaining({ userId: 'alice' }),
+        execution: expect.objectContaining({
+          success: false,
+          error: 'TRIGGER_LINK_NOT_ALLOWED',
+        }),
+      }),
+      { userIds: ['alice'] },
+    );
   });
 
   it('returns 403 when update checks or scheduler are disabled', async () => {

@@ -24,19 +24,28 @@ import type {
 type SourceFilter = 'all' | WatchingUpdateCheckLogSource;
 type OperationFilter = 'all' | WatchingUpdateCheckLogOperation;
 
+const sourceLabels: Record<WatchingUpdateCheckLogSource, string> = {
+  cron: 'Cron任务',
+  app: 'App',
+  web: '网页',
+  admin: '管理员',
+  trigger: '追更链接',
+};
+
 const sourceOptions: Array<{ value: SourceFilter; label: string }> = [
   { value: 'all', label: '全部来源' },
-  { value: 'cron', label: 'cron' },
-  { value: 'app', label: 'app' },
-  { value: 'web', label: 'web' },
-  { value: 'admin', label: 'admin' },
+  ...Object.entries(sourceLabels).map(([value, label]) => ({
+    value: value as WatchingUpdateCheckLogSource,
+    label,
+  })),
 ];
 
 const operationOptions: Array<{ value: OperationFilter; label: string }> = [
-  { value: 'all', label: '全部操作' },
+  { value: 'all', label: '????' },
   { value: 'check', label: 'check' },
   { value: 'scheduled-check', label: 'scheduled-check' },
   { value: 'sync', label: 'sync' },
+  { value: 'manual-trigger', label: 'manual-trigger' },
 ];
 
 function formatDate(value?: number): string {
@@ -53,6 +62,11 @@ function formatDuration(value?: number): string {
 function displayValue(value: unknown): string {
   if (value === undefined || value === null || value === '') return '-';
   return String(value);
+}
+
+function displaySource(value: WatchingUpdateCheckLogSource | undefined): string {
+  if (!value) return '-';
+  return sourceLabels[value] ?? value;
 }
 
 function formatJson(value: unknown): string {
@@ -136,7 +150,15 @@ function LogDetailsModal({
               <DetailItem label='method' value={entry.request?.method} />
               <DetailItem label='path' value={entry.request?.path} />
               <DetailItem label='userId' value={entry.request?.userId} />
-              <DetailItem label='source' value={entry.source} />
+              <DetailItem label='source' value={displaySource(entry.source)} />
+              {/* Stage 4H-H: show JobRunner audit metadata so cron runners,
+                  trigger links, and future app calls can be distinguished in
+                  the existing log detail view without adding another log type. */}
+              <DetailItem
+                label='requestedBy'
+                value={entry.request?.requestedBy}
+              />
+              <DetailItem label='trigger' value={entry.request?.trigger} />
             </dl>
             <div className='mt-4'>
               <div className='mb-1 text-xs font-medium text-gray-500 dark:text-gray-400'>
@@ -161,9 +183,16 @@ function LogDetailsModal({
                 label='startedAt'
                 value={formatDate(entry.execution?.startedAt)}
               />
+              <DetailItem label='stage' value={entry.execution?.stage} />
               <DetailItem
                 label='endedAt'
                 value={formatDate(entry.execution?.endedAt)}
+              />
+              <DetailItem
+                label='finishedAt'
+                value={formatDate(
+                  entry.execution?.finishedAt ?? entry.execution?.endedAt,
+                )}
               />
               <DetailItem
                 label='durationMs'
@@ -467,7 +496,7 @@ export default function WatchingUpdateCheckLogViewer() {
                     {formatDate(log.execution?.startedAt)}
                   </td>
                   <td className='whitespace-nowrap px-3 py-3 text-gray-700 dark:text-gray-300'>
-                    {displayValue(log.source)}
+                    {displaySource(log.source)}
                   </td>
                   <td className='whitespace-nowrap px-3 py-3 text-gray-700 dark:text-gray-300'>
                     {displayValue(log.operation)}

@@ -91,9 +91,25 @@ describe('WatchingUpdateCheckLogViewer', () => {
 
     expect(await screen.findByText('alice')).toBeInTheDocument();
     const table = screen.getByRole('table');
-    expect(within(table).getByText('cron')).toBeInTheDocument();
+    expect(within(table).getByText('Cron任务')).toBeInTheDocument();
     expect(within(table).getByText('scheduled-check')).toBeInTheDocument();
     expect(screen.getByText('123 ms')).toBeInTheDocument();
+  });
+
+  it('shows trigger source and manual-trigger operation filters', async () => {
+    mockFetch({
+      logs: [logEntry({ source: 'trigger', operation: 'manual-trigger' })],
+      total: 1,
+    });
+
+    render(<WatchingUpdateCheckLogViewer />);
+
+    expect(await screen.findByText('追更链接')).toBeInTheDocument();
+    expect(screen.getByText('manual-trigger')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '追更链接' })).toHaveValue('trigger');
+    expect(screen.getByRole('option', { name: 'manual-trigger' })).toHaveValue(
+      'manual-trigger',
+    );
   });
 
   it('sends source as a backend query parameter', async () => {

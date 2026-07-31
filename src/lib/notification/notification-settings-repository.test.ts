@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 jest.mock('@/lib/db', () => ({
   db: {},
@@ -9,6 +9,10 @@ import {
   NotificationSettingsRepository,
   type NotificationSettingsStore,
 } from './notification-settings-repository';
+import { NotificationEventType } from './notification-types';
+
+const FOUND_EVENT = NotificationEventType.WATCHING_UPDATE_FOUND;
+const FAILED_EVENT = NotificationEventType.WATCHING_UPDATE_FAILED;
 
 class MemoryNotificationSettingsStore implements NotificationSettingsStore {
   readonly values = new Map<string, unknown>();
@@ -42,12 +46,14 @@ describe('NotificationSettingsRepository', () => {
     const repository = new NotificationSettingsRepository(store);
 
     await repository.save('alice', {
+      version: 2,
       inboxEnabled: false,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: false,
       updatedAt: 1_000,
     });
     await repository.save('bob', {
+      version: 2,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,
@@ -55,6 +61,7 @@ describe('NotificationSettingsRepository', () => {
     });
 
     await expect(repository.getForUser('alice')).resolves.toEqual({
+      version: 2,
       inboxEnabled: false,
       watchingUpdateFoundEnabled: true,
       watchingUpdateFailedEnabled: false,
@@ -64,12 +71,14 @@ describe('NotificationSettingsRepository', () => {
           type: 'inbox',
           name: '站内通知',
           enabled: false,
+          subscribedEvents: [FOUND_EVENT],
           config: {},
         },
       ],
       updatedAt: 1_000,
     });
     await expect(repository.getForUser('bob')).resolves.toEqual({
+      version: 2,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,
@@ -79,6 +88,7 @@ describe('NotificationSettingsRepository', () => {
           type: 'inbox',
           name: '站内通知',
           enabled: true,
+          subscribedEvents: [FAILED_EVENT],
           config: {},
         },
       ],
@@ -99,6 +109,7 @@ describe('NotificationSettingsRepository', () => {
         updatedAt: 123,
       }),
     ).toEqual({
+      version: 2,
       inboxEnabled: true,
       watchingUpdateFoundEnabled: false,
       watchingUpdateFailedEnabled: true,
@@ -108,6 +119,7 @@ describe('NotificationSettingsRepository', () => {
           type: 'inbox',
           name: '站内通知',
           enabled: true,
+          subscribedEvents: [FAILED_EVENT],
           config: {},
         },
       ],

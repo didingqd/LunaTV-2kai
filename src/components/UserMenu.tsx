@@ -535,6 +535,10 @@ export const UserMenu: React.FC = () => {
   const showAdminPanel =
     authInfo?.role === 'owner' || authInfo?.role === 'admin';
 
+  // UI-stage permission guard: keep NotificationCenter visible to normal users,
+  // but show notification settings management only to admin / owner accounts.
+  const showNotificationSettings = showAdminPanel;
+
   // 检查是否显示修改密码按钮
   const showChangePassword =
     authInfo?.role !== 'owner' && storageType !== 'localstorage';
@@ -1556,7 +1560,11 @@ export const UserMenu: React.FC = () => {
             </button>
           </div>
 
-          <div className='mb-4 grid grid-cols-2 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden'>
+          <div
+            className={`mb-4 grid ${
+              showNotificationSettings ? 'grid-cols-2' : 'grid-cols-1'
+            } rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800 lg:hidden`}
+          >
             <button
               type='button'
               onClick={() => setNotificationsTab('list')}
@@ -1568,17 +1576,19 @@ export const UserMenu: React.FC = () => {
             >
               通知列表
             </button>
-            <button
-              type='button'
-              onClick={() => setNotificationsTab('settings')}
-              className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                notificationsTab === 'settings'
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-300'
-              }`}
-            >
-              通知设置
-            </button>
+            {showNotificationSettings && (
+              <button
+                type='button'
+                onClick={() => setNotificationsTab('settings')}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  notificationsTab === 'settings'
+                    ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                通知设置
+              </button>
+            )}
           </div>
 
           <div className='min-h-0 flex-1 overflow-y-auto pr-1'>
@@ -1590,15 +1600,17 @@ export const UserMenu: React.FC = () => {
               >
                 <NotificationCenterPage embedded />
               </section>
-              <aside
-                className={
-                  notificationsTab === 'settings'
-                    ? 'block'
-                    : 'hidden lg:block'
-                }
-              >
-                <NotificationSettingsPage embedded />
-              </aside>
+              {showNotificationSettings && (
+                <aside
+                  className={
+                    notificationsTab === 'settings'
+                      ? 'block'
+                      : 'hidden lg:block'
+                  }
+                >
+                  <NotificationSettingsPage embedded />
+                </aside>
+              )}
             </div>
           </div>
         </div>

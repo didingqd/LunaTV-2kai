@@ -18,6 +18,26 @@ export interface NotificationMessage {
   payload?: Record<string, unknown>;
 }
 
+// Phase 2 notification refactor: domain events use the domain.action naming rule.
+// New events can be added as string values without changing provider dispatch logic.
+export const NotificationEventType = {
+  WATCHING_UPDATE_FOUND: 'watching.update_found',
+  WATCHING_UPDATE_FAILED: 'watching.update_failed',
+  SCHEDULER_FAILED: 'scheduler.failed',
+  SYSTEM_ERROR: 'system.error',
+} as const;
+
+export type NotificationEventType =
+  (typeof NotificationEventType)[keyof typeof NotificationEventType];
+
+export interface NotificationEvent {
+  id: string;
+  type: string;
+  userId?: string;
+  data: Record<string, unknown>;
+  createdAt: number;
+}
+
 export interface InboxNotification extends NotificationMessage {
   id: string;
   read: boolean;

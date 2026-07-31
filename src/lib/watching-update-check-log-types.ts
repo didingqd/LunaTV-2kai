@@ -13,12 +13,18 @@ export function normalizeWatchingUpdateCheckLogRetentionCount(
     : DEFAULT_WATCHING_UPDATE_CHECK_LOG_LIMIT;
 }
 
-export type WatchingUpdateCheckLogSource = 'cron' | 'app' | 'web' | 'admin';
+export type WatchingUpdateCheckLogSource =
+  | 'cron'
+  | 'app'
+  | 'web'
+  | 'admin'
+  | 'trigger';
 
 export type WatchingUpdateCheckLogOperation =
   | 'check'
   | 'scheduled-check'
-  | 'sync';
+  | 'sync'
+  | 'manual-trigger';
 
 export interface WatchingUpdateCheckLogClient {
   platform?: string;
@@ -32,13 +38,28 @@ export interface WatchingUpdateCheckLogRequest {
   method: string;
   path: string;
   userId?: string;
+  /**
+   * Stage 4H-H: requestedBy / trigger keep JobRunner audit metadata queryable
+   * without overloading userId; cron runners such as Vercel or Docker are not
+   * real users, while trigger/app callers can still be associated with userId.
+   */
+  requestedBy?: string;
+  trigger?: string;
   body?: unknown;
   client: WatchingUpdateCheckLogClient;
 }
 
+export type WatchingUpdateCheckLogExecutionStage = 'started' | 'finished';
+
 export interface WatchingUpdateCheckLogExecution {
+  /**
+   * Stage 4H-H: stage distinguishes JobRunner start and finish audit records
+   * while preserving the existing operation/source model and historical logs.
+   */
+  stage?: WatchingUpdateCheckLogExecutionStage;
   startedAt: number;
   endedAt: number;
+  finishedAt?: number;
   durationMs: number;
   success: boolean;
   error?: string;

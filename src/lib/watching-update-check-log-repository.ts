@@ -27,8 +27,14 @@ function storageIsAvailable(): boolean {
 }
 
 function isLogSource(value: unknown): value is WatchingUpdateCheckLogSource {
+  // Stage 4H-H: include trigger so persisted trigger-link execution logs remain
+  // readable through the existing repository validation and source filter path.
   return (
-    value === 'cron' || value === 'app' || value === 'web' || value === 'admin'
+    value === 'cron' ||
+    value === 'app' ||
+    value === 'web' ||
+    value === 'admin' ||
+    value === 'trigger'
   );
 }
 

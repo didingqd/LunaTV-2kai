@@ -6,6 +6,12 @@ import {
 } from '@/lib/manual-trigger-use-case';
 import type { UpdateCheckJobRunnerResult } from '@/lib/scheduler/update-check-job-runner';
 import { triggerTokenService } from '@/lib/trigger-token-service';
+import {
+  createWatchingUpdateCheckLogResult,
+  watchingUpdateCheckLogService,
+} from '@/lib/watching-update-check-log-service';
+import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
+import type { WatchingUpdateCheckLogRequest } from '@/lib/watching-update-check-log-types';
 
 export const runtime = 'nodejs';
 
@@ -32,6 +38,67 @@ function getTriggerToken(request: NextRequest): string | null {
 
   const headerToken = request.headers.get('x-trigger-token')?.trim();
   return headerToken || null;
+}
+
+function triggerAuditRequest(
+  request: NextRequest,
+  userId: string | undefined,
+): WatchingUpdateCheckLogRequest {
+  const context = getWatchingUpdateCheckLogRequestContext(
+    request,
+    userId,
+    undefined,
+  );
+  return {
+    ...context.request,
+    ...(userId ? { requestedBy: userId } : {}),
+    trigger: 'manual',
+  };
+}
+
+function verifyErrorCode(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+async function recordTriggerFailureLog({
+  request,
+  startedAt,
+  error,
+  userId,
+}: {
+  request: NextRequest;
+  startedAt: number;
+  error: string;
+  userId?: string;
+}): Promise<void> {
+  const finishedAt = Date.now();
+  try {
+    await watchingUpdateCheckLogService.record(
+      {
+        source: 'trigger',
+        operation: 'manual-trigger',
+        request: triggerAuditRequest(request, userId),
+        execution: {
+          stage: 'finished',
+          startedAt,
+          endedAt: finishedAt,
+          finishedAt,
+          durationMs: Math.max(0, finishedAt - startedAt),
+          success: false,
+          error,
+        },
+        result: createWatchingUpdateCheckLogResult({
+          checkedCount: 0,
+          successCount: 0,
+          failureCount: 0,
+        }),
+      },
+      userId ? { userIds: [userId] } : {},
+    );
+  } catch (logError) {
+    console.error('Failed to record watching update trigger failure log', logError);
+  }
 }
 
 function mapVerifyError(error: unknown) {
@@ -91,20 +158,49 @@ function responseFromJobResult(jobResult: UpdateCheckJobRunnerResult) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const token = getTriggerToken(request);
-  if (!token) return errorResponse('Invalid trigger token', 401);
+  if (!token) {
+    await recordTriggerFailureLog({
+      request,
+      startedAt,
+      error: 'TRIGGER_TOKEN_NOT_FOUND',
+    });
+    return errorResponse('Invalid trigger token', 401);
+  }
 
   let verified;
   try {
     verified = await triggerTokenService.verify(token);
   } catch (error) {
+    await recordTriggerFailureLog({
+      request,
+      startedAt,
+      error: verifyErrorCode(error),
+    });
     return mapVerifyError(error);
   }
 
   try {
-    const result = await manualTriggerUseCase.execute(verified.userId);
+    /**
+     * Stage 4H-H: pass only sanitized request context to the use case; token
+     * id/secret are intentionally excluded so audit logs prove the trigger
+     * source without persisting credentials.
+     */
+    const result = await manualTriggerUseCase.execute(verified.userId, {
+      auditRequest: triggerAuditRequest(request, verified.userId),
+    });
     return responseFromJobResult(result.jobResult);
   } catch (error) {
+    await recordTriggerFailureLog({
+      request,
+      startedAt,
+      error:
+        error instanceof ManualTriggerUseCaseError
+          ? error.code
+          : verifyErrorCode(error),
+      userId: verified.userId,
+    });
     return mapUseCaseError(error);
   }
 }

@@ -124,6 +124,30 @@ describe('WatchingUpdateCheckLogRepository', () => {
     ]);
   });
 
+  it('keeps trigger source logs readable and filterable', async () => {
+    const store = new MemoryLogStore();
+    const repository = new WatchingUpdateCheckLogRepository(store);
+    const triggerLog: WatchingUpdateCheckLogEntry = {
+      ...log('trigger-1', 'alice', 5),
+      source: 'trigger',
+      operation: 'manual-trigger',
+      request: {
+        method: 'POST',
+        path: '/api/watching-updates/trigger',
+        userId: 'alice',
+        requestedBy: 'alice',
+        trigger: 'manual',
+        client: {},
+      },
+    };
+
+    await repository.appendForUser('alice', triggerLog, 200);
+
+    await expect(repository.list(200, { source: 'trigger' })).resolves.toEqual([
+      triggerLog,
+    ]);
+  });
+
   it('keeps legacy v1 logs readable as a fallback', async () => {
     const store = new MemoryLogStore();
     const repository = new WatchingUpdateCheckLogRepository(store);

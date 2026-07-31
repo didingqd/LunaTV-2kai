@@ -85,7 +85,11 @@ describe('GET /api/cron/update-checks', () => {
     expect(runJob).toHaveBeenCalledWith({
       trigger: 'cron',
       requestedBy: 'vercel',
-      onTaskComplete: expect.any(Function),
+      audit: {
+        source: 'cron',
+        operation: 'scheduled-check',
+        request: { ip: '127.0.0.1', userAgent: 'jest' },
+      },
     });
   });
 
@@ -180,29 +184,20 @@ describe('GET /api/cron/update-checks', () => {
     expect(runScheduler).not.toHaveBeenCalled();
   });
 
-  it('passes task results from the JobRunner callback into the cron audit log', async () => {
-    runJob.mockImplementation(async ({ onTaskComplete }) => {
-      await onTaskComplete?.({
-        task: { id: 'task-1', userId: 'alice' },
-        result: { userId: 'alice', followId: 'follow-1' },
-      });
-      return jobResult();
-    });
+  it('does not write duplicate route-level logs after delegating audit to JobRunner', async () => {
+    runJob.mockResolvedValue(jobResult());
 
     await GET(request());
 
-    expect(recordLog).toHaveBeenCalledWith(
+    expect(recordLog).not.toHaveBeenCalled();
+    expect(runJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: 'cron',
-        operation: 'scheduled-check',
-        result: expect.objectContaining({
-          checkedCount: 3,
-          successCount: 2,
-          failureCount: 1,
-          results: [{ userId: 'alice', followId: 'follow-1' }],
+        audit: expect.objectContaining({
+          source: 'cron',
+          operation: 'scheduled-check',
+          request: { ip: '127.0.0.1', userAgent: 'jest' },
         }),
       }),
-      { userIds: ['alice'] },
     );
   });
 });

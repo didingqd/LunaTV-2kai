@@ -1,15 +1,16 @@
+// Phase 2 compatibility wrapper: NotificationDispatcher remains exported so
+// current scheduler and tests keep working until Phase 3.  The shared singleton
+// routes through NotificationManager when no legacy test channels are registered.
+import { randomUUID } from 'crypto';
+
 import type { NotificationChannel } from './notification-channel';
-import { inboxNotificationChannel } from './inbox-notification-channel';
-import {
-  WeChatWorkNotificationChannel,
-} from './channels/wechat-work-notification-channel';
+import { notificationMessageToEvent } from './notification-event-adapter';
+import { notificationManager } from './notification-manager';
+import { notificationSettingsService } from './notification-settings-service';
 import type {
   UserNotificationChannelConfig,
+  UserNotificationChannelInput,
 } from './notification-settings-repository';
-import { NotificationChannelType } from './notification-settings-repository';
-import {
-  notificationSettingsService,
-} from './notification-settings-service';
 import type {
   NotificationDispatchError,
   NotificationDispatchResult,
@@ -20,10 +21,13 @@ interface NotificationDispatchSettingsService {
   shouldDispatch(message: NotificationMessage): Promise<boolean>;
   getEnabledChannelConfigsForUser?(
     userId: string,
-  ): Promise<UserNotificationChannelConfig[]>;
+  ): Promise<UserNotificationChannelInput[]>;
 }
 
-function toDispatchError(channel: string, error: unknown): NotificationDispatchError {
+function toDispatchError(
+  channel: string,
+  error: unknown,
+): NotificationDispatchError {
   if (error instanceof Error && error.message) {
     return {
       channel,
@@ -44,9 +48,20 @@ export class NotificationDispatcher {
     (config: UserNotificationChannelConfig) => NotificationChannel
   >();
 
+  private readonly settingsService: NotificationDispatchSettingsService;
+  private readonly manager?: Pick<typeof notificationManager, 'emit'>;
+  private readonly createId: () => string;
+
   constructor(
-    private readonly settingsService: NotificationDispatchSettingsService = notificationSettingsService,
-  ) {}
+    settingsService?: NotificationDispatchSettingsService,
+    manager?: Pick<typeof notificationManager, 'emit'>,
+    createId: () => string = randomUUID,
+  ) {
+    this.settingsService = settingsService ?? notificationSettingsService;
+    this.manager =
+      manager ?? (settingsService ? undefined : notificationManager);
+    this.createId = createId;
+  }
 
   register(channel: NotificationChannel): void {
     this.channels.set(channel.name, channel);
@@ -67,7 +82,25 @@ export class NotificationDispatcher {
     return Array.from(this.channels.values());
   }
 
-  async dispatch(message: NotificationMessage): Promise<NotificationDispatchResult> {
+  async dispatch(
+    message: NotificationMessage,
+  ): Promise<NotificationDispatchResult> {
+    if (
+      this.manager &&
+      this.channels.size === 0 &&
+      this.channelFactories.size === 0
+    ) {
+      return this.manager.emit(
+        notificationMessageToEvent(message, this.createId),
+      );
+    }
+
+    return this.dispatchLegacyChannels(message);
+  }
+
+  private async dispatchLegacyChannels(
+    message: NotificationMessage,
+  ): Promise<NotificationDispatchResult> {
     const channels = this.getChannels();
     const errors: NotificationDispatchError[] = [];
     let succeeded = 0;
@@ -89,10 +122,23 @@ export class NotificationDispatcher {
         );
       const targets = configuredChannels
         .map((config) => {
-          const factory = this.channelFactories.get(config.type);
-          if (factory) return { channel: factory(config), name: config.name };
-          const channel = this.channels.get(config.type);
-          if (channel) return { channel, name: config.name };
+          const type = typeof config.type === 'string' ? config.type : '';
+          const name = typeof config.name === 'string' ? config.name : type;
+          if (!type) return null;
+          const normalizedConfig = {
+            id: typeof config.id === 'string' ? config.id : type,
+            type,
+            name,
+            enabled: config.enabled !== false,
+            subscribedEvents: Array.isArray(config.subscribedEvents)
+              ? config.subscribedEvents
+              : [],
+            config: config.config ?? {},
+          };
+          const factory = this.channelFactories.get(type);
+          if (factory) return { channel: factory(normalizedConfig), name };
+          const channel = this.channels.get(type);
+          if (channel) return { channel, name };
           return null;
         })
         .filter(
@@ -142,8 +188,3 @@ export class NotificationDispatcher {
 }
 
 export const notificationDispatcher = new NotificationDispatcher();
-notificationDispatcher.register(inboxNotificationChannel);
-notificationDispatcher.registerChannelFactory(
-  NotificationChannelType.WECHAT_WORK,
-  (config) => new WeChatWorkNotificationChannel(config.config),
-);
