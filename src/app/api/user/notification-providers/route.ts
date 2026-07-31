@@ -98,8 +98,5 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json(
-    { providers },
-    { headers: noStoreHeaders },
-  );
+  return NextResponse.json({ providers }, { headers: noStoreHeaders });
 }

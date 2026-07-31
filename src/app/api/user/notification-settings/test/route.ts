@@ -34,21 +34,26 @@ export async function POST(request: NextRequest) {
   if ('error' in admin) return admin.error;
 
   const parsed = testSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse('Invalid notification channel', 400);
+  if (!parsed.success)
+    return errorResponse('Invalid notification channel', 400);
 
   try {
-    const settings = await notificationSettingsService.getForUser(admin.username);
+    const settings = await notificationSettingsService.getForUser(
+      admin.username,
+    );
     const channel = settings.channels.find(
       (candidate) => candidate.id === parsed.data.channelId,
     );
     if (!channel) return errorResponse('Notification channel not found', 404);
-    if (!channel.enabled) return errorResponse('Notification channel disabled', 403);
+    if (!channel.enabled)
+      return errorResponse('Notification channel disabled', 403);
 
     // Stage 2.5 API convergence: resolve the concrete implementation only through
     // NotificationProviderRegistry and call Provider.test().  Adding Telegram,
     // Webhook, Email, Bark, etc. should register a provider instead of changing this route.
     const provider = notificationProviderRegistry.get(channel.type);
-    if (!provider) return errorResponse('Unsupported notification channel', 400);
+    if (!provider)
+      return errorResponse('Unsupported notification channel', 400);
 
     await provider.test({
       ...channel,

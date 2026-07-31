@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
   if ('error' in admin) return admin.error;
 
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse('Invalid notification channel', 400);
+  if (!parsed.success)
+    return errorResponse('Invalid notification channel', 400);
 
   try {
     const settings = await notificationSettingsService.createChannel(

@@ -43,7 +43,10 @@ function mapSettingsError(error: unknown, action: string) {
       return errorResponse('Notification channel not found', 404);
     }
     if (error.message === 'BUILTIN_NOTIFICATION_CHANNEL') {
-      return errorResponse('Built-in notification channel cannot be deleted', 400);
+      return errorResponse(
+        'Built-in notification channel cannot be deleted',
+        400,
+      );
     }
     if (
       error.message === 'UNSUPPORTED_NOTIFICATION_CHANNEL_TYPE' ||
@@ -65,7 +68,8 @@ export async function PATCH(
   if ('error' in admin) return admin.error;
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse('Invalid notification channel', 400);
+  if (!parsed.success)
+    return errorResponse('Invalid notification channel', 400);
 
   try {
     const { id } = await context.params;
@@ -91,7 +95,10 @@ export async function DELETE(
 
   try {
     const { id } = await context.params;
-    const settings = await notificationSettingsService.deleteChannel(admin.username, id);
+    const settings = await notificationSettingsService.deleteChannel(
+      admin.username,
+      id,
+    );
     return jsonNoStore({
       settings: notificationSettingsService.toPublicSettings(settings),
     });

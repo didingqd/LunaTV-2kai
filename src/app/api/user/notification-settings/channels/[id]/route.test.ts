@@ -57,7 +57,10 @@ describe('user notification channel item API', () => {
   it('rejects normal users from updating channels', async () => {
     getAuth.mockReturnValue({ username: 'bob', role: 'user' });
 
-    const response = await PATCH(request('PATCH', { enabled: false }), params());
+    const response = await PATCH(
+      request('PATCH', { enabled: false }),
+      params(),
+    );
 
     expect(response.status).toBe(403);
     expect(updateChannel).not.toHaveBeenCalled();

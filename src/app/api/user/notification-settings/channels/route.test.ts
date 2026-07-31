@@ -30,7 +30,8 @@ import { POST } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
 const createChannel = notificationSettingsService.createChannel as jest.Mock;
-const toPublicSettings = notificationSettingsService.toPublicSettings as jest.Mock;
+const toPublicSettings =
+  notificationSettingsService.toPublicSettings as jest.Mock;
 
 describe('user notification channel create API', () => {
   beforeEach(() => {
@@ -134,8 +135,7 @@ describe('user notification channel create API', () => {
       name: '我的企业微信',
       subscribedEvents: ['watching.update_failed'],
       config: {
-        webhookUrl:
-          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
     });
     const body = await valid.json();

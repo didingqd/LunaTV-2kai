@@ -89,8 +89,7 @@ describe('notification settings test API', () => {
       enabled: true,
       subscribedEvents: ['watching.update_found'],
       config: {
-        webhookUrl:
-          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
         userId: 'alice',
       },
     });

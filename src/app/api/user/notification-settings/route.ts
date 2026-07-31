@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
   if ('error' in admin) return admin.error;
 
   try {
-    return settingsResponse(await notificationSettingsService.getForUser(admin.username));
+    return settingsResponse(
+      await notificationSettingsService.getForUser(admin.username),
+    );
   } catch (error) {
     console.error('Failed to read notification settings', error);
     return errorResponse('Failed to read notification settings', 500);
@@ -69,7 +71,8 @@ export async function PATCH(request: NextRequest) {
   if ('error' in admin) return admin.error;
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse('Invalid notification settings', 400);
+  if (!parsed.success)
+    return errorResponse('Invalid notification settings', 400);
 
   try {
     return settingsResponse(

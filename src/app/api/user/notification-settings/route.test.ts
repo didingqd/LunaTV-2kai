@@ -22,7 +22,8 @@ const getAuth = getAuthInfoFromCookie as jest.Mock;
 const getForUser = notificationSettingsService.getForUser as jest.Mock;
 const save = notificationSettingsService.save as jest.Mock;
 const restoreDefault = notificationSettingsService.restoreDefault as jest.Mock;
-const toPublicSettings = notificationSettingsService.toPublicSettings as jest.Mock;
+const toPublicSettings =
+  notificationSettingsService.toPublicSettings as jest.Mock;
 
 const defaultSettings = {
   inboxEnabled: true,
