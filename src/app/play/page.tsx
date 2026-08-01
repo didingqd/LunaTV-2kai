@@ -85,8 +85,12 @@ import {
 } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import {
+  applyFirstPartyM3u8Proxy,
+  applyVideoPlayProxy,
   getVideoResolutionFromM3u8,
+  isFirstPartyM3u8Proxy,
   processImageUrl,
+  stripVideoPlayProxy,
   VideoSourceTestResult,
 } from '@/lib/utils';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
@@ -2911,7 +2915,7 @@ function PlayPageClient() {
 
         if (response.ok) {
           const result = await response.json();
-          const newUrl = result.url || '';
+          const newUrl = applyVideoPlayProxy(result.url || '');
           if (newUrl !== videoUrl) {
             setVideoUrl(newUrl);
           }
@@ -2940,6 +2944,11 @@ function PlayPageClient() {
       if (isEmbySource && newUrl && currentAudioTrackRef.current >= 0) {
         newUrl = appendAudioStreamIndex(newUrl, currentAudioTrackRef.current);
         console.log('🎵 换集时应用音轨参数:', currentAudioTrackRef.current);
+      }
+
+      // ☁️ Emby 源需要自定义鉴权头，不走 Cloudflare Worker 代理；其余源套一层加速
+      if (!isEmbySource) {
+        newUrl = applyVideoPlayProxy(newUrl);
       }
 
       if (newUrl !== videoUrl) {
@@ -4567,6 +4576,83 @@ function PlayPageClient() {
     initSkipConfig();
   }, []);
 
+  // 🚀 换源完成后加载弹幕（由 switchQuality 的 Promise 触发，而非固定延迟）
+  const loadDanmuAfterSourceSwitch = async () => {
+    if (
+      !artPlayerRef.current?.plugins?.artplayerPluginDanmuku ||
+      !externalDanmuEnabledRef.current
+    ) {
+      return;
+    }
+    console.log('🔄 换源完成，开始优化弹幕加载...');
+
+    // 确保状态完全重置
+    lastDanmuLoadKeyRef.current = '';
+    danmuLoadingRef.current = false;
+
+    try {
+      const startTime = performance.now();
+      const result = await loadExternalDanmu();
+
+      if (
+        result.count > 0 &&
+        artPlayerRef.current?.plugins?.artplayerPluginDanmuku
+      ) {
+        const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
+
+        // 🚀 确保在加载新弹幕前完全清空旧弹幕
+        plugin.reset(); // 立即回收所有正在显示的弹幕DOM
+        plugin.load(); // 不传参数，完全清空队列
+        console.log('🧹 换源后已清空旧弹幕，准备加载新弹幕');
+
+        // 🚀 优化大量弹幕的加载：分批处理，减少阻塞
+        if (result.count > 1000) {
+          console.log(`📊 检测到大量弹幕 (${result.count}条)，启用分批加载`);
+
+          // 先加载前500条，快速显示
+          const firstBatch = result.data.slice(0, 500);
+          plugin.load(firstBatch);
+
+          // 剩余弹幕分批异步加载，避免阻塞
+          const remainingBatches = [];
+          for (let i = 500; i < result.data.length; i += 300) {
+            remainingBatches.push(result.data.slice(i, i + 300));
+          }
+
+          // 使用requestIdleCallback分批加载剩余弹幕
+          remainingBatches.forEach((batch, index) => {
+            setTimeout(
+              () => {
+                if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+                  // 将批次弹幕追加到现有队列
+                  batch.forEach((danmu) => {
+                    plugin.emit(danmu).catch(console.warn);
+                  });
+                }
+              },
+              (index + 1) * 100,
+            ); // 每100ms加载一批
+          });
+
+          console.log(
+            `⚡ 分批加载完成: 首批${firstBatch.length}条 + ${remainingBatches.length}个后续批次`,
+          );
+        } else {
+          // 弹幕数量较少，正常加载
+          plugin.load(result.data);
+          console.log(`✅ 换源后弹幕加载完成: ${result.count} 条`);
+        }
+
+        const loadTime = performance.now() - startTime;
+        console.log(`⏱️ 弹幕加载耗时: ${loadTime.toFixed(2)}ms`);
+      } else {
+        console.log('📭 换源后没有弹幕数据');
+      }
+    } catch (error) {
+      console.error('❌ 换源后弹幕加载失败:', error);
+    }
+  };
+
   // 🚀 优化的换源处理（防连续点击）
   const handleSourceChange = async (
     newSource: string,
@@ -4645,6 +4731,8 @@ function PlayPageClient() {
         isSourceChangingRef.current = false;
         setIsVideoLoading(false);
         setError('未找到匹配结果');
+        isSourceChangingRef.current = false;
+        setIsVideoLoading(false);
         return;
       }
 
@@ -4748,88 +4836,8 @@ function PlayPageClient() {
         setCurrentEpisodeIndex(targetIndex);
       }
 
-      // 🚀 换源完成后，优化弹幕加载流程
-      setTimeout(async () => {
-        isSourceChangingRef.current = false; // 重置换源标识
-
-        if (
-          artPlayerRef.current?.plugins?.artplayerPluginDanmuku &&
-          externalDanmuEnabledRef.current
-        ) {
-          console.log('🔄 换源完成，开始优化弹幕加载...');
-
-          // 确保状态完全重置
-          lastDanmuLoadKeyRef.current = '';
-          danmuLoadingRef.current = false;
-
-          try {
-            const startTime = performance.now();
-            const result = await loadExternalDanmu();
-
-            if (
-              result.count > 0 &&
-              artPlayerRef.current?.plugins?.artplayerPluginDanmuku
-            ) {
-              const plugin =
-                artPlayerRef.current.plugins.artplayerPluginDanmuku;
-
-              // 🚀 确保在加载新弹幕前完全清空旧弹幕
-              plugin.reset(); // 立即回收所有正在显示的弹幕DOM
-              plugin.load(); // 不传参数，完全清空队列
-              console.log('🧹 换源后已清空旧弹幕，准备加载新弹幕');
-
-              // 🚀 优化大量弹幕的加载：分批处理，减少阻塞
-              if (result.count > 1000) {
-                console.log(
-                  `📊 检测到大量弹幕 (${result.count}条)，启用分批加载`,
-                );
-
-                // 先加载前500条，快速显示
-                const firstBatch = result.data.slice(0, 500);
-                plugin.load(firstBatch);
-
-                // 剩余弹幕分批异步加载，避免阻塞
-                const remainingBatches = [];
-                for (let i = 500; i < result.data.length; i += 300) {
-                  remainingBatches.push(result.data.slice(i, i + 300));
-                }
-
-                // 使用requestIdleCallback分批加载剩余弹幕
-                remainingBatches.forEach((batch, index) => {
-                  setTimeout(
-                    () => {
-                      if (
-                        artPlayerRef.current?.plugins?.artplayerPluginDanmuku
-                      ) {
-                        // 将批次弹幕追加到现有队列
-                        batch.forEach((danmu) => {
-                          plugin.emit(danmu).catch(console.warn);
-                        });
-                      }
-                    },
-                    (index + 1) * 100,
-                  ); // 每100ms加载一批
-                });
-
-                console.log(
-                  `⚡ 分批加载完成: 首批${firstBatch.length}条 + ${remainingBatches.length}个后续批次`,
-                );
-              } else {
-                // 弹幕数量较少，正常加载
-                plugin.load(result.data);
-                console.log(`✅ 换源后弹幕加载完成: ${result.count} 条`);
-              }
-
-              const loadTime = performance.now() - startTime;
-              console.log(`⏱️ 弹幕加载耗时: ${loadTime.toFixed(2)}ms`);
-            } else {
-              console.log('📭 换源后没有弹幕数据');
-            }
-          } catch (error) {
-            console.error('❌ 换源后弹幕加载失败:', error);
-          }
-        }
-      }, 1000); // 减少到1秒延迟，加快响应
+      // 🚀 换源标记和弹幕加载改由实际执行 switchQuality 的 effect 在切换真正完成后触发，
+      // 不再用固定延迟猜测新源何时可播放（见 loadDanmuAfterSourceSwitch 调用处）
     } catch (err) {
       // 重置换源标识
       isSourceChangingRef.current = false;
@@ -5337,12 +5345,18 @@ function PlayPageClient() {
       // favorite state, so only the active source/id can resolve a stored key.
       const activeIdentity = getActiveResourceIdentity();
       if (!activeIdentity) return null;
+      if (pendingSourceSwitchRef.current) {
+        return findResourceFavoriteReminderKey(favorites, {
+          source: activeIdentity.source,
+          id: activeIdentity.id,
+        });
+      }
       return findResourceFavoriteReminderKey(favorites, {
-        source: activeIdentity.source,
-        id: activeIdentity.id,
+        source: currentSource,
+        id: currentId,
       });
     },
-    [getActiveResourceIdentity],
+    [currentId, currentSource, getActiveResourceIdentity],
   );
 
   // 每当真实资源 source/id 变化时检查收藏状态
@@ -5723,6 +5737,9 @@ function PlayPageClient() {
           // 🔥 修复：标记切换中，阻止 video:ratechange 将浏览器重置的 1.0 保存到 localStorage
           isSourceSwitchingRef.current = true;
 
+          // ☁️ 新地址切换，重置 Worker 代理降级标记（非 m3u8 路径用）
+          artPlayerRef.current._proxyFallbackDone = false;
+
           let switchPromise: Promise<any>;
           if (isEpisodeChange) {
             console.log(`🎯 开始切换集数: ${videoUrl} (重置播放时间到0)`);
@@ -5736,7 +5753,7 @@ function PlayPageClient() {
             switchPromise = artPlayerRef.current.switchQuality(videoUrl);
           }
 
-          // 创建切换Promise
+          // 创建切换 Promise
           switchPromise = switchPromise
             .then(() => {
               // 只有当前Promise还是活跃的才执行后续操作
@@ -5785,6 +5802,12 @@ function PlayPageClient() {
 
           // 🚀 移除原有的 setTimeout 弹幕加载逻辑，交由 useEffect 统一优化处理
 
+          // 🚀 换源（非切集数）成功后再加载弹幕，不再猜固定延迟
+          if (!isEpisodeChange && isSourceChangingRef.current) {
+            isSourceChangingRef.current = false;
+            void loadDanmuAfterSourceSwitch();
+          }
+
           // switchUrl/switchQuality resolve 只表示浏览器/ArtPlayer 接受了新
           // source，不等于视频已经可播放。真正提交 Pending Candidate 统一
           // 由 ready/canplay 事件触发，避免失败源进入 PlayRecord。
@@ -5796,7 +5819,8 @@ function PlayPageClient() {
           console.warn('Switch方法失败，将重建播放器:', error);
           // 重置集数切换标识
           isEpisodeChangingRef.current = false;
-          // 如果switch失败，清理播放器并重新创建
+          isSourceSwitchingRef.current = false;
+          // switch 失败会重建播放器，重建路径的 ready 事件里会重置换源标识
           await cleanupPlayer();
         }
       }
@@ -5920,6 +5944,12 @@ function PlayPageClient() {
               if (video.hls) {
                 video.hls.destroy();
               }
+
+              // ☁️ 新地址加载，重置 Worker 代理 / 第一方代理降级标记
+              (video as any)._proxyFallbackDone = false;
+              (video as any)._firstPartyProxyFallbackDone = false;
+              (video as any)._currentHlsUrl = url;
+              (video as any)._consecutiveNetworkErrorCount = 0;
 
               // 在函数内部重新检测iOS13+设备
               const localIsIOS13 = isIOS13;
@@ -6088,6 +6118,38 @@ function PlayPageClient() {
                 },
               );
 
+              // 依次尝试：Worker 代理 -> 直连 -> 本站第一方代理，每一级只降级一次。
+              const tryFallbackOrGiveUp = (): boolean => {
+                const activeUrl = (video as any)._currentHlsUrl || url;
+
+                const rawUrl = !(video as any)._proxyFallbackDone
+                  ? stripVideoPlayProxy(activeUrl)
+                  : null;
+                if (rawUrl) {
+                  console.warn('Worker 代理错误，降级为直连:', rawUrl);
+                  (video as any)._proxyFallbackDone = true;
+                  (video as any)._currentHlsUrl = rawUrl;
+                  (video as any)._consecutiveNetworkErrorCount = 0;
+                  hls.loadSource(rawUrl);
+                  return true;
+                }
+
+                if (
+                  !(video as any)._firstPartyProxyFallbackDone &&
+                  !isFirstPartyM3u8Proxy(activeUrl)
+                ) {
+                  (video as any)._firstPartyProxyFallbackDone = true;
+                  const proxiedUrl = applyFirstPartyM3u8Proxy(activeUrl);
+                  console.warn('直连错误，降级为第一方代理:', proxiedUrl);
+                  (video as any)._currentHlsUrl = proxiedUrl;
+                  (video as any)._consecutiveNetworkErrorCount = 0;
+                  hls.loadSource(proxiedUrl);
+                  return true;
+                }
+
+                return false;
+              };
+
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                 console.error('HLS Error:', event, data);
 
@@ -6095,7 +6157,6 @@ function PlayPageClient() {
                 // v1.6.13 增强：处理片段解析错误（针对initPTS修复）
                 if (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR) {
                   console.log('片段解析错误，尝试重新加载...');
-                  // 重新开始加载，利用v1.6.13的initPTS修复
                   hls.startLoad();
                   return;
                 }
@@ -6109,7 +6170,6 @@ function PlayPageClient() {
                 ) {
                   console.log('时间戳错误，清理缓冲区并重新加载...');
                   try {
-                    // 清理缓冲区后重新开始，利用v1.6.13的时间戳包装修复
                     const currentTime = video.currentTime;
                     hls.trigger(Hls.Events.BUFFER_RESET, undefined);
                     hls.startLoad(currentTime);
@@ -6120,17 +6180,46 @@ function PlayPageClient() {
                   return;
                 }
 
+                // 旧版/不兼容的代理可能只产生连续非 fatal 网络错误，这里主动降级。
+                if (
+                  !data.fatal &&
+                  data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+                  (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+                    data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+                    data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
+                    data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT)
+                ) {
+                  const count =
+                    ((video as any)._consecutiveNetworkErrorCount || 0) + 1;
+                  (video as any)._consecutiveNetworkErrorCount = count;
+                  if (count >= 8) {
+                    console.warn(
+                      `连续 ${count} 次非致命网络错误，主动降级:`,
+                      data.details,
+                    );
+                    tryFallbackOrGiveUp();
+                  }
+                  return;
+                }
+
                 if (data.fatal) {
                   switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
+                    case Hls.ErrorTypes.NETWORK_ERROR: {
+                      if (tryFallbackOrGiveUp()) {
+                        break;
+                      }
                       console.log('网络错误，尝试恢复...');
                       hls.startLoad();
                       break;
+                    }
                     case Hls.ErrorTypes.MEDIA_ERROR:
                       console.log('媒体错误，尝试恢复...');
                       hls.recoverMediaError();
                       break;
                     default:
+                      if (tryFallbackOrGiveUp()) {
+                        break;
+                      }
                       console.log('无法恢复的错误');
                       hls.destroy();
                       break;
@@ -7659,6 +7748,12 @@ function PlayPageClient() {
           // 隐藏换源加载状态
           setIsVideoLoading(false);
 
+          // 🔥 重置换源标识（防止 switchQuality 失败重建播放器时标识卡死，导致后续无法再换源/弹幕永久隐藏）
+          if (isSourceChangingRef.current) {
+            isSourceChangingRef.current = false;
+            console.log('🎯 播放器重建完成，重置换源标识');
+          }
+
           // 🔥 重置集数切换标识（播放器成功创建后）
           if (isEpisodeChangingRef.current) {
             isEpisodeChangingRef.current = false;
@@ -7672,6 +7767,17 @@ function PlayPageClient() {
           rollbackPendingSourceSwitch(err);
           if (artPlayerRef.current.currentTime > 0) {
             return;
+          }
+
+          // ☁️ 非 m3u8 格式（走原生 <video src>）Worker 代理失败时，自动降级为直连原始地址
+          // m3u8 格式的降级在 customType.m3u8 的 Hls.Events.ERROR 处理里完成，此处跳过避免重复
+          if (!artPlayerRef.current._proxyFallbackDone) {
+            const rawUrl = stripVideoPlayProxy(videoUrl);
+            if (rawUrl && !/\.m3u8(\?|#|$)/i.test(videoUrl)) {
+              console.warn('Worker 代理播放错误，降级为直连:', rawUrl);
+              artPlayerRef.current._proxyFallbackDone = true;
+              artPlayerRef.current.switchUrl(rawUrl);
+            }
           }
         });
 
@@ -7690,7 +7796,6 @@ function PlayPageClient() {
         artPlayerRef.current.on('video:timeupdate', () => {
           const currentTime = artPlayerRef.current.currentTime || 0;
           const duration = artPlayerRef.current.duration || 0;
-          const now = performance.now(); // 使用performance.now()更精确
 
           // 更新跳过逻辑所需的时间信息
           applySkipLogic();
@@ -7734,8 +7839,9 @@ function PlayPageClient() {
         }
       } catch (err) {
         console.error('创建播放器失败:', err);
-        // 重置集数切换标识
+        // 重置切换标识
         isEpisodeChangingRef.current = false;
+        isSourceChangingRef.current = false;
         setError('播放器初始化失败');
       }
     }; // 结束 initPlayer 函数

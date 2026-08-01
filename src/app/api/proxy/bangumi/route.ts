@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getCacheTime, getConfig } from '@/lib/config';
+import { readTextLimited } from '@/lib/proxy-security';
 import { BANGUMI_DATE_ORIGIN, updateRemarks } from '@/lib/video-remarks.server';
 
 const CMLIUSSSS_BASE = 'https://img.doubanio.cmliussss.net';
+// 桜色镜像站：第三方全域名镜像 bgm.tv -> bangumi.lol
+const SAKURA_API_BASE = 'https://api.bangumi.lol';
+
+// Bangumi 响应体大小硬上限，防止异常上游返回超大响应把内存打爆
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5MB
 
 type MinimalConfig = Awaited<ReturnType<typeof getConfig>>;
 
@@ -84,12 +90,15 @@ export async function GET(request: NextRequest) {
     let apiUrl: string;
     if (apiType === 'cmliussss') {
       apiUrl = `${CMLIUSSSS_BASE}/${path}`;
+    } else if (apiType === 'sakura') {
+      apiUrl = `${SAKURA_API_BASE}/${path}`;
     } else if (apiType === 'corsapi') {
       // 使用 Cloudflare Worker 代理，从 VideoProxyConfig 获取地址
-      const corsApiBase =
+      const corsApiBase = (
         adminConfig.VideoProxyConfig?.proxyUrl ||
-        'https://corsapi.smone.workers.dev';
-      apiUrl = `${corsApiBase}/https://api.bgm.tv/${path}`;
+        'https://corsapi.smone.workers.dev'
+      ).replace(/\/$/, '');
+      apiUrl = `${corsApiBase}/?url=${encodeURIComponent(`https://api.bgm.tv/${path}`)}`;
     } else if (apiType === 'custom' && apiProxy) {
       const base = apiProxy.endsWith('/') ? apiProxy.slice(0, -1) : apiProxy;
       apiUrl = `${base}/${path}`;
@@ -112,7 +121,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await response.json();
+    const text = await readTextLimited(response, MAX_RESPONSE_BYTES);
+    const data = JSON.parse(text);
     const subjectMatch = path.match(/^v0\/subjects\/(\d+)$/);
     if (subjectMatch) {
       saveBangumiDateRemarkIfAllowed(

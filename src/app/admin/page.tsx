@@ -4883,7 +4883,9 @@ const VideoSourceConfig = ({
               Cloudflare Worker 代理加速
             </h3>
             <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
-              为网页播放启用全球CDN加速，提升视频源API访问速度和稳定性
+              为网页播放启用全球CDN加速，同时加速视频源API访问、视频/m3u8播放流，以及所有
+              TMDB 接口和图片请求（演员搜索、首页 Hero
+              横幅背景图/Logo、播放页背景图等）
             </p>
           </div>
           <label className='relative inline-flex items-center cursor-pointer'>
@@ -4933,6 +4935,9 @@ const VideoSourceConfig = ({
                 <li>• 通过Cloudflare全球CDN加速视频源API访问</li>
                 <li>• 自动转发所有API参数（ac=list, ac=detail等）</li>
                 <li>• 为每个源生成唯一路径，提升兼容性</li>
+                <li>• 播放m3u8/视频时自动经Worker代理转发，加速播放流</li>
+                <li>• Worker 代理失败时自动降级为直连，不影响正常播放</li>
+                <li>• Emby 源不受影响（需自定义鉴权头，始终直连）</li>
                 <li>• 仅影响网页播放，不影响TVBox配置</li>
               </ul>
             </div>
@@ -6588,6 +6593,7 @@ const SiteConfigComponent = ({
       label: 'Bangumi 反代 By CMLiussss（解决服务器被墙）',
     },
     { value: 'corsapi', label: 'Cloudflare Worker 代理 By Smone' },
+    { value: 'sakura', label: '桜色镜像站（bangumi.lol，第三方镜像）' },
     { value: 'custom', label: '自定义反代地址' },
   ];
 
@@ -6596,6 +6602,7 @@ const SiteConfigComponent = ({
     { value: 'server', label: '服务器代理（默认，由服务器代理请求）' },
     { value: 'cmliussss', label: 'Bangumi 图片 CDN By CMLiussss' },
     { value: 'corsapi', label: 'Cloudflare Worker 代理 By Smone' },
+    { value: 'sakura', label: '桜色镜像站（bangumi.lol，第三方镜像）' },
     { value: 'direct', label: '直连（浏览器直接请求 lain.bgm.tv）' },
     { value: 'custom', label: '自定义代理' },
   ];
@@ -7712,7 +7719,9 @@ const SiteConfigComponent = ({
             >
               TMDB 官网
             </a>{' '}
-            申请免费的 API Key
+            申请免费的 API Key。国内直连 TMDB
+            可能较慢或不稳定，可在「视频源配置」标签下的「Cloudflare Worker
+            代理加速」中启用后统一走代理转发
           </p>
         </div>
 

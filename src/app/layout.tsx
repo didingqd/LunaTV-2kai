@@ -2,6 +2,7 @@
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import nextDynamic from 'next/dynamic';
 import { cookies } from 'next/headers';
 import { Suspense } from 'react';
 import { Toaster } from 'sonner';
@@ -14,19 +15,32 @@ import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { GlobalDOMErrorHandler } from '../components/GlobalDOMErrorHandler';
 import { DOMErrorBoundary } from '../components/DOMErrorBoundary';
 import { ChunkErrorGuard } from '../components/ChunkErrorGuard';
-import { TranslationWarningToast } from '../components/TranslationWarningToast';
 import NavigationShell from '../components/NavigationShell';
-import { SessionTracker } from '../components/SessionTracker';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 import UserNotificationBar from '../components/UserNotificationBar';
 import { WatchRoomProvider } from '../components/WatchRoomProvider';
 import { DownloadProvider } from '../contexts/DownloadContext';
 import { GlobalCacheProvider } from '../contexts/GlobalCacheContext';
-import { DownloadPanel } from '../components/download/DownloadPanel';
-import ChatFloatingWindow from '../components/watch-room/ChatFloatingWindow';
 import QueryProvider from '../components/QueryProvider';
-import RouteWarmup from '../components/RouteWarmup';
+
+// 懒加载非关键 UI 组件，减少首屏 JS 体积（代码分割）
+// 未设置 ssr: false，保持服务端渲染兼容性
+const TranslationWarningToast = nextDynamic(() =>
+  import('../components/TranslationWarningToast').then(
+    (m) => m.TranslationWarningToast,
+  ),
+);
+const SessionTracker = nextDynamic(() =>
+  import('../components/SessionTracker').then((m) => m.SessionTracker),
+);
+const RouteWarmup = nextDynamic(() => import('../components/RouteWarmup'));
+const DownloadPanel = nextDynamic(() =>
+  import('../components/download/DownloadPanel').then((m) => m.DownloadPanel),
+);
+const ChatFloatingWindow = nextDynamic(
+  () => import('../components/watch-room/ChatFloatingWindow'),
+);
 
 const inter = Inter({ subsets: ['latin'] });
 export const dynamic = 'force-dynamic';
@@ -85,6 +99,8 @@ export default async function RootLayout({
   let embyEnabled = false;
   let defaultLockedLongPressRate = 2;
   let navMenuHiddenItems: string[] = [];
+  let videoProxyEnabled = false;
+  let videoProxyUrl = '';
   let customCategories = [] as {
     name: string;
     type: 'movie' | 'tv';
@@ -102,7 +118,7 @@ export default async function RootLayout({
     doubanImageProxy = config.SiteConfig.DoubanImageProxy;
     disableYellowFilter = config.SiteConfig.DisableYellowFilter;
     customCategories = config.CustomCategories.filter(
-      (category) => !category.disabled
+      (category) => !category.disabled,
     ).map((category) => ({
       name: category.name || '',
       type: category.type,
@@ -111,9 +127,11 @@ export default async function RootLayout({
     fluidSearch = config.SiteConfig.FluidSearch;
     enableWebLive = config.SiteConfig.EnableWebLive ?? false;
     // 修改点：将后台站点配置中的浏览器原生跳转默认值注入前端运行时配置
-    preferBrowserNavigation = config.SiteConfig.PreferBrowserNavigation ?? false;
+    preferBrowserNavigation =
+      config.SiteConfig.PreferBrowserNavigation ?? false;
     // 修改点：将后台站点配置中的长按倍速默认值提前缓存，避免运行时配置引用局部变量报错
-    defaultLockedLongPressRate = config.SiteConfig.DefaultLockedLongPressRate ?? 2;
+    defaultLockedLongPressRate =
+      config.SiteConfig.DefaultLockedLongPressRate ?? 2;
     // 修改点：将后台配置的顶部固定菜单隐藏列表注入前台，供导航栏过滤菜单项
     navMenuHiddenItems = config.SiteConfig.NavMenuHiddenItems ?? [];
     customAdFilterVersion = config.SiteConfig?.CustomAdFilterVersion || 0;
@@ -122,8 +140,10 @@ export default async function RootLayout({
     embyEnabled = !!(
       config.EmbyConfig?.Sources &&
       config.EmbyConfig.Sources.length > 0 &&
-      config.EmbyConfig.Sources.some(s => s.enabled && s.ServerURL)
+      config.EmbyConfig.Sources.some((s) => s.enabled && s.ServerURL)
     );
+    videoProxyEnabled = config.VideoProxyConfig?.enabled ?? false;
+    videoProxyUrl = config.VideoProxyConfig?.proxyUrl || '';
   }
 
   // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
@@ -133,7 +153,8 @@ export default async function RootLayout({
     DOUBAN_PROXY: doubanProxy,
     DOUBAN_IMAGE_PROXY_TYPE: doubanImageProxyType,
     DOUBAN_IMAGE_PROXY: doubanImageProxy,
-    BANGUMI_IMAGE_PROXY_TYPE: process.env.NEXT_PUBLIC_BANGUMI_IMAGE_PROXY_TYPE || 'server',
+    BANGUMI_IMAGE_PROXY_TYPE:
+      process.env.NEXT_PUBLIC_BANGUMI_IMAGE_PROXY_TYPE || 'server',
     BANGUMI_IMAGE_PROXY: process.env.NEXT_PUBLIC_BANGUMI_IMAGE_PROXY || '',
     DISABLE_YELLOW_FILTER: disableYellowFilter,
     CUSTOM_CATEGORIES: customCategories,
@@ -148,8 +169,11 @@ export default async function RootLayout({
     AI_RECOMMEND_ENABLED: aiRecommendEnabled,
     EMBY_ENABLED: embyEnabled,
     PRIVATE_LIBRARY_ENABLED: embyEnabled,
+    VIDEO_PROXY_ENABLED: videoProxyEnabled,
+    VIDEO_PROXY_URL: videoProxyUrl,
     // 禁用预告片：Vercel 自动检测，或用户手动设置 DISABLE_HERO_TRAILER=true
-    DISABLE_HERO_TRAILER: process.env.VERCEL === '1' || process.env.DISABLE_HERO_TRAILER === 'true',
+    DISABLE_HERO_TRAILER:
+      process.env.VERCEL === '1' || process.env.DISABLE_HERO_TRAILER === 'true',
   };
   const hasUserNotification = Boolean(userNotification.trim());
 
@@ -164,7 +188,10 @@ export default async function RootLayout({
         <meta name='google' content='notranslate' />
         {/* iOS PWA 沉浸式状态栏：manifest.json 里的同名字段对 Safari 无效，必须通过 meta 标签设置 */}
         <meta name='apple-mobile-web-app-capable' content='yes' />
-        <meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />
+        <meta
+          name='apple-mobile-web-app-status-bar-style'
+          content='black-translucent'
+        />
         <link rel='apple-touch-icon' href='/icons/icon-192x192.png' />
         {/* 将配置序列化后直接写入脚本，浏览器端可通过 window.RUNTIME_CONFIG 获取 */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
@@ -236,7 +263,7 @@ export default async function RootLayout({
               </DownloadProvider>
             </GlobalCacheProvider>
           </QueryProvider>
-          <Toaster position="top-center" richColors closeButton />
+          <Toaster position='top-center' richColors closeButton />
         </ThemeProvider>
       </body>
     </html>
