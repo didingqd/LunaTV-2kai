@@ -380,7 +380,173 @@ describe('NotificationSettingsPage', () => {
       await screen.findByRole('heading', { name: '配置通知渠道' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Webhook 地址')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '通知事件' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('机器人 Key')).not.toBeInTheDocument();
+    expect(screen.queryByText('高级设置')).not.toBeInTheDocument();
+  });
+
+  it('creates a channel with selected notification events from the modal', async () => {
+    const fetchMock = jest.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === providersEndpoint) {
+          return Promise.resolve(jsonResponse({ providers }));
+        }
+        if (url === settingsEndpoint) {
+          return Promise.resolve(jsonResponse({ settings: baseSettings }));
+        }
+        if (url === `${settingsEndpoint}/channels` && init?.method === 'POST') {
+          return Promise.resolve(
+            jsonResponse({
+              settings: {
+                ...baseSettings,
+                channels: [
+                  ...baseSettings.channels,
+                  {
+                    id: 'wc-2',
+                    type: 'wechat_work',
+                    name: '企业微信',
+                    enabled: true,
+                    subscribedEvents: ['watching.update_failed'],
+                    config: {
+                      webhookUrl: 'https://qyapi.weixin.qq.com/****efgh',
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ settings: baseSettings }));
+      },
+    );
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '添加通知渠道' }),
+    );
+    const providerDialog = await screen.findByRole('dialog', {
+      name: '选择通知渠道',
+    });
+    fireEvent.click(
+      within(providerDialog).getByRole('button', { name: /企业微信/ }),
+    );
+
+    const configDialog = await screen.findByRole('dialog', {
+      name: '配置通知渠道',
+    });
+    const form = within(configDialog);
+
+    fireEvent.change(form.getByLabelText('Webhook 地址 *'), {
+      target: {
+        value: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=efgh',
+      },
+    });
+    fireEvent.click(form.getByRole('checkbox', { name: '追更更新' }));
+    fireEvent.click(form.getByRole('button', { name: '保存渠道' }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === `${settingsEndpoint}/channels` &&
+            (init as RequestInit | undefined)?.method === 'POST',
+        ),
+      ).toBe(true),
+    );
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        url === `${settingsEndpoint}/channels` &&
+        (init as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(JSON.parse((createCall?.[1] as RequestInit).body as string)).toEqual(
+      {
+        name: '企业微信',
+        type: 'wechat_work',
+        config: {
+          webhookUrl:
+            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=efgh',
+        },
+        subscribedEvents: ['watching.update_failed'],
+      },
+    );
+  });
+
+  it('edits notification events in the channel modal', async () => {
+    const fetchMock = jest.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === providersEndpoint) {
+          return Promise.resolve(jsonResponse({ providers }));
+        }
+        if (
+          url === `${settingsEndpoint}/channels/wc-1` &&
+          init?.method === 'PATCH'
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              settings: {
+                ...baseSettings,
+                channels: baseSettings.channels.map((channel) =>
+                  channel.id === 'wc-1'
+                    ? {
+                        ...channel,
+                        subscribedEvents: [
+                          'watching.update_found',
+                          'watching.update_failed',
+                        ],
+                      }
+                    : channel,
+                ),
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ settings: baseSettings }));
+      },
+    );
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    await screen.findByText('外部企业微信');
+    const channelCard = getCardByChannelName('外部企业微信');
+    fireEvent.click(channelCard.getByRole('button', { name: '编辑' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '编辑通知渠道' });
+    const form = within(dialog);
+    expect(form.getByRole('heading', { name: '通知事件' })).toBeInTheDocument();
+    expect(form.queryByText('高级设置')).not.toBeInTheDocument();
+    expect(form.getByRole('checkbox', { name: '追更更新' })).toBeChecked();
+    expect(form.getByRole('checkbox', { name: '更新失败' })).not.toBeChecked();
+
+    fireEvent.click(form.getByRole('checkbox', { name: '更新失败' }));
+    fireEvent.click(form.getByRole('button', { name: '保存渠道' }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === `${settingsEndpoint}/channels/wc-1` &&
+            (init as RequestInit | undefined)?.method === 'PATCH',
+        ),
+      ).toBe(true),
+    );
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        url === `${settingsEndpoint}/channels/wc-1` &&
+        (init as RequestInit | undefined)?.method === 'PATCH',
+    );
+    expect(JSON.parse((updateCall?.[1] as RequestInit).body as string)).toEqual(
+      {
+        name: '外部企业微信',
+        subscribedEvents: ['watching.update_found', 'watching.update_failed'],
+      },
+    );
   });
 
   it('opens notification logs and renders failed reasons', async () => {
