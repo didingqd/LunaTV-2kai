@@ -1,7 +1,15 @@
+'use client';
+
 import { Check, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import { NOTIFICATION_EVENT_METAS } from '@/lib/notification-event-bootstrap';
 
+import {
+  MOBILE_DIALOG_CONTENT_CLASS,
+  MOBILE_DIALOG_FRAME_CLASS,
+  MOBILE_DIALOG_HEADER_CLASS,
+} from '../mobile-dialog-layout';
 import {
   NOTIFICATION_DELIVERY_STATUS_LABELS,
   type NotificationProviderMeta,
@@ -56,12 +64,23 @@ export function NotificationChannelModal({
         ? '编辑通知渠道'
         : '配置通知渠道';
 
-  return (
-    <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm'>
-      <div className='max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950'>
-        <div className='flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800'>
+  const dialog = (
+    <>
+      <div className='fixed inset-0 z-[1100] bg-black/50 backdrop-blur-sm' />
+      <div
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='notification-channel-modal-title'
+        className={`fixed left-1/2 top-1/2 z-[1101] flex max-h-[90vh] w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950 ${MOBILE_DIALOG_FRAME_CLASS}`}
+      >
+        <div
+          className={`flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800 ${MOBILE_DIALOG_HEADER_CLASS}`}
+        >
           <div>
-            <h3 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+            <h3
+              id='notification-channel-modal-title'
+              className='text-xl font-bold text-gray-900 dark:text-gray-100'
+            >
               {title}
             </h3>
             <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
@@ -80,7 +99,10 @@ export function NotificationChannelModal({
             <X className='h-5 w-5' />
           </button>
         </div>
-        <div className='max-h-[calc(88vh-5rem)] overflow-y-auto p-5'>
+
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto p-5 ${MOBILE_DIALOG_CONTENT_CLASS}`}
+        >
           {step === 'provider' ? (
             <NotificationProviderPicker
               providers={creatableProviders}
@@ -122,56 +144,49 @@ export function NotificationChannelModal({
                 onChange={onChangeForm}
               />
 
-              {form.mode === 'edit' && (
-                <NotificationEventSelector
-                  events={NOTIFICATION_EVENT_METAS}
-                  subscribedEvents={form.subscribedEvents}
-                  onToggle={onToggleEvent}
-                />
-              )}
-
-              <section className='space-y-3'>
-                <h4 className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                  高级设置
-                </h4>
-                <div className='rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400'>
-                  当前渠道暂未提供额外高级设置。
-                </div>
-              </section>
-
-              <div className='flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end'>
-                {form.mode === 'create' && (
-                  <button
-                    type='button'
-                    disabled={saving}
-                    onClick={onBackToPicker}
-                    className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                  >
-                    重新选择
-                  </button>
-                )}
-                <button
-                  type='button'
-                  disabled={saving}
-                  onClick={onClose}
-                  className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
-                >
-                  取消
-                </button>
-                <button
-                  type='button'
-                  disabled={saving || !valid}
-                  onClick={onSave}
-                  className='inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
-                >
-                  {saving && <Check className='h-4 w-4 animate-pulse' />}
-                  保存渠道
-                </button>
-              </div>
+              <NotificationEventSelector
+                events={NOTIFICATION_EVENT_METAS}
+                subscribedEvents={form.subscribedEvents}
+                onToggle={onToggleEvent}
+              />
             </div>
           ) : null}
         </div>
+
+        <div className='flex shrink-0 flex-col-reverse gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-800 sm:flex-row sm:justify-end'>
+          {step === 'config' && form?.mode === 'create' && (
+            <button
+              type='button'
+              disabled={saving}
+              onClick={onBackToPicker}
+              className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+            >
+              重新选择
+            </button>
+          )}
+          <button
+            type='button'
+            disabled={saving}
+            onClick={onClose}
+            className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+          >
+            取消
+          </button>
+          {step === 'config' && (
+            <button
+              type='button'
+              disabled={saving || !valid}
+              onClick={onSave}
+              className='inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+            >
+              {saving && <Check className='h-4 w-4 animate-pulse' />}
+              保存渠道
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
+
+  return createPortal(dialog, document.body);
 }

@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { WatchCompletionThresholdSetting } from './WatchCompletionThresholdSetting';
+import { WatchingUpdateModeSetting } from './WatchingUpdateModeSetting';
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { validateCronExpression } from '@/lib/scheduler/cron-utils';
 import {
   SCHEDULER_TIMEZONE_PRESETS,
@@ -131,11 +134,16 @@ function buildTriggerCommand(token: string) {
   return `curl -X POST ${origin}/api/watching-updates/trigger -H "Authorization: Bearer ${token}"`;
 }
 
+function getSettingsUsername() {
+  return getAuthInfoFromBrowserCookie()?.username?.trim() || null;
+}
+
 export default function WatchingUpdateSettingsPage({
   embedded = false,
 }: {
   embedded?: boolean;
 } = {}) {
+  const settingsUsername = getSettingsUsername();
   const [config, setConfig] = useState<WatchingUpdateUserConfigResponse | null>(
     null,
   );
@@ -146,7 +154,9 @@ export default function WatchingUpdateSettingsPage({
   const [triggerLink, setTriggerLink] =
     useState<TriggerLinkStatusResponse | null>(null);
   const [triggerLoading, setTriggerLoading] = useState(false);
-  const [triggerSaving, setTriggerSaving] = useState<TriggerAction | null>(null);
+  const [triggerSaving, setTriggerSaving] = useState<TriggerAction | null>(
+    null,
+  );
   const [plainToken, setPlainToken] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
@@ -166,8 +176,7 @@ export default function WatchingUpdateSettingsPage({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : '触发链接请求失败',
+        text: error instanceof Error ? error.message : '触发链接请求失败',
       });
     } finally {
       setTriggerLoading(false);
@@ -206,10 +215,7 @@ export default function WatchingUpdateSettingsPage({
       if (requestId === requestSequence.current) {
         setMessage({
           type: 'error',
-          text:
-            error instanceof Error
-              ? error.message
-              : '追更系统设置请求失败',
+          text: error instanceof Error ? error.message : '追更系统设置请求失败',
         });
       }
     } finally {
@@ -248,8 +254,7 @@ export default function WatchingUpdateSettingsPage({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : 'Cron 配置保存失败',
+        text: error instanceof Error ? error.message : 'Cron 配置保存失败',
       });
     } finally {
       setSaving(null);
@@ -270,8 +275,7 @@ export default function WatchingUpdateSettingsPage({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : '时区配置保存失败',
+        text: error instanceof Error ? error.message : '时区配置保存失败',
       });
     } finally {
       setSaving(null);
@@ -287,8 +291,7 @@ export default function WatchingUpdateSettingsPage({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : '恢复系统配置失败',
+        text: error instanceof Error ? error.message : '恢复系统配置失败',
       });
     } finally {
       setSaving(null);
@@ -315,8 +318,7 @@ export default function WatchingUpdateSettingsPage({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : '触发链接设置失败',
+        text: error instanceof Error ? error.message : '触发链接设置失败',
       });
     } finally {
       setTriggerSaving(null);
@@ -363,10 +365,18 @@ export default function WatchingUpdateSettingsPage({
         >
           <div className='flex items-center gap-3'>
             <SlidersHorizontal className='h-7 w-7 text-sky-600 dark:text-sky-400' />
-            <h1 className={embedded ? 'text-lg font-semibold tracking-normal' : 'text-2xl font-semibold tracking-normal'}>追更设置</h1>
+            <h1
+              className={
+                embedded
+                  ? 'text-lg font-semibold tracking-normal'
+                  : 'text-2xl font-semibold tracking-normal'
+              }
+            >
+              更新设置
+            </h1>
           </div>
           <p className='max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400'>
-            管理你自己的追更调度覆盖项，并查看系统最终采用的 Cron 与时区。
+            管理更新检测、更新提醒、观看完成策略、更新获取策略和手动更新。
           </p>
         </header>
 
@@ -397,11 +407,36 @@ export default function WatchingUpdateSettingsPage({
           <>
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
+                <SlidersHorizontal className='h-5 w-5 text-sky-600 dark:text-sky-400' />
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  更新策略
+                </h2>
+              </div>
+              <div className='space-y-5'>
+                <WatchingUpdateModeSetting />
+                {settingsUsername && (
+                  <>
+                    <div className='border-t border-slate-200 dark:border-gray-800'></div>
+                    <WatchCompletionThresholdSetting
+                      username={settingsUsername}
+                    />
+                  </>
+                )}
+              </div>
+            </section>
+
+            <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
+              <div className='mb-4 flex items-center gap-2'>
                 <ShieldCheck className='h-5 w-5 text-emerald-600 dark:text-emerald-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>追更状态</h2>
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  追更状态
+                </h2>
               </div>
               <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-                <StatusItem label='追更权限' value={allowedText(config.permission.enabled)} />
+                <StatusItem
+                  label='追更权限'
+                  value={allowedText(config.permission.enabled)}
+                />
                 <StatusItem
                   label='启用状态'
                   value={statusText(config.effectiveConfig.enabled)}
@@ -412,7 +447,9 @@ export default function WatchingUpdateSettingsPage({
                 />
                 <StatusItem
                   label='触发链接'
-                  value={config.permission.allowTriggerLink ? '允许' : '暂不可用'}
+                  value={
+                    config.permission.allowTriggerLink ? '允许' : '暂不可用'
+                  }
                 />
               </div>
             </section>
@@ -420,7 +457,9 @@ export default function WatchingUpdateSettingsPage({
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
                 <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>触发链接</h2>
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  触发链接
+                </h2>
               </div>
 
               {!canUseTriggerLink ? (
@@ -483,7 +522,10 @@ export default function WatchingUpdateSettingsPage({
                   <div className='flex flex-wrap gap-2'>
                     <button
                       type='button'
-                      disabled={triggerControlsDisabled || triggerLink?.hasToken === true}
+                      disabled={
+                        triggerControlsDisabled ||
+                        triggerLink?.hasToken === true
+                      }
                       onClick={() => sendTriggerLinkRequest('create', 'POST')}
                       className='inline-flex min-h-9 items-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
                     >
@@ -492,7 +534,10 @@ export default function WatchingUpdateSettingsPage({
                     </button>
                     <button
                       type='button'
-                      disabled={triggerControlsDisabled || triggerLink?.hasToken !== true}
+                      disabled={
+                        triggerControlsDisabled ||
+                        triggerLink?.hasToken !== true
+                      }
                       onClick={() =>
                         sendTriggerLinkRequest('rotate', 'PATCH', {
                           action: 'rotate',
@@ -537,7 +582,10 @@ export default function WatchingUpdateSettingsPage({
                     </button>
                     <button
                       type='button'
-                      disabled={triggerControlsDisabled || triggerLink?.hasToken !== true}
+                      disabled={
+                        triggerControlsDisabled ||
+                        triggerLink?.hasToken !== true
+                      }
                       onClick={() => sendTriggerLinkRequest('delete', 'DELETE')}
                       className='inline-flex min-h-9 items-center gap-2 rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950'
                     >
@@ -552,7 +600,9 @@ export default function WatchingUpdateSettingsPage({
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
                 <Clock3 className='h-5 w-5 text-sky-600 dark:text-sky-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>调度设置</h2>
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  调度设置
+                </h2>
               </div>
 
               {!canEditSchedule && (
@@ -574,14 +624,20 @@ export default function WatchingUpdateSettingsPage({
                       id='watching-update-cron'
                       value={cronExpression}
                       disabled={controlsDisabled}
-                      onChange={(event) => setCronExpression(event.target.value)}
+                      onChange={(event) =>
+                        setCronExpression(event.target.value)
+                      }
                       className='w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 dark:border-gray-700 dark:bg-gray-950 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-950 dark:disabled:bg-gray-800'
                     />
                   </div>
                   <p className='text-xs text-slate-500 dark:text-slate-400'>
-                    当前用户配置：{getUserValueLabel(config.userConfig?.cronExpression)}
+                    当前用户配置：
+                    {getUserValueLabel(config.userConfig?.cronExpression)}
                   </p>
-                  <div className='flex flex-wrap gap-2' aria-label='Cron 常用预设'>
+                  <div
+                    className='flex flex-wrap gap-2'
+                    aria-label='Cron 常用预设'
+                  >
                     {CRON_PRESETS.map((preset) => (
                       <button
                         key={preset.value}
@@ -633,9 +689,13 @@ export default function WatchingUpdateSettingsPage({
                     />
                   </div>
                   <p className='text-xs text-slate-500 dark:text-slate-400'>
-                    当前用户配置：{getUserValueLabel(config.userConfig?.timezone)}
+                    当前用户配置：
+                    {getUserValueLabel(config.userConfig?.timezone)}
                   </p>
-                  <div className='flex flex-wrap gap-2' aria-label='时区常用选项'>
+                  <div
+                    className='flex flex-wrap gap-2'
+                    aria-label='时区常用选项'
+                  >
                     {SCHEDULER_TIMEZONE_PRESETS.map((preset) => (
                       <button
                         key={preset}
@@ -687,7 +747,9 @@ export default function WatchingUpdateSettingsPage({
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
                 <CheckCircle2 className='h-5 w-5 text-emerald-600 dark:text-emerald-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>当前生效配置</h2>
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  当前生效配置
+                </h2>
               </div>
               <div className='grid gap-3 sm:grid-cols-2'>
                 <EffectiveItem

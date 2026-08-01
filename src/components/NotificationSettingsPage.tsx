@@ -70,6 +70,8 @@ const NOTIFICATION_TEST_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/test`;
 const NOTIFICATION_RUN_NOW_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/run-now`;
 const NOTIFICATION_PROVIDERS_ENDPOINT = '/api/user/notification-providers';
 const NOTIFICATION_LOGS_ENDPOINT = '/api/admin/notification-logs';
+const ENTERPRISE_WECHAT_PROVIDER_TYPE = 'wechat_work';
+const ENTERPRISE_WECHAT_MERGED_PROVIDER_TYPE = 'wecom';
 const RUN_NOW_EVENT_METAS = NOTIFICATION_EVENT_METAS.filter(
   (eventMeta) => eventMeta.type === NOTIFICATION_TEST_EVENT_TYPE,
 );
@@ -158,6 +160,25 @@ function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
     config: { ...provider.defaultConfig },
     originalConfig: {},
   };
+}
+
+function getCreatableNotificationProviders(
+  providers: NotificationProviderMeta[],
+) {
+  const hasEnterpriseWechat = providers.some(
+    (provider) =>
+      provider.type === ENTERPRISE_WECHAT_PROVIDER_TYPE &&
+      provider.capabilities.canCreate,
+  );
+
+  return providers.filter(
+    (provider) =>
+      provider.capabilities.canCreate &&
+      !(
+        hasEnterpriseWechat &&
+        provider.type === ENTERPRISE_WECHAT_MERGED_PROVIDER_TYPE
+      ),
+  );
 }
 
 function buildEditForm(
@@ -271,7 +292,7 @@ export default function NotificationSettingsPage({
     [providers],
   );
   const creatableProviders = useMemo(
-    () => providers.filter((provider) => provider.capabilities.canCreate),
+    () => getCreatableNotificationProviders(providers),
     [providers],
   );
   const selectedChannels = useMemo(

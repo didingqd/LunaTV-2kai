@@ -2,6 +2,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
 
+jest.mock('./WatchingUpdateModeSetting', () => ({
+  WatchingUpdateModeSetting: () => <div>追更更新获取</div>,
+}));
+
+jest.mock('./WatchCompletionThresholdSetting', () => ({
+  WatchCompletionThresholdSetting: ({ username }: { username?: string }) => (
+    <div>观看完成判定：{username}</div>
+  ),
+}));
+
+jest.mock('@/lib/auth', () => ({
+  getAuthInfoFromBrowserCookie: jest.fn(() => ({ username: 'alice' })),
+}));
+
 const originalFetch = global.fetch;
 
 type ConfigResponse = {
@@ -36,7 +50,9 @@ type TriggerLinkStatusResponse = {
   plainToken?: string;
 };
 
-function configResponse(overrides: Partial<ConfigResponse> = {}): ConfigResponse {
+function configResponse(
+  overrides: Partial<ConfigResponse> = {},
+): ConfigResponse {
   return {
     permission: {
       enabled: true,
@@ -143,16 +159,24 @@ describe('WatchingUpdateSettingsPage', () => {
   });
 
   it('loads the current user watching update config', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(jsonResponse(configResponse()));
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse(configResponse()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
 
     expect(await screen.findByText('追更状态')).toBeInTheDocument();
+    expect(screen.getByText('更新策略')).toBeInTheDocument();
+    expect(screen.getByText('追更更新获取')).toBeInTheDocument();
+    expect(screen.getByText('观看完成判定：alice')).toBeInTheDocument();
     expect(screen.getByText('调度设置')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/api/user/watching-updates/config', {
-      cache: 'no-store',
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/user/watching-updates/config',
+      {
+        cache: 'no-store',
+      },
+    );
   });
 
   it('shows the effective config and sources', async () => {
@@ -267,7 +291,9 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '恢复系统配置' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: '恢复系统配置' }),
+    );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expectRequest(fetchMock, 1, 'DELETE', {});
@@ -321,7 +347,9 @@ describe('WatchingUpdateSettingsPage', () => {
   });
 
   it('shows trigger link as unavailable when it is not allowed', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(jsonResponse(configResponse()));
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse(configResponse()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);

@@ -11,7 +11,7 @@ describe('UserMenu watching update settings entry', () => {
     expect(source).toContain('我的追更');
     expect(source).toContain('WatchingUpdateSettingsPage embedded');
     expect(source).toContain('追更列表');
-    expect(source).toContain('追更设置');
+    expect(source).toContain('更新设置');
     expect(source).toContain('watchingFollowKey(follow.source, follow.id)');
     expect(source).toContain("from='follow'");
     expect(source).toContain('handleDismissRelease');

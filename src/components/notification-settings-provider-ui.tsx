@@ -98,6 +98,17 @@ const NOTIFICATION_PROVIDER_ICON_COMPONENTS: Record<string, LucideIcon> = {
   smartphone: Smartphone,
 };
 
+const NOTIFICATION_PROVIDER_UI_ALIASES: Record<
+  string,
+  Pick<NotificationProviderMeta, 'displayName' | 'description'>
+> = {
+  wecom: {
+    displayName: '\u4f01\u4e1a\u5fae\u4fe1',
+    description:
+      '\u901a\u8fc7\u4f01\u4e1a\u5fae\u4fe1\u914d\u7f6e\u63a8\u9001\u901a\u77e5\u3002',
+  },
+};
+
 function resolveNotificationProviderIcon(icon: string): LucideIcon {
   return NOTIFICATION_PROVIDER_ICON_COMPONENTS[icon] ?? Bell;
 }
@@ -114,8 +125,11 @@ function buildDefaultConfig(
 export function mergeNotificationProviderMeta(
   provider: BackendNotificationProviderMeta,
 ): NotificationProviderMeta {
+  const uiAlias = NOTIFICATION_PROVIDER_UI_ALIASES[provider.type];
+
   return {
     ...provider,
+    ...uiAlias,
     icon: resolveNotificationProviderIcon(provider.icon),
     iconName: provider.icon,
     defaultConfig: buildDefaultConfig(provider.configSchema),

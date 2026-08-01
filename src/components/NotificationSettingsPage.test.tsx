@@ -98,6 +98,37 @@ const providers = [
   },
 ];
 
+const providersWithMergedEnterpriseWechat = [
+  ...providers,
+  {
+    type: 'wecom',
+    displayName: '企业微信机器人',
+    description: '企业微信机器人 Key 推送。',
+    icon: 'building-2',
+    group: '企业消息',
+    sortOrder: 230,
+    configSchema: {
+      fields: [
+        {
+          key: 'token',
+          type: 'password',
+          label: '机器人 Key',
+          required: true,
+        },
+      ],
+    },
+    capabilities: {
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      canTest: true,
+      canToggle: true,
+      canSend: false,
+    },
+    deliveryStatus: 'preview',
+  },
+];
+
 function jsonResponse(data: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -310,6 +341,46 @@ describe('NotificationSettingsPage', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventType: 'notification.test' }),
     });
+  });
+
+  it('renders provider picker as a flat list with one enterprise WeChat entry', async () => {
+    const fetchMock = jest.fn((input: RequestInfo | URL) => {
+      if (String(input) === providersEndpoint) {
+        return Promise.resolve(
+          jsonResponse({ providers: providersWithMergedEnterpriseWechat }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ settings: baseSettings }));
+    });
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '添加通知渠道' }),
+    );
+
+    const dialog = await screen.findByRole('dialog', {
+      name: '选择通知渠道',
+    });
+    const picker = within(dialog);
+
+    expect(
+      picker.queryByRole('heading', { name: '官方' }),
+    ).not.toBeInTheDocument();
+    expect(
+      picker.queryByRole('heading', { name: '企业消息' }),
+    ).not.toBeInTheDocument();
+    expect(picker.queryByText('企业微信机器人')).not.toBeInTheDocument();
+    expect(picker.getAllByRole('button', { name: /企业微信/ })).toHaveLength(1);
+
+    fireEvent.click(picker.getByRole('button', { name: /企业微信/ }));
+
+    expect(
+      await screen.findByRole('heading', { name: '配置通知渠道' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Webhook 地址')).toBeInTheDocument();
+    expect(screen.queryByText('机器人 Key')).not.toBeInTheDocument();
   });
 
   it('opens notification logs and renders failed reasons', async () => {

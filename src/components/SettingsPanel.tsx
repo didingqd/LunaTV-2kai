@@ -6,9 +6,7 @@ import { Check, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { memo, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { WatchCompletionThresholdSetting } from './WatchCompletionThresholdSetting';
 import { UserEmbyConfig } from './UserEmbyConfig';
-import { WatchingUpdateModeSetting } from './WatchingUpdateModeSetting';
 import {
   MOBILE_DIALOG_CONTENT_CLASS,
   MOBILE_DIALOG_FRAME_CLASS,
@@ -38,7 +36,6 @@ import {
   sanitizeOutroSkipHintLeadSeconds,
   saveOutroSkipHintLeadSeconds,
 } from '@/lib/outro-skip-hint';
-import { writeWatchingUpdateSourceMode } from '@/lib/watching-update-preference';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -220,7 +217,6 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
   function getSettingsUsername() {
     return getAuthInfoFromBrowserCookie()?.username?.trim() || null;
   }
-  const settingsUsername = getSettingsUsername();
 
   // ── Emby config via TanStack Query ────────────────────────────────────────
   const { data: embyConfig = { sources: [] } } = useEmbyConfigQuery(isOpen);
@@ -446,7 +442,6 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
     setFullscreenClockMode('controls');
     setOutroSkipHintLeadSeconds(DEFAULT_OUTRO_SKIP_HINT_LEAD_SECONDS);
     setPreferLocationAssignNavigation(defaultPreferBrowserNavigation);
-    writeWatchingUpdateSourceMode('local');
 
     localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
     localStorage.setItem('enableOptimization', JSON.stringify(false));
@@ -534,16 +529,24 @@ export const SettingsPanel = memo(({ isOpen, onClose }: SettingsPanelProps) => {
 
           {/* 设置项 */}
           <div className='space-y-6'>
-            <WatchingUpdateModeSetting />
-
-            {settingsUsername && (
-              <>
-                <div className='border-t border-gray-200 dark:border-gray-700'></div>
-
-                {/* 修改点：补齐 Web 用户菜单中的观看完成判定入口，实际读取/保存交给 Hook 与 API Client，避免设置页直接访问接口或匿名 localStorage。 */}
-                <WatchCompletionThresholdSetting username={settingsUsername} />
-              </>
-            )}
+            <div className='space-y-3'>
+              <div>
+                <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  更新设置
+                </h4>
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  管理更新检测、更新提醒、观看完成策略和手动更新。
+                </p>
+              </div>
+              <a
+                href='/settings/update'
+                onClick={onClose}
+                className='flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-900 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700'
+              >
+                <span>打开更新设置</span>
+                <ExternalLink className='w-3.5 opacity-70' />
+              </a>
+            </div>
 
             <div className='border-t border-gray-200 dark:border-gray-700'></div>
 

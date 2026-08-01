@@ -1101,7 +1101,7 @@ export const UserMenu: React.FC = () => {
                   : 'text-gray-600 dark:text-gray-300'
               }`}
             >
-              追更设置
+              更新设置
             </button>
           </div>
 
