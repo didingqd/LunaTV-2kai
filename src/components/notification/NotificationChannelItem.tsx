@@ -2,6 +2,7 @@ import { Edit3, LoaderCircle, Send, Trash2 } from 'lucide-react';
 
 import {
   NOTIFICATION_DELIVERY_STATUS_LABELS,
+  NOTIFICATION_HEALTH_STATUS_LABELS,
   type NotificationProviderMeta,
 } from '../notification-settings-provider-ui';
 import { NotificationToggleSwitch } from './NotificationToggleSwitch';
@@ -36,6 +37,7 @@ export function NotificationChannelItem({
 }: NotificationChannelItemProps) {
   const Icon = provider.icon;
   const testLabel = provider.capabilities.canSend ? '测试' : '校验配置';
+  const healthStatus = provider.healthStatus ?? 'healthy';
 
   return (
     <article
@@ -77,6 +79,17 @@ export function NotificationChannelItem({
           }`}
         >
           {NOTIFICATION_DELIVERY_STATUS_LABELS[provider.deliveryStatus]}
+        </p>
+        <p
+          className={`mt-1 text-xs font-medium ${
+            healthStatus === 'healthy'
+              ? 'text-green-700 dark:text-green-300'
+              : healthStatus === 'warning'
+                ? 'text-amber-700 dark:text-amber-300'
+                : 'text-red-700 dark:text-red-300'
+          }`}
+        >
+          {NOTIFICATION_HEALTH_STATUS_LABELS[healthStatus]}
         </p>
       </div>
 

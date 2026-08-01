@@ -2,6 +2,7 @@
 
 import {
   Check,
+  ClipboardList,
   Layers3,
   LoaderCircle,
   MessageSquarePlus,
@@ -40,6 +41,19 @@ interface ProvidersResponse {
   providers: BackendNotificationProviderMeta[];
 }
 
+interface NotificationLogItem {
+  eventType: string;
+  provider: string;
+  channelId: string;
+  status: 'success' | 'failed' | 'skipped';
+  error?: string;
+  time: number;
+}
+
+interface NotificationLogsResponse {
+  logs: NotificationLogItem[];
+}
+
 interface RunNowResponse {
   eventType: string;
   success: boolean;
@@ -54,6 +68,7 @@ const NOTIFICATION_CHANNELS_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/channe
 const NOTIFICATION_TEST_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/test`;
 const NOTIFICATION_RUN_NOW_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/run-now`;
 const NOTIFICATION_PROVIDERS_ENDPOINT = '/api/user/notification-providers';
+const NOTIFICATION_LOGS_ENDPOINT = '/api/admin/notification-logs';
 
 async function readSettingsResponse(
   response: Response,
@@ -91,6 +106,17 @@ async function readRunNowResponse(response: Response): Promise<RunNowResponse> {
     throw new Error(data.error || '通知调试执行失败');
   }
   return data as RunNowResponse;
+}
+
+async function readNotificationLogsResponse(
+  response: Response,
+): Promise<NotificationLogsResponse> {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('只有管理员可以查看通知日志');
+    throw new Error(data.error || '通知日志请求失败');
+  }
+  return data as NotificationLogsResponse;
 }
 
 function isAdminRole(role?: string) {
@@ -190,6 +216,17 @@ function buildConfigPatch(
   );
 }
 
+function formatLogTime(value: number) {
+  if (!Number.isFinite(value)) return '-';
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function getLogStatusLabel(status: NotificationLogItem['status']) {
+  if (status === 'success') return '成功';
+  if (status === 'failed') return '失败';
+  return '跳过';
+}
+
 function isFormValid(
   form: ChannelFormState,
   provider: NotificationProviderMeta | null,
@@ -224,6 +261,12 @@ export default function NotificationSettingsPage({
   );
   const [runNowResult, setRunNowResult] = useState<RunNowResponse | null>(null);
   const [runNowError, setRunNowError] = useState<string | null>(null);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [notificationLogs, setNotificationLogs] = useState<
+    NotificationLogItem[]
+  >([]);
+  const [logsError, setLogsError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
 
@@ -499,6 +542,31 @@ export default function NotificationSettingsPage({
     }
   };
 
+  const loadNotificationLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const response = await fetch(`${NOTIFICATION_LOGS_ENDPOINT}?limit=100`, {
+        cache: 'no-store',
+      });
+      const data = await readNotificationLogsResponse(response);
+      setNotificationLogs(Array.isArray(data.logs) ? data.logs : []);
+    } catch (reason) {
+      setNotificationLogs([]);
+      setLogsError(
+        reason instanceof Error ? reason.message : '通知日志请求失败',
+      );
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  const toggleNotificationLogs = () => {
+    const nextOpen = !logsOpen;
+    setLogsOpen(nextOpen);
+    if (nextOpen) void loadNotificationLogs();
+  };
+
   const openCreateForm = (providerType: string) => {
     const provider = providerByType.get(providerType);
     if (!provider?.capabilities.canCreate) return;
@@ -715,6 +783,15 @@ export default function NotificationSettingsPage({
                 <button
                   type='button'
                   disabled={saving}
+                  onClick={toggleNotificationLogs}
+                  className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                >
+                  <ClipboardList className='h-4 w-4' />
+                  通知日志
+                </button>
+                <button
+                  type='button'
+                  disabled={saving}
                   onClick={() => void restoreDefault()}
                   className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
                 >
@@ -753,6 +830,101 @@ export default function NotificationSettingsPage({
               onEditChannel={openEditForm}
               onDeleteChannel={(channel) => void deleteChannel(channel)}
             />
+          )}
+
+          {logsOpen && (
+            <section className='rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950/80'>
+              <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
+                <div>
+                  <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+                    通知日志
+                  </h2>
+                  <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+                    显示最近 100 条通知发送记录。
+                  </p>
+                </div>
+                <button
+                  type='button'
+                  disabled={logsLoading}
+                  onClick={() => void loadNotificationLogs()}
+                  className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                >
+                  {logsLoading ? (
+                    <LoaderCircle className='h-4 w-4 animate-spin' />
+                  ) : (
+                    <RotateCcw className='h-4 w-4' />
+                  )}
+                  刷新
+                </button>
+              </div>
+
+              {logsError && (
+                <div className='mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'>
+                  {logsError}
+                </div>
+              )}
+
+              {logsLoading ? (
+                <div className='flex items-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400'>
+                  <LoaderCircle className='h-4 w-4 animate-spin' />
+                  正在加载通知日志
+                </div>
+              ) : notificationLogs.length === 0 ? (
+                <div className='rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400'>
+                  暂无通知日志。
+                </div>
+              ) : (
+                <div className='max-h-[420px] overflow-auto rounded-xl border border-gray-200 dark:border-gray-800'>
+                  <table className='min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800'>
+                    <thead className='sticky top-0 bg-gray-50 dark:bg-gray-900'>
+                      <tr>
+                        {['时间', '事件', '渠道', '状态', '错误原因'].map(
+                          (label) => (
+                            <th
+                              key={label}
+                              className='whitespace-nowrap px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400'
+                            >
+                              {label}
+                            </th>
+                          ),
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className='divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-950'>
+                      {notificationLogs.map((log) => (
+                        <tr
+                          key={`${log.time}-${log.channelId}-${log.eventType}`}
+                        >
+                          <td className='whitespace-nowrap px-3 py-3 text-gray-900 dark:text-gray-100'>
+                            {formatLogTime(log.time)}
+                          </td>
+                          <td className='whitespace-nowrap px-3 py-3 text-gray-700 dark:text-gray-300'>
+                            {log.eventType}
+                          </td>
+                          <td className='whitespace-nowrap px-3 py-3 text-gray-700 dark:text-gray-300'>
+                            {log.provider}
+                          </td>
+                          <td
+                            className={`whitespace-nowrap px-3 py-3 font-medium ${
+                              log.status === 'success'
+                                ? 'text-green-700 dark:text-green-300'
+                                : log.status === 'failed'
+                                  ? 'text-red-700 dark:text-red-300'
+                                  : 'text-amber-700 dark:text-amber-300'
+                            }`}
+                          >
+                            {getLogStatusLabel(log.status)}
+                          </td>
+                          <td className='max-w-md px-3 py-3 text-gray-700 dark:text-gray-300'>
+                            {log.error || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           )}
         </>
       ) : null}

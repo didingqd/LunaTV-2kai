@@ -1,6 +1,12 @@
 'use client';
 
-import { CheckCircle, LoaderCircle, Save, XCircle } from 'lucide-react';
+import {
+  CheckCircle,
+  LoaderCircle,
+  PlayCircle,
+  Save,
+  XCircle,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AdminConfig } from '@/lib/admin.types';
@@ -41,12 +47,33 @@ const CRON_PRESETS = [
   { value: '0 12 * * *', label: '每天中午' },
 ] as const;
 
-export default function UpdateCheckConfig() {
+interface RunNowResult {
+  success: boolean;
+  running: boolean;
+  checkedCount: number;
+  dataSourceCount: number;
+  updateFoundCount: number;
+  updateSuccessCount: number;
+  notificationCount: number;
+  skippedCount: number;
+  failedCount: number;
+  durationMs: number;
+  error?: string;
+}
+
+export default function UpdateCheckConfig({
+  onRunNowComplete,
+}: {
+  onRunNowComplete?: () => void | Promise<void>;
+}) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
   const [canEditSystemConfig, setCanEditSystemConfig] = useState(false);
+  const [canRunNow, setCanRunNow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [runningNow, setRunningNow] = useState(false);
+  const [runNowResult, setRunNowResult] = useState<RunNowResult | null>(null);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -57,7 +84,10 @@ export default function UpdateCheckConfig() {
     const systemConfig = config.SystemConfig;
     const enabled = systemConfig?.updateCheckBackendEnabled === true;
     setAdminConfig(config);
-    if (role) setCanEditSystemConfig(role === 'owner');
+    if (role) {
+      setCanEditSystemConfig(role === 'owner');
+      setCanRunNow(role === 'owner' || role === 'admin');
+    }
     setSettings({
       enabled,
       schedulerEnabled:
@@ -169,6 +199,45 @@ export default function UpdateCheckConfig() {
     }
   };
 
+  const runNow = async () => {
+    setRunningNow(true);
+    setMessage(null);
+    setRunNowResult(null);
+    try {
+      const response = await fetch('/api/admin/watching-updates/run-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          data && typeof data === 'object' && 'error' in data
+            ? String(data.error)
+            : '立即检查失败',
+        );
+      }
+      const result = data as RunNowResult;
+      setRunNowResult(result);
+      await loadSettings(false);
+      await onRunNowComplete?.();
+      setMessage({
+        type: result.success ? 'success' : 'error',
+        text: result.running
+          ? '已有追更检查正在执行，请稍后查看日志。'
+          : result.success
+            ? `立即检查完成，检查 ${result.checkedCount} 个追更，发现 ${result.updateFoundCount} 个更新。`
+            : result.error || '立即检查失败',
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : '立即检查失败',
+      });
+    } finally {
+      setRunningNow(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className='flex items-center gap-2 py-6 text-sm text-gray-500 dark:text-gray-400'>
@@ -180,6 +249,35 @@ export default function UpdateCheckConfig() {
 
   return (
     <div className='space-y-6'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        <div>
+          <h4 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+            追更相关设置
+          </h4>
+          {runningNow && (
+            <p className='mt-1 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-300'>
+              <LoaderCircle className='h-4 w-4 animate-spin' />
+              正在执行追更更新检查
+            </p>
+          )}
+        </div>
+        {canRunNow && (
+          <button
+            type='button'
+            disabled={runningNow}
+            onClick={runNow}
+            className='inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60'
+          >
+            {runningNow ? (
+              <LoaderCircle className='h-4 w-4 animate-spin' />
+            ) : (
+              <PlayCircle className='h-4 w-4' />
+            )}
+            {runningNow ? '检查中...' : 'Run Now'}
+          </button>
+        )}
+      </div>
+
       {message && (
         <div
           className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
@@ -194,6 +292,35 @@ export default function UpdateCheckConfig() {
             <XCircle className='h-4 w-4 shrink-0' />
           )}
           {message.text}
+        </div>
+      )}
+
+      {runNowResult && (
+        <div className='grid gap-3 rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-700 sm:grid-cols-2 lg:grid-cols-4'>
+          <RunNowStat label='检查追更' value={runNowResult.checkedCount} />
+          <RunNowStat label='访问数据源' value={runNowResult.dataSourceCount} />
+          <RunNowStat label='检测更新' value={runNowResult.updateFoundCount} />
+          <RunNowStat
+            label='更新成功'
+            value={runNowResult.updateSuccessCount}
+          />
+          <RunNowStat label='推送通知' value={runNowResult.notificationCount} />
+          <RunNowStat label='跳过' value={runNowResult.skippedCount} />
+          <RunNowStat label='失败' value={runNowResult.failedCount} />
+          <RunNowStat
+            label='耗时'
+            value={`${Math.max(0, runNowResult.durationMs)} ms`}
+          />
+          {runNowResult.error && (
+            <div className='min-w-0 sm:col-span-2 lg:col-span-4'>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                错误详情
+              </div>
+              <div className='mt-1 break-words text-sm text-red-700 dark:text-red-300'>
+                {runNowResult.error}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -378,6 +505,23 @@ export default function UpdateCheckConfig() {
         )}
         保存配置
       </button>
+    </div>
+  );
+}
+
+function RunNowStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className='min-w-0'>
+      <div className='text-xs text-gray-500 dark:text-gray-400'>{label}</div>
+      <div className='mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100'>
+        {value}
+      </div>
     </div>
   );
 }

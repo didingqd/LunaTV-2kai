@@ -50,6 +50,7 @@ export interface WatchingUpdateCheckLogRequest {
 }
 
 export type WatchingUpdateCheckLogExecutionStage = 'started' | 'finished';
+export type WatchingUpdateCheckLogExecutionSource = 'manual' | 'scheduler';
 
 export interface WatchingUpdateCheckLogExecution {
   /**
@@ -57,6 +58,7 @@ export interface WatchingUpdateCheckLogExecution {
    * same log entry to the finished stage.
    */
   stage?: WatchingUpdateCheckLogExecutionStage;
+  source?: WatchingUpdateCheckLogExecutionSource;
   startedAt: number;
   endedAt: number;
   finishedAt?: number;

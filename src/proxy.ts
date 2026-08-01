@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getLegacyOwnerUsername } from '@/lib/owner-resolver';
 
 // 信任网络配置缓存（从 API 获取）
 let trustedNetworkCache: { enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null = null;
@@ -177,7 +178,7 @@ function generateTrustedAuthCookie(request: NextRequest): NextResponse {
   const response = NextResponse.next();
 
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-  const username = process.env.USERNAME || 'admin';
+  const username = getLegacyOwnerUsername('admin');
 
   if (storageType === 'localstorage') {
     // localstorage 模式：设置密码 cookie

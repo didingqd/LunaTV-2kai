@@ -431,10 +431,13 @@ export async function configSelfCheck(
   try {
     const dbUsers = await db.getAllUsers();
     const ownerUser = process.env.USERNAME;
+    const syncedUsers = Array.from(
+      new Set([...dbUsers, ...(ownerUser ? [ownerUser] : [])]),
+    );
 
-    // 创建用户列表：保留数据库中存在的用户的配置信息
+    // 创建用户列表：保留数据库中存在的用户和环境变量站长的配置信息
     const updatedUsers = await Promise.all(
-      dbUsers.map(async (username) => {
+      syncedUsers.map(async (username) => {
         // 查找现有配置中是否有这个用户
         const existingUserConfig = adminConfig.UserConfig.Users.find(
           (u) => u.username === username,
@@ -689,13 +692,10 @@ export async function configSelfCheck(
   });
   // 重新添加回站长
   adminConfig.UserConfig.Users.unshift({
+    ...originOwnerCfg,
     username: ownerUser!,
     role: 'owner',
     banned: false,
-    enabledApis: originOwnerCfg?.enabledApis || undefined,
-    tags: originOwnerCfg?.tags || undefined,
-    watchCompletionThreshold: originOwnerCfg?.watchCompletionThreshold,
-    watchingUpdateConfig: originOwnerCfg?.watchingUpdateConfig,
   });
 
   // 采集源去重

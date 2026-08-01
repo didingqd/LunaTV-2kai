@@ -64,19 +64,15 @@ const schemaOnlyProviderDefinitions: SchemaOnlyProviderDefinition[] = [
     ],
   },
   {
-    type: 'resend',
-    displayName: 'Email',
-    fields: [
-      { key: 'apiKey', type: 'password', label: 'API Key', required: true },
-      { key: 'from', type: 'text', label: '\u53d1\u4ef6\u4eba', required: true },
-      { key: 'to', type: 'text', label: '\u6536\u4ef6\u4eba', required: true },
-    ],
-  },
-  {
     type: 'gotify',
     displayName: 'Gotify',
     fields: [
-      { key: 'server', type: 'url', label: '\u670d\u52a1\u5668\u5730\u5740', required: true },
+      {
+        key: 'server',
+        type: 'url',
+        label: '\u670d\u52a1\u5668\u5730\u5740',
+        required: true,
+      },
       {
         key: 'token',
         type: 'password',
@@ -91,7 +87,11 @@ const schemaOnlyProviderDefinitions: SchemaOnlyProviderDefinition[] = [
     fields: [
       { key: 'server', type: 'url', label: '\u670d\u52a1\u5668\u5730\u5740' },
       { key: 'topic', type: 'text', label: 'Topic', required: true },
-      { key: 'token', type: 'password', label: 'Token\uff08\u53ef\u9009\uff09' },
+      {
+        key: 'token',
+        type: 'password',
+        label: 'Token\uff08\u53ef\u9009\uff09',
+      },
     ],
   },
 ];

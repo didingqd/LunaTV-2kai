@@ -9533,6 +9533,8 @@ function AdminPageClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<'owner' | 'admin' | null>(null);
+  const [watchingUpdateLogRefreshSignal, setWatchingUpdateLogRefreshSignal] =
+    useState(0);
   const [showResetConfigModal, setShowResetConfigModal] = useState(false);
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
@@ -9726,8 +9728,14 @@ function AdminPageClient() {
                 isExpanded={expandedTabs.updateCheckConfig}
                 onToggle={() => toggleTab('updateCheckConfig')}
               >
-                <UpdateCheckConfig />
-                <WatchingUpdateCheckLogViewer />
+                <UpdateCheckConfig
+                  onRunNowComplete={() =>
+                    setWatchingUpdateLogRefreshSignal((current) => current + 1)
+                  }
+                />
+                <WatchingUpdateCheckLogViewer
+                  refreshSignal={watchingUpdateLogRefreshSignal}
+                />
               </CollapsibleTab>
             )}
 

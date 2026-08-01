@@ -12,6 +12,7 @@ const originalFetch = global.fetch;
 const settingsEndpoint = '/api/user/notification-settings';
 const providersEndpoint = '/api/user/notification-providers';
 const runNowEndpoint = '/api/user/notification-settings/run-now';
+const logsEndpoint = '/api/admin/notification-logs';
 
 const baseSettings = {
   version: 2,
@@ -303,6 +304,50 @@ describe('NotificationSettingsPage', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventType: 'watching.update_failed' }),
+    });
+  });
+
+  it('opens notification logs and renders failed reasons', async () => {
+    const fetchMock = jest.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === providersEndpoint) {
+        return Promise.resolve(jsonResponse({ providers }));
+      }
+      if (url === `${logsEndpoint}?limit=100`) {
+        return Promise.resolve(
+          jsonResponse({
+            logs: [
+              {
+                eventType: 'watching.update_found',
+                provider: 'webhook',
+                channelId: 'channel-1',
+                status: 'failed',
+                error: 'send failed',
+                time: 1_700_000_000_000,
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ settings: baseSettings }));
+    });
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '通知日志' }));
+
+    expect(
+      await screen.findByRole('heading', { name: '通知日志' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('watching.update_found'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('webhook')).toBeInTheDocument();
+    expect(screen.getByText('失败')).toBeInTheDocument();
+    expect(screen.getByText('send failed')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(`${logsEndpoint}?limit=100`, {
+      cache: 'no-store',
     });
   });
 });

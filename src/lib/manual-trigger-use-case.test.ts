@@ -28,6 +28,10 @@ function jobResult(
       succeeded: 1,
       failed: 0,
       oldestDueAt: 900,
+      dataSourceCount: 1,
+      updateFoundCount: 0,
+      notificationCount: 0,
+      skipped: 0,
     },
     ...overrides,
   };

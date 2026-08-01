@@ -161,6 +161,10 @@ function LogDetailsModal({
                 value={entry.request?.requestedBy}
               />
               <DetailItem label='trigger' value={entry.request?.trigger} />
+              <DetailItem
+                label='executionSource'
+                value={entry.execution?.source}
+              />
             </dl>
             <div className='mt-4'>
               <div className='mb-1 text-xs font-medium text-gray-500 dark:text-gray-400'>
@@ -293,7 +297,11 @@ function LogDetailsModal({
   );
 }
 
-export default function WatchingUpdateCheckLogViewer() {
+export default function WatchingUpdateCheckLogViewer({
+  refreshSignal = 0,
+}: {
+  refreshSignal?: number;
+}) {
   const [source, setSource] = useState<SourceFilter>('all');
   const [operation, setOperation] = useState<OperationFilter>('all');
   const [userId, setUserId] = useState('');
@@ -335,7 +343,7 @@ export default function WatchingUpdateCheckLogViewer() {
     } finally {
       setLoading(false);
     }
-  }, [query, refreshKey]);
+  }, [query, refreshKey, refreshSignal]);
 
   useEffect(() => {
     void loadLogs();
@@ -359,7 +367,8 @@ export default function WatchingUpdateCheckLogViewer() {
       submittedSource === 'cron' ||
       submittedSource === 'app' ||
       submittedSource === 'web' ||
-      submittedSource === 'admin'
+      submittedSource === 'admin' ||
+      submittedSource === 'trigger'
         ? submittedSource
         : 'all';
     setSource(nextSource);

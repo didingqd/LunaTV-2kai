@@ -19,6 +19,7 @@ export type NotificationProviderDeliveryStatus =
   | 'active'
   | 'preview'
   | 'planned';
+export type NotificationProviderHealthStatus = 'healthy' | 'warning' | 'failed';
 
 export interface NotificationProviderConfigFieldMeta {
   key: string;
@@ -52,6 +53,7 @@ export interface BackendNotificationProviderMeta {
   configSchema: NotificationProviderConfigSchemaMeta;
   capabilities: NotificationProviderCapabilitiesMeta;
   deliveryStatus: NotificationProviderDeliveryStatus;
+  healthStatus?: NotificationProviderHealthStatus;
 }
 
 export interface NotificationProviderMeta extends Omit<
@@ -70,6 +72,15 @@ export const NOTIFICATION_DELIVERY_STATUS_LABELS: Record<
   active: '\u5df2\u652f\u6301',
   preview: '\u9884\u89c8',
   planned: '\u5f00\u53d1\u4e2d',
+};
+
+export const NOTIFICATION_HEALTH_STATUS_LABELS: Record<
+  NotificationProviderHealthStatus,
+  string
+> = {
+  healthy: '\u5065\u5eb7',
+  warning: '\u8b66\u544a',
+  failed: '\u5931\u8d25',
 };
 
 const NOTIFICATION_PROVIDER_ICON_COMPONENTS: Record<string, LucideIcon> = {

@@ -8,6 +8,8 @@ import {
 import {
   updateCheckJobRunner,
   type UpdateCheckJobRunner,
+  type UpdateCheckJobRunnerOptions,
+  type UpdateCheckJobRunnerResult,
 } from './update-check-job-runner';
 
 const DEFAULT_MAX_WAIT_MS = 60 * 1000;
@@ -44,8 +46,7 @@ export class SchedulerManager {
   private readonly logger?: Pick<Console, 'debug' | 'error'>;
 
   constructor(options: SchedulerManagerOptions = {}) {
-    this.tasks =
-      options.tasks ?? new CachedUpdateCheckTaskRepository(db);
+    this.tasks = options.tasks ?? new CachedUpdateCheckTaskRepository(db);
     this.jobRunner = options.jobRunner ?? updateCheckJobRunner;
     this.loadEnabled = options.loadEnabled ?? defaultLoadEnabled;
     this.now = options.now ?? Date.now;
@@ -76,6 +77,12 @@ export class SchedulerManager {
     this.clearTimer();
     this.logger?.debug?.('[update-check] scheduler manager reload');
     void this.scheduleNext(this.generation);
+  }
+
+  async runNow(
+    options: UpdateCheckJobRunnerOptions,
+  ): Promise<UpdateCheckJobRunnerResult> {
+    return this.jobRunner.run(options);
   }
 
   dispose(): void {
@@ -125,12 +132,8 @@ export class SchedulerManager {
     this.timer = null;
     try {
       if (await this.loadEnabled()) {
-        const earliestNextCheckAt =
-          await this.tasks.findEarliestNextCheckAt();
-        if (
-          earliestNextCheckAt !== null &&
-          earliestNextCheckAt <= this.now()
-        ) {
+        const earliestNextCheckAt = await this.tasks.findEarliestNextCheckAt();
+        if (earliestNextCheckAt !== null && earliestNextCheckAt <= this.now()) {
           await this.jobRunner.run({ trigger: 'cron' });
         }
       }

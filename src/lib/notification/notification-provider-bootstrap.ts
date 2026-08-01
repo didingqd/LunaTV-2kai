@@ -7,6 +7,7 @@ import { notificationProviderRegistry } from './notification-provider-registry';
 import { barkNotificationProvider } from './providers/bark-notification-provider';
 import { inboxNotificationProvider } from './providers/inbox-notification-provider';
 import { pushPlusNotificationProvider } from './providers/pushplus-notification-provider';
+import { resendNotificationProvider } from './providers/resend-notification-provider';
 import { serverChan3NotificationProvider } from './providers/serverchan3-notification-provider';
 import {
   schemaOnlyNotificationProviderTypes,
@@ -27,6 +28,7 @@ export function registerDefaultNotificationProviders(): void {
     barkNotificationProvider,
     pushPlusNotificationProvider,
     serverChan3NotificationProvider,
+    resendNotificationProvider,
     ...schemaOnlyNotificationProviders,
   ]) {
     if (

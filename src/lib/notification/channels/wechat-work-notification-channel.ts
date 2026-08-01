@@ -13,16 +13,6 @@ interface WeChatWorkResponse {
   errmsg?: string;
 }
 
-function formatTime(timestamp: number) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(timestamp));
-}
-
 function getPayloadString(
   message: NotificationMessage,
   keys: string[],
@@ -30,12 +20,15 @@ function getPayloadString(
   for (const key of keys) {
     const value = message.payload?.[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'number' && Number.isFinite(value))
+      return String(value);
   }
   return null;
 }
 
 function toMarkdownContent(message: NotificationMessage): string {
+  const displayTime = getPayloadString(message, ['displayTime']) ?? '-';
+
   if (message.type === NotificationMessageType.WATCHING_UPDATE_FOUND) {
     return [
       '### 追更更新',
@@ -43,7 +36,7 @@ function toMarkdownContent(message: NotificationMessage): string {
       `内容：${message.content}`,
       `资源站：${getPayloadString(message, ['source', 'sourceName']) ?? '-'}`,
       `最新：${getPayloadString(message, ['episode', 'latestEpisode', 'newEpisode']) ?? '-'}`,
-      `时间：${formatTime(message.createdAt)}`,
+      `时间：${displayTime}`,
     ].join('\n');
   }
 
@@ -52,15 +45,13 @@ function toMarkdownContent(message: NotificationMessage): string {
       '### 追更失败',
       `任务：${message.title}`,
       `原因：${message.content}`,
-      `时间：${formatTime(message.createdAt)}`,
+      `时间：${displayTime}`,
     ].join('\n');
   }
 
-  return [
-    `### ${message.title}`,
-    message.content,
-    `时间：${formatTime(message.createdAt)}`,
-  ].join('\n');
+  return [`### ${message.title}`, message.content, `时间：${displayTime}`].join(
+    '\n',
+  );
 }
 
 export class WeChatWorkNotificationChannel implements NotificationChannel {
@@ -93,7 +84,9 @@ export class WeChatWorkNotificationChannel implements NotificationChannel {
       throw new Error(`WeChat Work webhook failed with ${response.status}`);
     }
 
-    const data = (await response.json().catch(() => ({}))) as WeChatWorkResponse;
+    const data = (await response
+      .json()
+      .catch(() => ({}))) as WeChatWorkResponse;
     if (typeof data.errcode === 'number' && data.errcode !== 0) {
       throw new Error(data.errmsg || 'WeChat Work webhook failed');
     }

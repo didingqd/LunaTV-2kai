@@ -8,6 +8,7 @@ import {
 } from './notification/notification-event-builder';
 import type { NotificationEvent } from './notification/notification-types';
 import { resolveUserWatchingUpdateSchedule } from './scheduler/user-watching-update-schedule-resolver';
+import { timezoneService } from './services/timezone_service';
 import {
   systemConfigRepository,
   type UpdateCheckConfigReader,
@@ -31,7 +32,7 @@ import { watchingUpdateNotificationBuilder } from './watching-update-notificatio
 type SchedulerTaskRepository = UpdateCheckTaskRepository &
   Pick<
     UpdateCheckScheduleTaskRepository,
-    'listTasksByUser' | 'batchUpdateNextCheckAt'
+    'listTasksByUser' | 'listAllUsersWithTasks' | 'batchUpdateNextCheckAt'
   >;
 
 interface CompletedTask {
@@ -43,6 +44,8 @@ interface CompletedTask {
 export interface UpdateCheckSchedulerOptions {
   limit?: number;
   now?: number;
+  ignoreSchedule?: boolean;
+  preserveNextCheckAt?: boolean;
   onTaskComplete?: (value: {
     task: UpdateCheckTask;
     result: UpdateResult | null;
@@ -54,6 +57,10 @@ export interface UpdateCheckSchedulerResult {
   succeeded: number;
   failed: number;
   oldestDueAt: number | null;
+  dataSourceCount: number;
+  updateFoundCount: number;
+  notificationCount: number;
+  skipped: number;
 }
 
 export class UpdateCheckScheduler {
@@ -83,7 +90,16 @@ export class UpdateCheckScheduler {
     const now = options.now ?? Date.now();
     const settings = await this.config.getUpdateCheckConfig();
     if (!settings.updateCheckBackendEnabled) {
-      return { inspected: 0, succeeded: 0, failed: 0, oldestDueAt: null };
+      return {
+        inspected: 0,
+        succeeded: 0,
+        failed: 0,
+        oldestDueAt: null,
+        dataSourceCount: 0,
+        updateFoundCount: 0,
+        notificationCount: 0,
+        skipped: 0,
+      };
     }
     const limit = Math.max(
       1,
@@ -92,7 +108,9 @@ export class UpdateCheckScheduler {
         settings.updateCheckBatchSize,
       ),
     );
-    const dueTasks = await this.tasks.listDue(now, limit);
+    const candidateTasks = options.ignoreSchedule
+      ? await this.listAllTasks()
+      : await this.tasks.listDue(now, limit);
     const [enabledUserIds, adminConfig] = await Promise.all([
       this.permissions.listUpdateCheckEnabledUserIds(),
       this.loadAdminConfig(),
@@ -103,10 +121,10 @@ export class UpdateCheckScheduler {
     const usersById = new Map(
       adminConfig.UserConfig.Users.map((user) => [user.username, user]),
     );
-    const selectedTasks: typeof dueTasks = [];
+    const selectedTasks: typeof candidateTasks = [];
     const users = new Set<string>();
     const followCounts = new Map<string, number>();
-    for (const task of dueTasks) {
+    for (const task of candidateTasks) {
       if (!authorizedUsers.has(task.userId)) continue;
       const user = usersById.get(task.userId);
       const schedule = resolveUserWatchingUpdateSchedule({
@@ -132,6 +150,7 @@ export class UpdateCheckScheduler {
     }
     let succeeded = 0;
     let failed = 0;
+    let notificationCount = 0;
     const completedTasks: CompletedTask[] = [];
 
     let cursor = 0;
@@ -144,7 +163,22 @@ export class UpdateCheckScheduler {
         completedTasks.push(completedTask);
         if (result) succeeded += 1;
         else failed += 1;
-        await this.dispatchTaskFailureNotification(completedTask);
+        if (options.preserveNextCheckAt) {
+          await this.preserveTaskNextCheckAt(task, latestTask);
+        }
+        notificationCount += await this.dispatchTaskFailureNotification(
+          completedTask,
+          this.resolveNotificationTimezone(
+            task.userId,
+            settings,
+            usersById,
+            authorizedUsers,
+            ownerId,
+            completedTask.after?.lastErrorAt ??
+              completedTask.after?.updatedAt ??
+              now,
+          ),
+        );
         if (options.onTaskComplete) {
           try {
             await options.onTaskComplete({ task, result });
@@ -163,24 +197,53 @@ export class UpdateCheckScheduler {
       usersById,
       authorizedUsers,
       ownerId,
+      (count) => {
+        notificationCount += count;
+      },
     );
-    await this.rescheduleSuccessfulTasks(
-      completedTasks,
-      settings,
-      usersById,
-      authorizedUsers,
-      ownerId,
-    );
+    if (!options.preserveNextCheckAt) {
+      await this.rescheduleSuccessfulTasks(
+        completedTasks,
+        settings,
+        usersById,
+        authorizedUsers,
+        ownerId,
+      );
+    }
 
     return {
       inspected: selectedTasks.length,
       succeeded,
       failed,
+      dataSourceCount: new Set(selectedTasks.map((task) => task.source)).size,
+      updateFoundCount: completedTasks.filter((task) => task.result?.hasUpdate)
+        .length,
+      notificationCount,
+      skipped: Math.max(0, candidateTasks.length - selectedTasks.length),
       oldestDueAt:
         selectedTasks.length > 0
           ? Math.min(...selectedTasks.map((task) => task.nextCheckAt))
           : null,
     };
+  }
+
+  private async listAllTasks(): Promise<UpdateCheckTask[]> {
+    const users = await this.tasks.listAllUsersWithTasks();
+    const tasks = (
+      await Promise.all(users.map((user) => this.tasks.listTasksByUser(user)))
+    ).flat();
+    return tasks.sort(
+      (left, right) =>
+        left.nextCheckAt - right.nextCheckAt || left.id.localeCompare(right.id),
+    );
+  }
+
+  private async preserveTaskNextCheckAt(
+    before: UpdateCheckTask,
+    after: UpdateCheckTask | null,
+  ): Promise<void> {
+    if (!after || after.nextCheckAt === before.nextCheckAt) return;
+    await this.tasks.save({ ...after, nextCheckAt: before.nextCheckAt });
   }
 
   private async rescheduleSuccessfulTasks(
@@ -248,6 +311,7 @@ export class UpdateCheckScheduler {
     usersById: Map<string, AdminConfig['UserConfig']['Users'][number]>,
     authorizedUsers: Set<string>,
     ownerId: string | undefined,
+    onDispatched: (count: number) => void,
   ): Promise<void> {
     const resultsByUser = new Map<string, UpdateResult[]>();
     for (const completedTask of completedTasks) {
@@ -280,15 +344,14 @@ export class UpdateCheckScheduler {
         await this.notificationState.save(userId, analysis.nextState);
         continue;
       }
-      const user = usersById.get(userId);
-      const timezone = resolveUserWatchingUpdateSchedule({
-        username: userId,
-        userUpdateCheckBackendEnabled: authorizedUsers.has(userId),
-        isOwner: userId === ownerId,
-        systemConfig: settings,
-        userConfig: user?.watchingUpdateConfig,
-        from: new Date(checkedAt),
-      }).timezone;
+      const timezone = this.resolveNotificationTimezone(
+        userId,
+        settings,
+        usersById,
+        authorizedUsers,
+        ownerId,
+        checkedAt,
+      );
       const content = watchingUpdateNotificationBuilder.build(
         analysis,
         checkedAt,
@@ -307,14 +370,17 @@ export class UpdateCheckScheduler {
             message: content.content,
             source: 'update-check',
             timestamp: checkedAt,
+            displayTime: content.displayTime,
             metadata: {
               newUpdates: analysis.newUpdates,
               updatedHistory: analysis.updatedHistory,
               checkedAt,
               timezone,
+              displayTime: content.displayTime,
             },
           }),
         );
+        onDispatched(result.succeeded);
         if (!result.success) {
           console.error(
             'Update check notification dispatch failed',
@@ -331,9 +397,10 @@ export class UpdateCheckScheduler {
 
   private async dispatchTaskFailureNotification(
     completedTask: CompletedTask,
-  ): Promise<void> {
-    const event = this.buildUpdateFailedEvent(completedTask);
-    if (!event) return;
+    timezone: string,
+  ): Promise<number> {
+    const event = this.buildUpdateFailedEvent(completedTask, timezone);
+    if (!event) return 0;
 
     try {
       const result = await this.notifications.dispatchEvent(event);
@@ -343,19 +410,22 @@ export class UpdateCheckScheduler {
           result.errors,
         );
       }
+      return result.succeeded;
     } catch (error) {
       console.error('Update check notification dispatch threw', error);
+      return 0;
     }
   }
 
   private buildUpdateFailedEvent(
     completedTask: CompletedTask,
+    timezone: string,
   ): NotificationEvent | null {
     if (
       typeof completedTask.after?.lastErrorAt === 'number' &&
       completedTask.after.lastErrorAt !== completedTask.before.lastErrorAt
     ) {
-      return this.buildFailureNotificationEvent(completedTask);
+      return this.buildFailureNotificationEvent(completedTask, timezone);
     }
 
     return null;
@@ -363,29 +433,54 @@ export class UpdateCheckScheduler {
 
   private buildFailureNotificationEvent(
     completedTask: CompletedTask,
+    timezone: string,
   ): NotificationEvent {
     const failedAt =
       completedTask.after?.lastErrorAt ?? completedTask.before.updatedAt;
     const message = sanitizeNotificationError(completedTask.after?.lastError);
+    const displayTime = timezoneService.format(failedAt, timezone);
 
     return createWatchingUpdateFailedEvent({
       userId: completedTask.before.userId,
       title: '追更检查失败',
       message: `${completedTask.before.source} 来源的资源 ${completedTask.before.resourceId} 检查失败：${message}。检查时间：${formatNotificationTime(
         failedAt,
+        timezone,
       )}`,
       error: message,
       source: 'update-check',
       timestamp: failedAt,
+      displayTime,
       metadata: {
         resourceId: completedTask.before.resourceId,
         taskSource: completedTask.before.source,
         taskId: completedTask.before.id,
         followId: completedTask.before.followId,
         failedAt,
+        timezone,
+        displayTime,
         error: message,
       },
     });
+  }
+
+  private resolveNotificationTimezone(
+    userId: string,
+    settings: SystemConfig,
+    usersById: Map<string, AdminConfig['UserConfig']['Users'][number]>,
+    authorizedUsers: Set<string>,
+    ownerId: string | undefined,
+    timestamp: number,
+  ): string {
+    const user = usersById.get(userId);
+    return resolveUserWatchingUpdateSchedule({
+      username: userId,
+      userUpdateCheckBackendEnabled: authorizedUsers.has(userId),
+      isOwner: userId === ownerId,
+      systemConfig: settings,
+      userConfig: user?.watchingUpdateConfig,
+      from: new Date(timestamp),
+    }).timezone;
   }
 }
 
@@ -406,6 +501,6 @@ function sanitizeNotificationError(error: string | undefined): string {
   return normalized.slice(0, 160);
 }
 
-function formatNotificationTime(timestamp: number): string {
-  return new Date(timestamp).toISOString();
+function formatNotificationTime(timestamp: number, timezone: string): string {
+  return timezoneService.format(timestamp, timezone);
 }

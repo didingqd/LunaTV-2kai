@@ -7,6 +7,7 @@ import {
   createNotificationRunNowEvent,
   isNotificationRunNowEventType,
 } from '@/lib/notification/notification-run-now';
+import { systemConfigRepository } from '@/lib/system-config-repository';
 
 export const runtime = 'nodejs';
 
@@ -40,9 +41,13 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return errorResponse('Invalid notification event', 400);
 
   try {
+    const config = await systemConfigRepository.getUpdateCheckConfig();
     const event = createNotificationRunNowEvent(
       admin.username,
       parsed.data.eventType,
+      Date.now,
+      undefined,
+      config.updateCheckTimezone,
     );
     const result = await notificationDispatcher.dispatchEvent(event);
 

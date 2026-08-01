@@ -7,12 +7,12 @@ import type { NotificationEvent } from '../notification-types';
 import {
   createProviderTestEvent,
   escapeHtml,
+  fetchWithNotificationTimeout,
   getChannelConfig,
   getNotificationContent,
   getOptionalConfigString,
   getRequiredConfigString,
   maskConfigBySchema,
-  throwOnUnsuccessfulResponse,
   trimTrailingSlash,
   validateHttpUrl,
 } from './notification-provider-utils';
@@ -30,6 +30,27 @@ const schema: NotificationProviderConfigSchema = {
   ],
 };
 
+async function assertTelegramResponse(response: Response): Promise<void> {
+  const data = await response.json().catch(() => null);
+  const description =
+    data && typeof data === 'object' && 'description' in data
+      ? String((data as { description?: unknown }).description)
+      : '';
+  if (!response.ok) {
+    throw new Error(
+      description || `Telegram notification failed with ${response.status}`,
+    );
+  }
+  if (
+    data &&
+    typeof data === 'object' &&
+    'ok' in data &&
+    (data as { ok?: unknown }).ok === false
+  ) {
+    throw new Error(description || 'Telegram notification failed');
+  }
+}
+
 export class TelegramNotificationProvider implements NotificationProvider {
   readonly type = 'telegram';
 
@@ -42,7 +63,7 @@ export class TelegramNotificationProvider implements NotificationProvider {
     const chatId = String(config.chatId);
     const apiServer = String(config.apiServer || 'https://api.telegram.org');
     const { title, content } = getNotificationContent(event);
-    const response = await fetch(
+    const response = await fetchWithNotificationTimeout(
       `${trimTrailingSlash(apiServer)}/bot${encodeURIComponent(token)}/sendMessage`,
       {
         method: 'POST',
@@ -54,7 +75,7 @@ export class TelegramNotificationProvider implements NotificationProvider {
         }),
       },
     );
-    await throwOnUnsuccessfulResponse(response, 'Telegram');
+    await assertTelegramResponse(response);
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
@@ -90,4 +111,3 @@ export class TelegramNotificationProvider implements NotificationProvider {
 }
 
 export const telegramNotificationProvider = new TelegramNotificationProvider();
-

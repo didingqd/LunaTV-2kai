@@ -6,6 +6,11 @@ import {
 } from '@/lib/update-check-scheduler';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
 import { createSchedulerFailedEvent } from '@/lib/notification/notification-event-builder';
+import { timezoneService } from '@/lib/services/timezone_service';
+import {
+  systemConfigRepository,
+  type UpdateCheckConfigReader,
+} from '@/lib/system-config-repository';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 import {
   createWatchingUpdateCheckLogResult,
@@ -14,6 +19,7 @@ import {
 } from '@/lib/watching-update-check-log-service';
 import type {
   WatchingUpdateCheckLogEntry,
+  WatchingUpdateCheckLogExecutionSource,
   WatchingUpdateCheckLogOperation,
   WatchingUpdateCheckLogRequest,
   WatchingUpdateCheckLogSource,
@@ -32,6 +38,8 @@ export interface UpdateCheckJobRunnerOptions {
   trigger: UpdateCheckJobTrigger;
   requestedBy?: string;
   limit?: number;
+  ignoreSchedule?: boolean;
+  preserveNextCheckAt?: boolean;
   onTaskComplete?: UpdateCheckSchedulerOptions['onTaskComplete'];
   /**
    * Stage 4H-H: API routes and non-HTTP schedulers pass request metadata here
@@ -79,6 +87,12 @@ function auditOperationForTrigger(
   trigger: UpdateCheckJobTrigger,
 ): WatchingUpdateCheckLogOperation {
   return trigger === 'cron' ? 'scheduled-check' : 'manual-trigger';
+}
+
+function executionSourceForTrigger(
+  trigger: UpdateCheckJobTrigger,
+): WatchingUpdateCheckLogExecutionSource {
+  return trigger === 'cron' ? 'scheduler' : 'manual';
 }
 
 function uniqueUserIds(values: Array<string | undefined>): string[] {
@@ -179,6 +193,7 @@ export class UpdateCheckJobRunner {
     private readonly now: () => number = Date.now,
     private readonly auditLogger: UpdateCheckAuditLogger | null = watchingUpdateCheckLogService,
     private readonly notifications: NotificationEventDispatcher = notificationDispatcher,
+    private readonly config: UpdateCheckConfigReader = systemConfigRepository,
   ) {}
 
   async run(
@@ -240,6 +255,12 @@ export class UpdateCheckJobRunner {
     try {
       const schedulerResult = await this.scheduler.run({
         ...(options.limit === undefined ? {} : { limit: options.limit }),
+        ...(options.ignoreSchedule === undefined
+          ? {}
+          : { ignoreSchedule: options.ignoreSchedule }),
+        ...(options.preserveNextCheckAt === undefined
+          ? {}
+          : { preserveNextCheckAt: options.preserveNextCheckAt }),
         onTaskComplete,
       });
       const finishedAt = this.now();
@@ -339,6 +360,7 @@ export class UpdateCheckJobRunner {
         request,
         execution: {
           stage: input.stage,
+          source: executionSourceForTrigger(input.options.trigger),
           startedAt,
           endedAt: finishedAt,
           finishedAt,
@@ -392,6 +414,7 @@ export class UpdateCheckJobRunner {
           taskName: 'update-checks',
           error,
           timestamp,
+          displayTime: await this.resolveSchedulerFailureDisplayTime(timestamp),
         }),
       );
       if (!result.success) {
@@ -405,6 +428,17 @@ export class UpdateCheckJobRunner {
         'Update check scheduler failure notification dispatch threw',
         dispatchError,
       );
+    }
+  }
+
+  private async resolveSchedulerFailureDisplayTime(
+    timestamp: number,
+  ): Promise<string> {
+    try {
+      const config = await this.config.getUpdateCheckConfig();
+      return timezoneService.format(timestamp, config.updateCheckTimezone);
+    } catch {
+      return timezoneService.format(timestamp, 'UTC');
     }
   }
 }

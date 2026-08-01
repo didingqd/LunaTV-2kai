@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { AdminConfig } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
+import { isOwner, resolveUserRole } from '@/lib/owner-resolver';
 
 export type AdminRole = 'owner' | 'admin';
 
@@ -10,16 +11,8 @@ async function resolveRoleFromConfig(
   config: AdminConfig,
   username: string
 ): Promise<AdminRole | null> {
-  if (username === process.env.USERNAME) {
-    return 'owner';
-  }
-
-  const user = config.UserConfig.Users.find((u) => u.username === username);
-  if (user && !user.banned && user.role === 'admin') {
-    return 'admin';
-  }
-
-  return null;
+  const role = resolveUserRole(username, config);
+  return role === 'owner' || role === 'admin' ? role : null;
 }
 
 export async function getAdminRoleFromRequest(
@@ -45,7 +38,7 @@ export async function getAdminRoleFromRequest(
     return null;
   }
 
-  if (username === process.env.USERNAME) {
+  if (isOwner(username)) {
     return 'owner';
   }
 

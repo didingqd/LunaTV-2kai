@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import type { UpdateCheckSchedulerResult } from '@/lib/update-check-scheduler';
+import { NotificationEventType } from '@/lib/notification/notification-types';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 
 import { UpdateCheckJobRunner } from './update-check-job-runner';
@@ -10,6 +11,10 @@ const schedulerResult: UpdateCheckSchedulerResult = {
   succeeded: 2,
   failed: 1,
   oldestDueAt: 100,
+  dataSourceCount: 2,
+  updateFoundCount: 1,
+  notificationCount: 1,
+  skipped: 0,
 };
 
 const auditTask: UpdateCheckTask = {
@@ -59,7 +64,29 @@ function noAuditRunner(
   now: () => number,
 ) {
   const scheduler = 'run' in run ? run : { run };
-  return new UpdateCheckJobRunner(scheduler, now, null);
+  return new UpdateCheckJobRunner(
+    scheduler,
+    now,
+    null,
+    {
+      dispatchEvent: jest.fn(async () => ({
+        success: true,
+        totalChannels: 0,
+        succeeded: 0,
+        failed: 0,
+        errors: [],
+      })),
+    },
+    configReader(),
+  );
+}
+
+function configReader(timezone = 'UTC') {
+  return {
+    getUpdateCheckConfig: jest.fn().mockResolvedValue({
+      updateCheckTimezone: timezone,
+    }),
+  };
 }
 
 describe('UpdateCheckJobRunner', () => {
@@ -184,6 +211,13 @@ describe('UpdateCheckJobRunner', () => {
 
   it('returns failure metadata when the scheduler throws', async () => {
     const auditLogger = { record: jest.fn().mockResolvedValue('audit-2') };
+    const dispatchEvent = jest.fn(async () => ({
+      success: true,
+      totalChannels: 1,
+      succeeded: 1,
+      failed: 0,
+      errors: [],
+    }));
     const runner = new UpdateCheckJobRunner(
       {
         run: jest.fn(async () => {
@@ -192,10 +226,15 @@ describe('UpdateCheckJobRunner', () => {
       },
       clock(2_000, 2_040),
       auditLogger,
+      { dispatchEvent },
+      configReader(),
     );
 
-    await expect(runner.run({ trigger: 'cron' })).resolves.toEqual({
+    await expect(
+      runner.run({ trigger: 'cron', requestedBy: 'system' }),
+    ).resolves.toEqual({
       trigger: 'cron',
+      requestedBy: 'system',
       startedAt: 2_000,
       finishedAt: 2_040,
       durationMs: 40,
@@ -203,6 +242,23 @@ describe('UpdateCheckJobRunner', () => {
       success: false,
       error: 'scheduler failed',
       schedulerResult: null,
+    });
+    expect(dispatchEvent).toHaveBeenCalledWith({
+      id: '',
+      type: NotificationEventType.SCHEDULER_FAILED,
+      userId: 'system',
+      data: {
+        taskName: 'update-checks',
+        error: 'scheduler failed',
+        timestamp: 2_040,
+        displayTime: '1970-01-01 00:00:02',
+        title: '调度失败',
+        message:
+          'update-checks 执行失败：scheduler failed。执行时间：1970-01-01 00:00:02',
+        content:
+          'update-checks 执行失败：scheduler failed。执行时间：1970-01-01 00:00:02',
+      },
+      createdAt: 2_040,
     });
     expect(auditLogger.record).toHaveBeenCalledTimes(2);
     expect(auditLogger.record).toHaveBeenLastCalledWith(

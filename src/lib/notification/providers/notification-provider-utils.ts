@@ -6,6 +6,8 @@ import type {
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
 import type { NotificationEvent } from '../notification-types';
 
+const DEFAULT_NOTIFICATION_REQUEST_TIMEOUT_MS = 10_000;
+
 export function getConfigRecord(config: unknown): Record<string, unknown> {
   return config && typeof config === 'object' && !Array.isArray(config)
     ? (config as Record<string, unknown>)
@@ -51,7 +53,8 @@ export function validateSchemaConfig(
     if (field.required && !value) {
       throw new Error('INVALID_NOTIFICATION_CHANNEL_CONFIG');
     }
-    next[field.key] = field.type === 'url' && value ? validateHttpUrl(value) : value;
+    next[field.key] =
+      field.type === 'url' && value ? validateHttpUrl(value) : value;
     return next;
   }, {});
 }
@@ -103,7 +106,31 @@ export async function throwOnUnsuccessfulResponse(
   providerName: string,
 ): Promise<void> {
   if (response.ok) return;
-  throw new Error(`${providerName} notification failed with ${response.status}`);
+  throw new Error(
+    `${providerName} notification failed with ${response.status}`,
+  );
+}
+
+export async function fetchWithNotificationTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = DEFAULT_NOTIFICATION_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Notification request timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function getChannelConfig(
@@ -125,5 +152,3 @@ export function escapeHtml(value: string): string {
     return '&#39;';
   });
 }
-
-

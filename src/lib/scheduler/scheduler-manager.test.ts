@@ -21,6 +21,10 @@ function jobResult(
       succeeded: 0,
       failed: 0,
       oldestDueAt: null,
+      dataSourceCount: 0,
+      updateFoundCount: 0,
+      notificationCount: 0,
+      skipped: 0,
     },
     ...overrides,
   };

@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   const admin = requireNotificationSettingsAdmin(request);
   if ('error' in admin) return admin.error;
 
-  return NextResponse.json(buildNotificationProvidersPayload(), {
+  return NextResponse.json(await buildNotificationProvidersPayload(), {
     headers: noStoreHeaders,
   });
 }

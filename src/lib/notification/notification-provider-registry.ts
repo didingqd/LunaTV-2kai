@@ -40,7 +40,10 @@ interface RegisteredNotificationProvider {
 }
 
 export class NotificationProviderRegistry {
-  private readonly providers = new Map<string, RegisteredNotificationProvider>();
+  private readonly providers = new Map<
+    string,
+    RegisteredNotificationProvider
+  >();
 
   register(
     provider: NotificationProvider,
@@ -64,17 +67,23 @@ export class NotificationProviderRegistry {
     return this.providers.get(type)?.provider ?? null;
   }
 
+  getCapabilities(type: string): NotificationProviderCapabilities | null {
+    return this.providers.get(type)?.capabilities ?? null;
+  }
+
   has(type: string): boolean {
     return this.providers.has(type);
   }
 
   list(): NotificationProviderMetadata[] {
-    return Array.from(this.providers.values()).map(({ provider, capabilities }) => ({
-      type: provider.type,
-      name: provider.getDisplayName(),
-      configSchema: provider.getConfigSchema(),
-      capabilities,
-    }));
+    return Array.from(this.providers.values()).map(
+      ({ provider, capabilities }) => ({
+        type: provider.type,
+        name: provider.getDisplayName(),
+        configSchema: provider.getConfigSchema(),
+        capabilities,
+      }),
+    );
   }
 }
 

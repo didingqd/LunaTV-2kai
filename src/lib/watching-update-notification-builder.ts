@@ -4,6 +4,7 @@ import type { UpdateDiffAnalysis } from './watching-update-notification-types';
 export interface WatchingUpdateNotificationContent {
   title: string;
   content: string;
+  displayTime: string;
 }
 
 export class WatchingUpdateNotificationBuilder {
@@ -39,11 +40,13 @@ export class WatchingUpdateNotificationBuilder {
       );
     }
 
-    sections.push('', '检查时间：', formatDateTime(checkedAt, timezone));
+    const displayTime = formatDateTime(checkedAt, timezone);
+    sections.push('', '检查时间：', displayTime);
 
     return {
       title: '更新提醒',
       content: sections.join('\n'),
+      displayTime,
     };
   }
 

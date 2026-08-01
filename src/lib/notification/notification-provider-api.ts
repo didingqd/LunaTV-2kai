@@ -1,3 +1,5 @@
+import type { NotificationProviderHealthStatus } from './notification-log-types';
+import { notificationSendLogRepository } from './notification-log-repository';
 import type {
   NotificationProviderCapabilities,
   NotificationProviderMetadata,
@@ -20,6 +22,7 @@ export interface NotificationProviderApiMeta {
   configSchema: NotificationProviderMetadata['configSchema'];
   capabilities: NotificationProviderCapabilities;
   deliveryStatus: NotificationProviderDeliveryStatus;
+  healthStatus: NotificationProviderHealthStatus;
 }
 
 export function getNotificationProviderDeliveryStatus(
@@ -28,9 +31,11 @@ export function getNotificationProviderDeliveryStatus(
   return capabilities.canSend ? 'active' : 'preview';
 }
 
-export function buildNotificationProvidersPayload(): {
+export async function buildNotificationProvidersPayload(): Promise<{
   providers: NotificationProviderApiMeta[];
-} {
+}> {
+  const healthByProvider =
+    await notificationSendLogRepository.getProviderHealth();
   const providers = notificationProviderRegistry
     .list()
     .map((provider): NotificationProviderApiMeta => {
@@ -47,6 +52,7 @@ export function buildNotificationProvidersPayload(): {
         deliveryStatus: getNotificationProviderDeliveryStatus(
           provider.capabilities,
         ),
+        healthStatus: healthByProvider[provider.type] ?? 'healthy',
       };
     });
 

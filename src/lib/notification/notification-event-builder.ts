@@ -7,6 +7,7 @@ interface WatchingUpdateFoundInput {
   message: string;
   source: string;
   timestamp: number;
+  displayTime: string;
   metadata: Record<string, unknown>;
 }
 
@@ -17,6 +18,7 @@ interface WatchingUpdateFailedInput {
   error: string;
   source: string;
   timestamp: number;
+  displayTime: string;
   metadata: Record<string, unknown>;
 }
 
@@ -25,6 +27,7 @@ interface SchedulerFailedInput {
   taskName: string;
   error: string;
   timestamp: number;
+  displayTime: string;
 }
 
 export function createWatchingUpdateFoundEvent(
@@ -41,6 +44,7 @@ export function createWatchingUpdateFoundEvent(
       source: input.source,
       metadata: input.metadata,
       timestamp: input.timestamp,
+      displayTime: input.displayTime,
     },
     createdAt: input.timestamp,
   };
@@ -61,6 +65,7 @@ export function createWatchingUpdateFailedEvent(
       source: input.source,
       metadata: input.metadata,
       timestamp: input.timestamp,
+      displayTime: input.displayTime,
     },
     createdAt: input.timestamp,
   };
@@ -77,9 +82,10 @@ export function createSchedulerFailedEvent(
       taskName: input.taskName,
       error: input.error,
       timestamp: input.timestamp,
+      displayTime: input.displayTime,
       title: '调度失败',
-      message: `${input.taskName} 执行失败：${input.error}`,
-      content: `${input.taskName} 执行失败：${input.error}`,
+      message: `${input.taskName} 执行失败：${input.error}。执行时间：${input.displayTime}`,
+      content: `${input.taskName} 执行失败：${input.error}。执行时间：${input.displayTime}`,
     },
     createdAt: input.timestamp,
   };

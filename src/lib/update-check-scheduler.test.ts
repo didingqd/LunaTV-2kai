@@ -52,7 +52,7 @@ class MemoryCache {
 type SchedulerTasks = UpdateCheckTaskRepository &
   Pick<
     UpdateCheckScheduleTaskRepository,
-    'listTasksByUser' | 'batchUpdateNextCheckAt'
+    'listTasksByUser' | 'listAllUsersWithTasks' | 'batchUpdateNextCheckAt'
   >;
 
 const noopNotifications = {
@@ -160,6 +160,7 @@ describe('UpdateCheckScheduler', () => {
         return [task];
       },
       listTasksByUser: async () => [task],
+      listAllUsersWithTasks: async () => ['alice'],
       batchUpdateNextCheckAt: async () => 1,
       delete: async () => undefined,
       deleteForUser: async () => undefined,
@@ -198,7 +199,37 @@ describe('UpdateCheckScheduler', () => {
       succeeded: 0,
       failed: 0,
       oldestDueAt: null,
+      dataSourceCount: 0,
+      updateFoundCount: 0,
+      notificationCount: 0,
+      skipped: 0,
     });
+  });
+
+  it('can run immediately without changing nextCheckAt', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const nextCheckAt = runAt + 60 * 60 * 1000;
+    const task = createTask({ nextCheckAt });
+    await tasks.save(task);
+
+    const result = await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+    ).run({
+      now: runAt,
+      ignoreSchedule: true,
+      preserveNextCheckAt: true,
+    });
+
+    expect(result).toMatchObject({
+      inspected: 1,
+      succeeded: 1,
+      failed: 0,
+      dataSourceCount: 1,
+      updateFoundCount: 1,
+      skipped: 0,
+    });
+    expect((await tasks.get(task.id))?.nextCheckAt).toBe(nextCheckAt);
   });
 
   it('only dispatches authorized users within configured limits', async () => {
@@ -508,11 +539,12 @@ describe('UpdateCheckScheduler', () => {
       data: {
         title: '更新提醒',
         message:
-          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
+          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01:00',
         content:
-          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
+          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01:00',
         source: 'update-check',
         timestamp: runAt,
+        displayTime: '2026-07-30 12:01:00',
         metadata: {
           newUpdates: [
             {
@@ -525,6 +557,7 @@ describe('UpdateCheckScheduler', () => {
           updatedHistory: [],
           checkedAt: runAt,
           timezone: 'UTC',
+          displayTime: '2026-07-30 12:01:00',
         },
       },
     });
@@ -757,19 +790,22 @@ describe('UpdateCheckScheduler', () => {
       data: {
         title: '追更检查失败',
         message:
-          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
+          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30 12:01:00',
         content:
-          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
+          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30 12:01:00',
         error:
           'Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]',
         source: 'update-check',
         timestamp: runAt,
+        displayTime: '2026-07-30 12:01:00',
         metadata: {
           resourceId: 'video-1',
           taskSource: 'source-a',
           taskId: 'task-1',
           followId: 'follow-1',
           failedAt: runAt,
+          timezone: 'UTC',
+          displayTime: '2026-07-30 12:01:00',
           error:
             'Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]',
         },

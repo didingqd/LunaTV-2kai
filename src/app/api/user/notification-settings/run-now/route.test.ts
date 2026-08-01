@@ -10,20 +10,31 @@ jest.mock('@/lib/notification/notification-dispatcher', () => ({
     dispatchEvent: jest.fn(),
   },
 }));
+jest.mock('@/lib/system-config-repository', () => ({
+  systemConfigRepository: {
+    getUpdateCheckConfig: jest.fn(),
+  },
+}));
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
 import { NotificationEventType } from '@/lib/notification/notification-types';
+import { systemConfigRepository } from '@/lib/system-config-repository';
 import { POST } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
 const dispatchEvent = notificationDispatcher.dispatchEvent as jest.Mock;
+const getUpdateCheckConfig =
+  systemConfigRepository.getUpdateCheckConfig as jest.Mock;
 
 describe('notification settings run-now API', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     getAuth.mockReturnValue({ username: 'alice', role: 'admin' });
+    getUpdateCheckConfig.mockResolvedValue({
+      updateCheckTimezone: 'Asia/Shanghai',
+    });
     dispatchEvent.mockResolvedValue({
       success: true,
       totalChannels: 2,
@@ -76,8 +87,11 @@ describe('notification settings run-now API', () => {
         source: 'notification-debug',
         metadata: {
           debug: true,
+          timezone: 'Asia/Shanghai',
+          displayTime: '2023-11-15 06:13:20',
         },
         timestamp: 1_700_000_000_000,
+        displayTime: '2023-11-15 06:13:20',
       },
       createdAt: 1_700_000_000_000,
     });

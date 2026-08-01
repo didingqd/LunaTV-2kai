@@ -4,6 +4,7 @@ import {
   NotificationEventType,
   type NotificationEvent,
 } from './notification-types';
+import { timezoneService } from '../services/timezone_service';
 
 export const NOTIFICATION_RUN_NOW_EVENT_TYPES = [
   NotificationEventType.WATCHING_UPDATE_FOUND,
@@ -28,8 +29,10 @@ export function createNotificationRunNowEvent(
   eventType: NotificationRunNowEventType,
   now: () => number = Date.now,
   createId: () => string = randomUUID,
+  timezone = 'UTC',
 ): NotificationEvent {
   const timestamp = now();
+  const displayTime = timezoneService.format(timestamp, timezone);
   const message =
     '\u8fd9\u662f Run Now \u751f\u6210\u7684\u6d4b\u8bd5\u901a\u77e5';
 
@@ -44,8 +47,11 @@ export function createNotificationRunNowEvent(
       source: 'notification-debug',
       metadata: {
         debug: true,
+        timezone,
+        displayTime,
       },
       timestamp,
+      displayTime,
     },
     createdAt: timestamp,
   };

@@ -6,6 +6,7 @@ import type { UserNotificationChannelConfig } from '../notification-settings-rep
 import type { NotificationEvent } from '../notification-types';
 import {
   createProviderTestEvent,
+  fetchWithNotificationTimeout,
   getChannelConfig,
   getConfigRecord,
   getNotificationContent,
@@ -56,7 +57,10 @@ function parseHeaders(value: string): Record<string, string> {
       }),
     );
   } catch (error) {
-    if (error instanceof Error && error.message === 'INVALID_NOTIFICATION_CHANNEL_CONFIG') {
+    if (
+      error instanceof Error &&
+      error.message === 'INVALID_NOTIFICATION_CHANNEL_CONFIG'
+    ) {
       throw error;
     }
     throw new Error('INVALID_NOTIFICATION_CHANNEL_CONFIG');
@@ -73,6 +77,27 @@ function renderBody(template: string, title: string, content: string): string {
     .replaceAll('{content}', safeContent);
 }
 
+function buildWebhookPayload(
+  event: NotificationEvent,
+  template: string,
+  title: string,
+  content: string,
+) {
+  return {
+    title,
+    content,
+    message: content,
+    eventType: event.type,
+    eventId: event.id,
+    createdAt: event.createdAt,
+    data: event.data,
+    ...(typeof event.data.displayTime === 'string'
+      ? { displayTime: event.data.displayTime }
+      : {}),
+    ...(template ? { body: renderBody(template, title, content) } : {}),
+  };
+}
+
 export class WebhookNotificationProvider implements NotificationProvider {
   readonly type = 'webhook';
 
@@ -86,10 +111,12 @@ export class WebhookNotificationProvider implements NotificationProvider {
       'Content-Type': 'application/json',
       ...parseHeaders(String(config.headers)),
     };
-    const response = await fetch(String(config.url), {
+    const response = await fetchWithNotificationTimeout(String(config.url), {
       method: 'POST',
       headers,
-      body: renderBody(String(config.body), title, content),
+      body: JSON.stringify(
+        buildWebhookPayload(event, String(config.body), title, content),
+      ),
     });
     await throwOnUnsuccessfulResponse(response, 'Webhook');
   }
@@ -124,6 +151,3 @@ export class WebhookNotificationProvider implements NotificationProvider {
 }
 
 export const webhookNotificationProvider = new WebhookNotificationProvider();
-
-
-

@@ -16,10 +16,6 @@ function stringValue(value: unknown, fallback = ''): string {
   return fallback;
 }
 
-function numberValue(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
 export function notificationMessageTypeToEventType(
   type: NotificationMessageType,
 ): string {
@@ -116,8 +112,9 @@ function getDefaultEventContent(event: NotificationEvent): string {
   }
   return stringValue(
     event.data.message,
-    `\u4e8b\u4ef6 ${event.type} \u53d1\u751f\u4e8e ${new Date(
-      numberValue(event.data.time, event.createdAt),
-    ).toISOString()}`,
+    stringValue(
+      event.data.displayTime,
+      `\u4e8b\u4ef6 ${event.type} \u5df2\u53d1\u751f`,
+    ),
   );
 }
