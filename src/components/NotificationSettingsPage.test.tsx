@@ -196,6 +196,16 @@ describe('NotificationSettingsPage', () => {
       screen.getByRole('button', { name: '添加通知渠道' }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole('heading', { name: '推送总开关' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('控制是否启用通知推送')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: '通知配置' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('统一控制通知推送，并管理通知渠道。'),
+    ).not.toBeInTheDocument();
+    expect(
       getCardByChannelName('外部企业微信').getByRole('switch', {
         name: '启停 外部企业微信',
       }),
