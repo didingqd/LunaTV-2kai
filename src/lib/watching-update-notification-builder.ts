@@ -206,17 +206,23 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
     timezone: string,
     displayTime = formatDateTime(checkedAt, timezone),
   ): WatchingUpdateNotificationContent | null {
-    if (analysis.newUpdates.length === 0) return null;
-
-    const sections = ['更新提醒', '', '【新更新】', ''];
-    this.appendEpisodeChanges(sections, analysis.newUpdates);
-
-    if (analysis.updated.length > 0) {
-      sections.push('', '【已更新】', '');
-      this.appendEpisodeChanges(sections, analysis.updated);
+    if (analysis.newUpdates.length === 0 && analysis.updated.length === 0) {
+      return null;
     }
 
-    sections.push('', '检查时间：', displayTime);
+    const sections = ['更新提醒'];
+    const newUpdates = sortNewUpdatesForDisplay(analysis.newUpdates);
+
+    if (newUpdates.length > 0) {
+      sections.push('', `新更新（${newUpdates.length}）`, '');
+      this.appendEpisodeChanges(sections, newUpdates);
+    }
+
+    if (analysis.updated.length > 0) {
+      if (sections.length > 1) sections.push('', '----------------');
+      sections.push('', `已更新（${analysis.updated.length}）`, '');
+      this.appendEpisodeChanges(sections, analysis.updated);
+    }
 
     return {
       title: '更新提醒',
@@ -231,9 +237,28 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
   ): void {
     items.forEach((item, index) => {
       if (index > 0) sections.push('');
-      sections.push(item.title, `${item.fromEpisode}集 → ${item.toEpisode}集`);
+      sections.push(
+        item.title,
+        `${item.fromEpisode} → ${item.toEpisode} 集（+${episodeDelta(item)}）`,
+      );
     });
   }
+}
+
+function episodeDelta(item: {
+  fromEpisode: number;
+  toEpisode: number;
+}): number {
+  return Math.max(0, item.toEpisode - item.fromEpisode);
+}
+
+function sortNewUpdatesForDisplay<T extends {
+  fromEpisode: number;
+  toEpisode: number;
+}>(items: T[]): T[] {
+  return [...items].sort(
+    (left, right) => episodeDelta(right) - episodeDelta(left),
+  );
 }
 
 export const watchingUpdateNotificationBuilder =
