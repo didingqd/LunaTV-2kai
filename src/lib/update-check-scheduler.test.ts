@@ -7,7 +7,7 @@ jest.mock('./latest-episode-provider', () => ({
 import type { AdminConfig, SystemConfig } from './admin.types';
 import type {
   NotificationDispatchResult,
-  NotificationMessage,
+  NotificationEvent,
 } from './notification/notification-types';
 import { UpdateCheckJobRunner } from './scheduler/update-check-job-runner';
 import {
@@ -56,7 +56,7 @@ type SchedulerTasks = UpdateCheckTaskRepository &
   >;
 
 const noopNotifications = {
-  dispatch: async () => dispatchSuccess(),
+  dispatchEvent: async () => dispatchSuccess(),
 };
 
 function permissionsFor(...userIds: string[]) {
@@ -123,7 +123,7 @@ function createScheduler(
     users?: AdminConfig['UserConfig']['Users'];
     permissions?: string[];
     notifications?: {
-      dispatch(message: NotificationMessage): Promise<{
+      dispatchEvent(event: NotificationEvent): Promise<{
         success: boolean;
         totalChannels: number;
         succeeded: number;
@@ -494,31 +494,38 @@ describe('UpdateCheckScheduler', () => {
         }),
       ),
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     ).run({ now: runAt });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({
+      id: '',
+      type: 'watching.update_found',
       userId: 'alice',
-      type: 'WATCHING_UPDATE_FOUND',
-      title: '更新提醒',
-      content:
-        '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
       createdAt: runAt,
-      payload: {
-        newUpdates: [
-          {
-            followId: 'follow-1',
-            title: 'Demo Show',
-            fromEpisode: 100,
-            toEpisode: 101,
-          },
-        ],
-        updatedHistory: [],
-        checkedAt: runAt,
-        timezone: 'UTC',
+      data: {
+        title: '更新提醒',
+        message:
+          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
+        content:
+          '更新提醒\n\n【新更新】\n\nDemo Show    100集 → 101集\n\n检查时间：\n2026-07-30 12:01',
+        source: 'update-check',
+        timestamp: runAt,
+        metadata: {
+          newUpdates: [
+            {
+              followId: 'follow-1',
+              title: 'Demo Show',
+              fromEpisode: 100,
+              toEpisode: 101,
+            },
+          ],
+          updatedHistory: [],
+          checkedAt: runAt,
+          timezone: 'UTC',
+        },
       },
     });
   });
@@ -545,7 +552,7 @@ describe('UpdateCheckScheduler', () => {
         }),
       ),
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     ).run({ now: runAt });
@@ -580,7 +587,7 @@ describe('UpdateCheckScheduler', () => {
       tasks,
       successfulService(tasks, runAt, updateResult()),
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     ).run({ now: runAt });
@@ -636,17 +643,20 @@ describe('UpdateCheckScheduler', () => {
         },
       },
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     ).run({ now: runAt });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch.mock.calls[0][0]).toMatchObject({
-      title: '更新提醒',
-      content: expect.stringContaining(
-        '海贼王    11集 → 12集\n火影忍者    13集 → 14集',
-      ),
+      type: 'watching.update_found',
+      data: {
+        title: '更新提醒',
+        content: expect.stringContaining(
+          '海贼王    11集 → 12集\n火影忍者    13集 → 14集',
+        ),
+      },
     });
   });
 
@@ -676,7 +686,7 @@ describe('UpdateCheckScheduler', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation();
 
     await createScheduler(tasks, successfulService(tasks, runAt, nextResult), {
-      notifications: { dispatch: failedDispatch },
+      notifications: { dispatchEvent: failedDispatch },
       notificationState,
     }).run({ now: runAt });
 
@@ -691,7 +701,7 @@ describe('UpdateCheckScheduler', () => {
       tasks,
       successfulService(tasks, runAt + 1, nextResult),
       {
-        notifications: { dispatch: successfulDispatch },
+        notifications: { dispatchEvent: successfulDispatch },
         notificationState,
       },
     ).run({ now: runAt + 1 });
@@ -734,26 +744,35 @@ describe('UpdateCheckScheduler', () => {
         },
       },
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
       },
     ).run({ now: runAt });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({
+      id: '',
+      type: 'watching.update_failed',
       userId: 'alice',
-      type: 'WATCHING_UPDATE_FAILED',
-      title: '追更检查失败',
-      content:
-        'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
       createdAt: runAt,
-      payload: {
-        resourceId: 'video-1',
-        source: 'source-a',
-        taskId: 'task-1',
-        followId: 'follow-1',
-        failedAt: runAt,
+      data: {
+        title: '追更检查失败',
+        message:
+          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
+        content:
+          'source-a 来源的资源 video-1 检查失败：Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]。检查时间：2026-07-30T12:01:00.000Z',
         error:
           'Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]',
+        source: 'update-check',
+        timestamp: runAt,
+        metadata: {
+          resourceId: 'video-1',
+          taskSource: 'source-a',
+          taskId: 'task-1',
+          followId: 'follow-1',
+          failedAt: runAt,
+          error:
+            'Provider timeout [redacted-url] Authorization: [redacted] Cookie: [redacted]',
+        },
       },
     });
     expect(JSON.stringify(dispatch.mock.calls[0][0])).not.toContain(
@@ -772,7 +791,7 @@ describe('UpdateCheckScheduler', () => {
       new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     const dispatch = jest.fn<
       Promise<NotificationDispatchResult>,
-      [NotificationMessage]
+      [NotificationEvent]
     >(async () => {
       throw new Error('dispatcher failed');
     });
@@ -789,7 +808,7 @@ describe('UpdateCheckScheduler', () => {
       tasks,
       successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     ).run({ now: runAt });
@@ -831,7 +850,7 @@ describe('UpdateCheckScheduler', () => {
       tasks,
       successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
       {
-        notifications: { dispatch },
+        notifications: { dispatchEvent: dispatch },
         notificationState,
       },
     );
@@ -893,7 +912,7 @@ function updateResult(overrides: Partial<UpdateResult> = {}): UpdateResult {
 function createDispatch(
   result: NotificationDispatchResult = dispatchSuccess(),
 ) {
-  return jest.fn<Promise<NotificationDispatchResult>, [NotificationMessage]>(
+  return jest.fn<Promise<NotificationDispatchResult>, [NotificationEvent]>(
     async () => result,
   );
 }

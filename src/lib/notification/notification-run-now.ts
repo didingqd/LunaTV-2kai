@@ -18,7 +18,9 @@ export type NotificationRunNowEventType =
 export function isNotificationRunNowEventType(
   value: string,
 ): value is NotificationRunNowEventType {
-  return NOTIFICATION_RUN_NOW_EVENT_TYPES.some((eventType) => eventType === value);
+  return NOTIFICATION_RUN_NOW_EVENT_TYPES.some(
+    (eventType) => eventType === value,
+  );
 }
 
 export function createNotificationRunNowEvent(
@@ -28,7 +30,8 @@ export function createNotificationRunNowEvent(
   createId: () => string = randomUUID,
 ): NotificationEvent {
   const timestamp = now();
-  const message = '\u8fd9\u662f Run Now \u751f\u6210\u7684\u6d4b\u8bd5\u901a\u77e5';
+  const message =
+    '\u8fd9\u662f Run Now \u751f\u6210\u7684\u6d4b\u8bd5\u901a\u77e5';
 
   return {
     id: createId(),

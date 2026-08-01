@@ -4,6 +4,8 @@ import {
   type UpdateCheckSchedulerOptions,
   type UpdateCheckSchedulerResult,
 } from '@/lib/update-check-scheduler';
+import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
+import { createSchedulerFailedEvent } from '@/lib/notification/notification-event-builder';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 import {
   createWatchingUpdateCheckLogResult,
@@ -53,6 +55,10 @@ export interface UpdateCheckJobRunnerResult {
 
 type UpdateCheckSchedulerRunner = Pick<UpdateCheckScheduler, 'run'>;
 type UpdateCheckAuditLogger = Pick<WatchingUpdateCheckLogService, 'record'>;
+type NotificationEventDispatcher = Pick<
+  typeof notificationDispatcher,
+  'dispatchEvent'
+>;
 
 interface CompletedAuditTask {
   task: UpdateCheckTask;
@@ -172,6 +178,7 @@ export class UpdateCheckJobRunner {
     private readonly scheduler: UpdateCheckSchedulerRunner = updateCheckScheduler,
     private readonly now: () => number = Date.now,
     private readonly auditLogger: UpdateCheckAuditLogger | null = watchingUpdateCheckLogService,
+    private readonly notifications: NotificationEventDispatcher = notificationDispatcher,
   ) {}
 
   async run(
@@ -250,6 +257,7 @@ export class UpdateCheckJobRunner {
       };
     } catch (error) {
       const finishedAt = this.now();
+      const message = errorMessage(error);
       result = {
         trigger: options.trigger,
         ...(options.requestedBy === undefined
@@ -260,9 +268,10 @@ export class UpdateCheckJobRunner {
         durationMs: Math.max(0, finishedAt - startedAt),
         running: false,
         success: false,
-        error: errorMessage(error),
+        error: message,
         schedulerResult: null,
       };
+      await this.dispatchSchedulerFailure(options, message, finishedAt);
     }
 
     await this.recordAuditLog({
@@ -365,6 +374,37 @@ export class UpdateCheckJobRunner {
         error,
       );
       return null;
+    }
+  }
+
+  private async dispatchSchedulerFailure(
+    options: UpdateCheckJobRunnerOptions,
+    error: string,
+    timestamp: number,
+  ): Promise<void> {
+    const userId = options.requestedBy ?? process.env.USERNAME;
+    if (!userId) return;
+
+    try {
+      const result = await this.notifications.dispatchEvent(
+        createSchedulerFailedEvent({
+          userId,
+          taskName: 'update-checks',
+          error,
+          timestamp,
+        }),
+      );
+      if (!result.success) {
+        console.error(
+          'Update check scheduler failure notification dispatch failed',
+          result.errors,
+        );
+      }
+    } catch (dispatchError) {
+      console.error(
+        'Update check scheduler failure notification dispatch threw',
+        dispatchError,
+      );
     }
   }
 }

@@ -42,7 +42,9 @@ function createDispatcher(shouldDispatch = true) {
   });
 }
 
-function createEvent(overrides: Partial<NotificationEvent> = {}): NotificationEvent {
+function createEvent(
+  overrides: Partial<NotificationEvent> = {},
+): NotificationEvent {
   return {
     id: 'event-1',
     type: NotificationEventType.WATCHING_UPDATE_FOUND,
@@ -178,9 +180,10 @@ describe('NotificationDispatcher', () => {
   it('passes the original message object to each channel unchanged', async () => {
     const dispatcher = createDispatcher();
     const message = createMessage();
-    const firstSend = jest.fn<ReturnType<NotificationChannel['send']>, Parameters<NotificationChannel['send']>>(
-      async () => undefined,
-    );
+    const firstSend = jest.fn<
+      ReturnType<NotificationChannel['send']>,
+      Parameters<NotificationChannel['send']>
+    >(async () => undefined);
     const secondSend = jest.fn<
       ReturnType<NotificationChannel['send']>,
       Parameters<NotificationChannel['send']>
@@ -242,7 +245,9 @@ describe('NotificationDispatcher', () => {
     dispatcher.registerChannelFactory(NotificationChannelType.WECHAT_WORK, () =>
       createChannel('wechat_work', wechatSend),
     );
-    dispatcher.register(createChannel(NotificationChannelType.INBOX, inboxSend));
+    dispatcher.register(
+      createChannel(NotificationChannelType.INBOX, inboxSend),
+    );
 
     await expect(dispatcher.dispatch(createMessage())).resolves.toEqual({
       success: false,

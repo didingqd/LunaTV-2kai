@@ -1,17 +1,21 @@
 'use client';
 
 import {
-  BellRing,
   Check,
   Layers3,
   LoaderCircle,
   MessageSquarePlus,
+  PlayCircle,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
-import { DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS } from '@/lib/notification/notification-event-metadata';
+import {
+  DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
+  NOTIFICATION_EVENT_METAS,
+} from '@/lib/notification/notification-event-metadata';
 
 import { NotificationChannelList } from './notification/NotificationChannelList';
 import { NotificationChannelModal } from './notification/NotificationChannelModal';
@@ -36,9 +40,19 @@ interface ProvidersResponse {
   providers: BackendNotificationProviderMeta[];
 }
 
+interface RunNowResponse {
+  eventType: string;
+  success: boolean;
+  totalChannels: number;
+  succeeded: number;
+  failed: number;
+  errors: Array<{ channel: string; message: string }>;
+}
+
 const NOTIFICATION_SETTINGS_ENDPOINT = '/api/user/notification-settings';
 const NOTIFICATION_CHANNELS_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/channels`;
 const NOTIFICATION_TEST_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/test`;
+const NOTIFICATION_RUN_NOW_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/run-now`;
 const NOTIFICATION_PROVIDERS_ENDPOINT = '/api/user/notification-providers';
 
 async function readSettingsResponse(
@@ -65,6 +79,18 @@ async function readProvidersResponse(
     throw new Error(data.error || '通知渠道能力请求失败');
   }
   return data as ProvidersResponse;
+}
+
+async function readRunNowResponse(response: Response): Promise<RunNowResponse> {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('请先登录后运行通知调试');
+    if (response.status === 403) throw new Error('只有管理员可以运行通知调试');
+    if (response.status === 400)
+      throw new Error(data.error || '通知调试事件无效');
+    throw new Error(data.error || '通知调试执行失败');
+  }
+  return data as RunNowResponse;
 }
 
 function isAdminRole(role?: string) {
@@ -191,6 +217,13 @@ export default function NotificationSettingsPage({
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runNowOpen, setRunNowOpen] = useState(false);
+  const [runNowSaving, setRunNowSaving] = useState(false);
+  const [runNowEventType, setRunNowEventType] = useState<string>(
+    DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS[0],
+  );
+  const [runNowResult, setRunNowResult] = useState<RunNowResponse | null>(null);
+  const [runNowError, setRunNowError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
 
@@ -235,6 +268,13 @@ export default function NotificationSettingsPage({
     setChannelModalStep(null);
     setForm(null);
   }, []);
+
+  const closeRunNowModal = useCallback(() => {
+    if (runNowSaving) return;
+    setRunNowOpen(false);
+    setRunNowResult(null);
+    setRunNowError(null);
+  }, [runNowSaving]);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -428,6 +468,35 @@ export default function NotificationSettingsPage({
     setChannelModalStep('provider');
     setMessage(null);
     setError(null);
+  };
+
+  const openRunNow = () => {
+    setRunNowEventType(DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS[0]);
+    setRunNowResult(null);
+    setRunNowError(null);
+    setRunNowOpen(true);
+    setMessage(null);
+    setError(null);
+  };
+
+  const runNow = async () => {
+    setRunNowSaving(true);
+    setRunNowResult(null);
+    setRunNowError(null);
+    try {
+      const response = await fetch(NOTIFICATION_RUN_NOW_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventType: runNowEventType }),
+      });
+      setRunNowResult(await readRunNowResponse(response));
+    } catch (reason) {
+      setRunNowError(
+        reason instanceof Error ? reason.message : '通知调试执行失败',
+      );
+    } finally {
+      setRunNowSaving(false);
+    }
   };
 
   const openCreateForm = (providerType: string) => {
@@ -627,6 +696,15 @@ export default function NotificationSettingsPage({
                 </button>
                 <button
                   type='button'
+                  disabled={saving}
+                  onClick={openRunNow}
+                  className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                >
+                  <PlayCircle className='h-4 w-4' />
+                  立即测试通知
+                </button>
+                <button
+                  type='button'
                   disabled={saving || settings.channels.length === 0}
                   onClick={toggleBatchMode}
                   className='inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
@@ -708,6 +786,106 @@ export default function NotificationSettingsPage({
         }
         onSave={() => void saveChannelForm()}
       />
+
+      {runNowOpen && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm'>
+          <div className='w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950'>
+            <div className='flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+                  立即测试通知
+                </h3>
+                <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                  生成调试事件并走完整通知链路。
+                </p>
+              </div>
+              <button
+                type='button'
+                aria-label='关闭立即测试通知'
+                disabled={runNowSaving}
+                onClick={closeRunNowModal}
+                className='rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-100'
+              >
+                <X className='h-5 w-5' />
+              </button>
+            </div>
+            <div className='space-y-4 p-5'>
+              <label className='block space-y-2'>
+                <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                  测试事件
+                </span>
+                <select
+                  value={runNowEventType}
+                  disabled={runNowSaving}
+                  onChange={(event) => setRunNowEventType(event.target.value)}
+                  className='w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
+                >
+                  {NOTIFICATION_EVENT_METAS.map((eventMeta) => (
+                    <option key={eventMeta.type} value={eventMeta.type}>
+                      {eventMeta.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {runNowResult && (
+                <div
+                  role='status'
+                  className={`rounded-xl border px-4 py-3 text-sm ${
+                    runNowResult.success
+                      ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-200'
+                      : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200'
+                  }`}
+                >
+                  <div className='font-semibold'>
+                    {runNowResult.success ? '✓ 已发送' : '✗ 错误原因'}
+                  </div>
+                  <div className='mt-2 space-y-1 text-xs'>
+                    <div>事件类型：{runNowResult.eventType}</div>
+                    <div>匹配渠道数量：{runNowResult.totalChannels}</div>
+                    <div>成功数量：{runNowResult.succeeded}</div>
+                    <div>失败数量：{runNowResult.failed}</div>
+                    {!runNowResult.success &&
+                      runNowResult.errors.map((item) => (
+                        <div key={`${item.channel}-${item.message}`}>
+                          {item.channel}: {item.message}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {runNowError && (
+                <div className='rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'>
+                  {runNowError}
+                </div>
+              )}
+
+              <div className='flex justify-end gap-2'>
+                <button
+                  type='button'
+                  disabled={runNowSaving}
+                  onClick={closeRunNowModal}
+                  className='rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900'
+                >
+                  取消
+                </button>
+                <button
+                  type='button'
+                  disabled={runNowSaving}
+                  onClick={() => void runNow()}
+                  className='inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+                >
+                  {runNowSaving && (
+                    <LoaderCircle className='h-4 w-4 animate-spin' />
+                  )}
+                  执行测试
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

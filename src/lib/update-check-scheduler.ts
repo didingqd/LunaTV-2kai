@@ -3,9 +3,10 @@ import { getConfig } from './config';
 import { db } from './db';
 import { notificationDispatcher } from './notification/notification-dispatcher';
 import {
-  NotificationMessageType,
-  type NotificationMessage,
-} from './notification/notification-types';
+  createWatchingUpdateFailedEvent,
+  createWatchingUpdateFoundEvent,
+} from './notification/notification-event-builder';
+import type { NotificationEvent } from './notification/notification-types';
 import { resolveUserWatchingUpdateSchedule } from './scheduler/user-watching-update-schedule-resolver';
 import {
   systemConfigRepository,
@@ -69,7 +70,7 @@ export class UpdateCheckScheduler {
     private readonly loadAdminConfig: () => Promise<AdminConfig> = getConfig,
     private readonly notifications: Pick<
       typeof notificationDispatcher,
-      'dispatch'
+      'dispatchEvent'
     > = notificationDispatcher,
     private readonly notificationState: WatchingUpdateNotificationStateRepository = new CachedWatchingUpdateNotificationStateRepository(
       db,
@@ -299,19 +300,21 @@ export class UpdateCheckScheduler {
       }
 
       try {
-        const result = await this.notifications.dispatch({
-          userId,
-          type: NotificationMessageType.WATCHING_UPDATE_FOUND,
-          title: content.title,
-          content: content.content,
-          createdAt: checkedAt,
-          payload: {
-            newUpdates: analysis.newUpdates,
-            updatedHistory: analysis.updatedHistory,
-            checkedAt,
-            timezone,
-          },
-        });
+        const result = await this.notifications.dispatchEvent(
+          createWatchingUpdateFoundEvent({
+            userId,
+            title: content.title,
+            message: content.content,
+            source: 'update-check',
+            timestamp: checkedAt,
+            metadata: {
+              newUpdates: analysis.newUpdates,
+              updatedHistory: analysis.updatedHistory,
+              checkedAt,
+              timezone,
+            },
+          }),
+        );
         if (!result.success) {
           console.error(
             'Update check notification dispatch failed',
@@ -329,11 +332,11 @@ export class UpdateCheckScheduler {
   private async dispatchTaskFailureNotification(
     completedTask: CompletedTask,
   ): Promise<void> {
-    const message = this.buildUpdateFailedMessage(completedTask);
-    if (!message) return;
+    const event = this.buildUpdateFailedEvent(completedTask);
+    if (!event) return;
 
     try {
-      const result = await this.notifications.dispatch(message);
+      const result = await this.notifications.dispatchEvent(event);
       if (!result.success) {
         console.error(
           'Update check notification dispatch failed',
@@ -345,43 +348,44 @@ export class UpdateCheckScheduler {
     }
   }
 
-  private buildUpdateFailedMessage(
+  private buildUpdateFailedEvent(
     completedTask: CompletedTask,
-  ): NotificationMessage | null {
+  ): NotificationEvent | null {
     if (
       typeof completedTask.after?.lastErrorAt === 'number' &&
       completedTask.after.lastErrorAt !== completedTask.before.lastErrorAt
     ) {
-      return this.buildFailureNotificationMessage(completedTask);
+      return this.buildFailureNotificationEvent(completedTask);
     }
 
     return null;
   }
 
-  private buildFailureNotificationMessage(
+  private buildFailureNotificationEvent(
     completedTask: CompletedTask,
-  ): NotificationMessage {
+  ): NotificationEvent {
     const failedAt =
       completedTask.after?.lastErrorAt ?? completedTask.before.updatedAt;
     const message = sanitizeNotificationError(completedTask.after?.lastError);
 
-    return {
+    return createWatchingUpdateFailedEvent({
       userId: completedTask.before.userId,
-      type: NotificationMessageType.WATCHING_UPDATE_FAILED,
       title: '追更检查失败',
-      content: `${completedTask.before.source} 来源的资源 ${completedTask.before.resourceId} 检查失败：${message}。检查时间：${formatNotificationTime(
+      message: `${completedTask.before.source} 来源的资源 ${completedTask.before.resourceId} 检查失败：${message}。检查时间：${formatNotificationTime(
         failedAt,
       )}`,
-      createdAt: failedAt,
-      payload: {
+      error: message,
+      source: 'update-check',
+      timestamp: failedAt,
+      metadata: {
         resourceId: completedTask.before.resourceId,
-        source: completedTask.before.source,
+        taskSource: completedTask.before.source,
         taskId: completedTask.before.id,
         followId: completedTask.before.followId,
         failedAt,
         error: message,
       },
-    };
+    });
   }
 }
 

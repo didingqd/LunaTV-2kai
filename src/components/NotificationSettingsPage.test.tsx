@@ -11,6 +11,7 @@ import NotificationSettingsPage from './NotificationSettingsPage';
 const originalFetch = global.fetch;
 const settingsEndpoint = '/api/user/notification-settings';
 const providersEndpoint = '/api/user/notification-providers';
+const runNowEndpoint = '/api/user/notification-settings/run-now';
 
 const baseSettings = {
   version: 2,
@@ -251,5 +252,57 @@ describe('NotificationSettingsPage', () => {
       await screen.findByText('通知设置仅管理员可见。'),
     ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('opens run-now event picker and submits a debug event', async () => {
+    const fetchMock = jest.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === providersEndpoint) {
+          return Promise.resolve(jsonResponse({ providers }));
+        }
+        if (url === runNowEndpoint && init?.method === 'POST') {
+          return Promise.resolve(
+            jsonResponse({
+              eventType: 'watching.update_failed',
+              success: true,
+              totalChannels: 1,
+              succeeded: 1,
+              failed: 0,
+              errors: [],
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ settings: baseSettings }));
+      },
+    );
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '立即测试通知' }),
+    );
+    expect(
+      screen.getByRole('heading', { name: '立即测试通知' }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('测试事件'), {
+      target: { value: 'watching.update_failed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '执行测试' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('✓ 已发送')).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText('事件类型：watching.update_failed'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('匹配渠道数量：1')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(runNowEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType: 'watching.update_failed' }),
+    });
   });
 });
