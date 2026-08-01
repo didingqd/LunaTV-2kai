@@ -2,18 +2,25 @@ import {
   notificationBuilderRegistry,
   type NotificationBuilder,
 } from './notification/notification-builder';
+import { notificationEventRegistry } from './notification/notification-event-registry';
 import type {
   NotificationMessage,
   NotificationPayload,
 } from './notification/notification-types';
 import { formatDateTime } from './time';
+import {
+  WATCHING_UPDATE_FAILED_EVENT_TYPE,
+  WATCHING_UPDATE_FOUND_EVENT_TYPE,
+} from './watching-update-notification-events';
 import type {
   UpdateDiffAnalysis,
   WatchingUpdateChange,
 } from './watching-update-notification-types';
 
-export const WATCHING_UPDATE_FOUND_EVENT_TYPE = 'watching.update_found';
-export const WATCHING_UPDATE_FAILED_EVENT_TYPE = 'watching.update_failed';
+export {
+  WATCHING_UPDATE_FAILED_EVENT_TYPE,
+  WATCHING_UPDATE_FOUND_EVENT_TYPE,
+} from './watching-update-notification-events';
 
 export interface WatchingUpdateNotificationContent {
   title: string;
@@ -24,7 +31,7 @@ export interface WatchingUpdateNotificationContent {
 export interface WatchingUpdateNotificationPayloadData {
   title: string;
   newUpdates: WatchingUpdateChange[];
-  pendingUpdates: WatchingUpdateChange[];
+  updated: WatchingUpdateChange[];
   checkedAt: number;
   timezone: string;
   displayTime: string;
@@ -58,7 +65,7 @@ export type WatchingUpdateFailedNotificationPayload = NotificationPayload & {
 export function createWatchingUpdateFoundPayload(input: {
   userId: string;
   newUpdates: WatchingUpdateChange[];
-  pendingUpdates: WatchingUpdateChange[];
+  updated: WatchingUpdateChange[];
   checkedAt: number;
   timezone: string;
   displayTime: string;
@@ -70,7 +77,7 @@ export function createWatchingUpdateFoundPayload(input: {
     data: {
       title: '更新提醒',
       newUpdates: input.newUpdates,
-      pendingUpdates: input.pendingUpdates,
+      updated: input.updated,
       checkedAt: input.checkedAt,
       timezone: input.timezone,
       displayTime: input.displayTime,
@@ -138,14 +145,14 @@ function isWatchingUpdatePayload(
 export class WatchingUpdateNotificationBuilder implements NotificationBuilder<WatchingUpdateNotificationPayload> {
   build(payload: WatchingUpdateNotificationPayload): NotificationMessage;
   build(
-    analysis: Pick<UpdateDiffAnalysis, 'newUpdates' | 'pendingUpdates'>,
+    analysis: Pick<UpdateDiffAnalysis, 'newUpdates' | 'updated'>,
     checkedAt: number,
     timezone: string,
   ): WatchingUpdateNotificationContent | null;
   build(
     payloadOrAnalysis:
       | WatchingUpdateNotificationPayload
-      | Pick<UpdateDiffAnalysis, 'newUpdates' | 'pendingUpdates'>,
+      | Pick<UpdateDiffAnalysis, 'newUpdates' | 'updated'>,
     checkedAt?: number,
     timezone?: string,
   ): NotificationMessage | WatchingUpdateNotificationContent | null {
@@ -153,7 +160,7 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
       const content = this.buildContent(
         {
           newUpdates: payloadOrAnalysis.data.newUpdates,
-          pendingUpdates: payloadOrAnalysis.data.pendingUpdates,
+          updated: payloadOrAnalysis.data.updated,
         },
         payloadOrAnalysis.data.checkedAt,
         payloadOrAnalysis.data.timezone,
@@ -194,7 +201,7 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
   }
 
   private buildContent(
-    analysis: Pick<UpdateDiffAnalysis, 'newUpdates' | 'pendingUpdates'>,
+    analysis: Pick<UpdateDiffAnalysis, 'newUpdates' | 'updated'>,
     checkedAt: number,
     timezone: string,
     displayTime = formatDateTime(checkedAt, timezone),
@@ -204,9 +211,9 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
     const sections = ['更新提醒', '', '【新更新】', ''];
     this.appendEpisodeChanges(sections, analysis.newUpdates);
 
-    if (analysis.pendingUpdates.length > 0) {
-      sections.push('', '【待观看更新】', '');
-      this.appendEpisodeChanges(sections, analysis.pendingUpdates);
+    if (analysis.updated.length > 0) {
+      sections.push('', '【已更新】', '');
+      this.appendEpisodeChanges(sections, analysis.updated);
     }
 
     sections.push('', '检查时间：', displayTime);
@@ -236,6 +243,22 @@ let watchingUpdateNotificationBuilderRegistered = false;
 
 export function registerWatchingUpdateNotificationBuilder(): void {
   if (watchingUpdateNotificationBuilderRegistered) return;
+  notificationEventRegistry.registerMany([
+    {
+      type: WATCHING_UPDATE_FOUND_EVENT_TYPE,
+      label: '追更更新',
+      description: '关注的影视内容发现新集或新季时通知。',
+      category: 'watching',
+      defaultSubscribed: true,
+    },
+    {
+      type: WATCHING_UPDATE_FAILED_EVENT_TYPE,
+      label: '更新失败',
+      description: '追更检查或更新过程失败时通知。',
+      category: 'watching',
+      defaultSubscribed: true,
+    },
+  ]);
   notificationBuilderRegistry.register(
     WATCHING_UPDATE_FOUND_EVENT_TYPE,
     watchingUpdateNotificationBuilder,

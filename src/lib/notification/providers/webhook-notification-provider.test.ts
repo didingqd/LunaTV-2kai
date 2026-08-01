@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { WebhookNotificationProvider } from './webhook-notification-provider';
 
@@ -32,12 +32,12 @@ describe('WebhookNotificationProvider', () => {
           title: 'Title',
           content: 'Content',
           message: 'Content',
-          eventType: 'watching.update_found',
+          eventType: 'test.event',
           eventId: 'event-1',
           createdAt: 1_000,
           data: {
             payloadId: 'event-1',
-            eventType: 'watching.update_found',
+            eventType: 'test.event',
             title: 'Title',
             content: 'Content',
           },
@@ -68,14 +68,14 @@ function setFetch(fetchMock: jest.Mock) {
 function message() {
   return {
     userId: 'alice',
-    type: 'watching.update_found',
+    type: 'test.event',
     title: 'Title',
     body: 'Content',
     content: 'Content',
     createdAt: 1_000,
     payload: {
       payloadId: 'event-1',
-      eventType: 'watching.update_found',
+      eventType: 'test.event',
       title: 'Title',
       content: 'Content',
     },
@@ -88,7 +88,7 @@ function channel() {
     type: 'webhook',
     name: 'Webhook',
     enabled: true,
-    subscribedEvents: ['watching.update_found'],
+    subscribedEvents: ['test.event'],
     config: {
       url: 'https://example.com/webhook',
       headers: JSON.stringify({ 'X-Test': 'yes' }),

@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { ResendNotificationProvider } from './resend-notification-provider';
 
@@ -66,14 +66,14 @@ function setFetch(fetchMock: jest.Mock) {
 function message() {
   return {
     userId: 'alice',
-    type: 'watching.update_found',
+    type: 'test.event',
     title: 'Title',
     body: 'Content',
     content: 'Content',
     createdAt: 1_000,
     payload: {
       payloadId: 'event-1',
-      eventType: 'watching.update_found',
+      eventType: 'test.event',
       title: 'Title',
       content: 'Content',
     },
@@ -86,7 +86,7 @@ function channel() {
     type: 'resend',
     name: 'Email',
     enabled: true,
-    subscribedEvents: ['watching.update_found'],
+    subscribedEvents: ['test.event'],
     config: {
       apiKey: 're_key',
       from: 'noreply@example.com',

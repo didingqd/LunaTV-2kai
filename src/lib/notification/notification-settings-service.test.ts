@@ -4,20 +4,19 @@ jest.mock('@/lib/db', () => ({
   db: {},
 }));
 
+import { notificationEventRegistry } from './notification-event-registry';
 import {
   NotificationSettingsRepository,
   type NotificationSettingsStore,
 } from './notification-settings-repository';
 import { NotificationSettingsService } from './notification-settings-service';
-import {
-  NotificationEventType,
-  NotificationMessageType,
-  type NotificationMessage,
-  type NotificationMessageType as NotificationMessageTypeValue,
+import type {
+  NotificationMessage,
+  NotificationPayload,
 } from './notification-types';
 
-const FOUND_EVENT = NotificationEventType.WATCHING_UPDATE_FOUND;
-const FAILED_EVENT = NotificationEventType.WATCHING_UPDATE_FAILED;
+const FOUND_EVENT = 'test.event';
+const FAILED_EVENT = 'test.failed';
 
 class MemoryNotificationSettingsStore implements NotificationSettingsStore {
   readonly values = new Map<string, unknown>();
@@ -35,9 +34,7 @@ class MemoryNotificationSettingsStore implements NotificationSettingsStore {
   }
 }
 
-function message(
-  type: NotificationMessageTypeValue = NotificationMessageType.WATCHING_UPDATE_FOUND,
-): NotificationMessage {
+function message(type = FOUND_EVENT): NotificationMessage {
   return {
     userId: 'alice',
     type,
@@ -47,6 +44,34 @@ function message(
   };
 }
 
+function payload(type = FOUND_EVENT): NotificationPayload {
+  return {
+    id: 'event-1',
+    type,
+    targetUser: 'alice',
+    data: {},
+    occurredAt: 1_000,
+  };
+}
+
+beforeEach(() => {
+  notificationEventRegistry.clearForTests();
+  notificationEventRegistry.registerMany([
+    {
+      type: FOUND_EVENT,
+      label: 'Test found',
+      description: 'Test found event.',
+      defaultSubscribed: true,
+    },
+    {
+      type: FAILED_EVENT,
+      label: 'Test failed',
+      description: 'Test failed event.',
+      defaultSubscribed: true,
+    },
+  ]);
+});
+
 describe('NotificationSettingsService', () => {
   it('saves partial settings with updatedAt', async () => {
     const repository = new NotificationSettingsRepository(
@@ -55,13 +80,18 @@ describe('NotificationSettingsService', () => {
     const service = new NotificationSettingsService(repository, () => 9_000);
 
     await expect(
-      service.save('alice', { watchingUpdateFailedEnabled: false }),
+      service.save('alice', {
+        subscriptions: [
+          { eventType: FAILED_EVENT, enabled: false, channels: [] },
+        ],
+      }),
     ).resolves.toEqual({
       version: 2,
       notificationCenterEnabled: true,
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: true,
-      watchingUpdateFailedEnabled: false,
+      subscriptions: [
+        { eventType: FOUND_EVENT, enabled: true, channels: ['inbox'] },
+      ],
       channels: [
         {
           id: 'inbox',
@@ -88,8 +118,10 @@ describe('NotificationSettingsService', () => {
       version: 2,
       notificationCenterEnabled: true,
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: true,
-      watchingUpdateFailedEnabled: true,
+      subscriptions: [
+        { eventType: FOUND_EVENT, enabled: true, channels: ['inbox'] },
+        { eventType: FAILED_EVENT, enabled: true, channels: ['inbox'] },
+      ],
       channels: [
         {
           id: 'inbox',
@@ -151,13 +183,7 @@ describe('NotificationSettingsService', () => {
       ],
     });
     await expect(
-      service.getSubscribedChannelConfigs({
-        id: 'event-1',
-        type: FOUND_EVENT,
-        userId: 'alice',
-        data: {},
-        createdAt: 1_000,
-      }),
+      service.getSubscribedChannelConfigs(payload()),
     ).resolves.toEqual([]);
 
     await expect(
@@ -184,29 +210,27 @@ describe('NotificationSettingsService', () => {
     ).resolves.toEqual([]);
   });
 
-  it('blocks update found and failed by their type switches', async () => {
+  it('blocks events through generic subscriptions', async () => {
     const repository = new NotificationSettingsRepository(
       new MemoryNotificationSettingsStore(),
     );
     const service = new NotificationSettingsService(repository);
     await repository.save('alice', {
-      watchingUpdateFoundEnabled: false,
-      watchingUpdateFailedEnabled: false,
+      subscriptions: [
+        { eventType: FOUND_EVENT, enabled: false, channels: [] },
+        { eventType: FAILED_EVENT, enabled: false, channels: [] },
+      ],
     });
 
-    await expect(
-      service.shouldDispatch(
-        message(NotificationMessageType.WATCHING_UPDATE_FOUND),
-      ),
-    ).resolves.toBe(false);
-    await expect(
-      service.shouldDispatch(
-        message(NotificationMessageType.WATCHING_UPDATE_FAILED),
-      ),
-    ).resolves.toBe(false);
-    await expect(
-      service.shouldDispatch(message(NotificationMessageType.SYSTEM)),
-    ).resolves.toBe(true);
+    await expect(service.shouldDispatch(message(FOUND_EVENT))).resolves.toBe(
+      false,
+    );
+    await expect(service.shouldDispatch(message(FAILED_EVENT))).resolves.toBe(
+      false,
+    );
+    await expect(service.shouldDispatch(message('system.test'))).resolves.toBe(
+      false,
+    );
   });
 
   it('creates, updates, deletes and masks WeChat Work channels', async () => {

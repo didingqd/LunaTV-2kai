@@ -1,7 +1,6 @@
 import type { NotificationProvider } from './notification-provider';
 import type { UserNotificationChannelConfig } from './notification-settings-repository';
 import type {
-  NotificationEvent,
   NotificationMessage,
   NotificationPayload,
 } from './notification-types';
@@ -19,21 +18,9 @@ interface RetryOptions {
 
 const recentEventDispatches = new Map<string, number>();
 
-function getNotificationUserId(
-  event: NotificationEvent | NotificationPayload,
-): string | undefined {
-  return (
-    (event as NotificationPayload).targetUser ??
-    (event as NotificationEvent).userId
-  );
-}
-
-export function isNotificationDebugEvent(
-  event: NotificationEvent | NotificationPayload,
-): boolean {
+export function isNotificationDebugEvent(event: NotificationPayload): boolean {
   const data = event.data;
-  const metadataSource =
-    'metadata' in event && event.metadata ? event.metadata : data.metadata;
+  const metadataSource = event.metadata ? event.metadata : data.metadata;
   const metadata =
     metadataSource &&
     typeof metadataSource === 'object' &&
@@ -44,13 +31,13 @@ export function isNotificationDebugEvent(
 }
 
 export function shouldSkipDuplicateNotificationEvent(
-  event: NotificationEvent | NotificationPayload,
+  event: NotificationPayload,
   now: number,
   windowMs = DEFAULT_NOTIFICATION_DEDUP_WINDOW_MS,
 ): boolean {
   if (isNotificationDebugEvent(event)) return false;
 
-  const userId = getNotificationUserId(event);
+  const userId = event.targetUser;
   const key = `${userId ?? 'global'}:${event.type}`;
   const previous = recentEventDispatches.get(key);
   if (typeof previous === 'number' && now - previous < windowMs) {

@@ -1,13 +1,11 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import type { NotificationChannel } from './notification-channel';
 import { NotificationDispatcher } from './notification-dispatcher';
 import { NotificationChannelType } from './notification-settings-repository';
-import {
-  NotificationEventType,
-  NotificationMessageType,
-  type NotificationEvent,
-  type NotificationMessage,
+import type {
+  NotificationEvent,
+  NotificationMessage,
 } from './notification-types';
 
 function createMessage(
@@ -15,9 +13,9 @@ function createMessage(
 ): NotificationMessage {
   return {
     userId: 'alice',
-    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
-    title: 'New episode',
-    content: 'Episode 10 is available.',
+    type: 'test.event',
+    title: 'Test notification',
+    content: 'Test notification content.',
     createdAt: 1_000,
     payload: {
       mediaId: 'media-1',
@@ -47,7 +45,7 @@ function createEvent(
 ): NotificationEvent {
   return {
     id: 'event-1',
-    type: NotificationEventType.WATCHING_UPDATE_FOUND,
+    type: 'test.event',
     userId: 'alice',
     data: { title: 'Debug' },
     createdAt: 1_000,
@@ -266,14 +264,14 @@ describe('NotificationDispatcher', () => {
   });
 
   it('dispatches notification events through the manager path', async () => {
-    const emit = jest.fn(async () => ({
+    const notify = jest.fn(async () => ({
       success: true,
       totalChannels: 1,
       succeeded: 1,
       failed: 0,
       errors: [],
     }));
-    const dispatcher = new NotificationDispatcher(undefined, { emit });
+    const dispatcher = new NotificationDispatcher(undefined, { notify });
     const event = createEvent();
 
     await expect(dispatcher.dispatchEvent(event)).resolves.toEqual({
@@ -283,6 +281,12 @@ describe('NotificationDispatcher', () => {
       failed: 0,
       errors: [],
     });
-    expect(emit).toHaveBeenCalledWith(event);
+    expect(notify).toHaveBeenCalledWith({
+      id: 'event-1',
+      type: 'test.event',
+      targetUser: 'alice',
+      occurredAt: 1_000,
+      data: { title: 'Debug' },
+    });
   });
 });

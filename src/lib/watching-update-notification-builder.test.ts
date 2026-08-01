@@ -3,7 +3,7 @@ import { WatchingUpdateNotificationBuilder } from './watching-update-notificatio
 describe('WatchingUpdateNotificationBuilder', () => {
   const builder = new WatchingUpdateNotificationBuilder();
 
-  it('builds one summary with new updates, pending updates, and user timezone', () => {
+  it('builds one summary with new updates, updated items, and user timezone', () => {
     expect(
       builder.build(
         {
@@ -15,7 +15,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
               toEpisode: 14,
             },
           ],
-          pendingUpdates: [
+          updated: [
             {
               followId: 'one-piece',
               title: '海贼王',
@@ -30,7 +30,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
     ).toEqual({
       title: '更新提醒',
       content:
-        '更新提醒\n\n【新更新】\n\n火影忍者\n12集 → 14集\n\n【待观看更新】\n\n海贼王\n12集 → 13集\n\n检查时间：\n2026-07-31 21:30:00',
+        '更新提醒\n\n【新更新】\n\n火影忍者\n12集 → 14集\n\n【已更新】\n\n海贼王\n12集 → 13集\n\n检查时间：\n2026-07-31 21:30:00',
       displayTime: '2026-07-31 21:30:00',
     });
   });
@@ -45,7 +45,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
           toEpisode: 2,
         },
       ],
-      pendingUpdates: [],
+      updated: [],
     };
     const checkedAt = new Date('2026-08-01T01:00:00.000Z').getTime();
 
@@ -66,7 +66,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
       builder.build(
         {
           newUpdates: [],
-          pendingUpdates: [],
+          updated: [],
         },
         0,
         'UTC',

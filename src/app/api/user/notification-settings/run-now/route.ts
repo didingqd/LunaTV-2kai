@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import '@/lib/notification-event-bootstrap';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
 import {
-  createNotificationRunNowEvent,
+  createNotificationRunNowPayload,
   isNotificationRunNowEventType,
 } from '@/lib/notification/notification-run-now';
 import { systemConfigRepository } from '@/lib/system-config-repository';
@@ -42,18 +43,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const config = await systemConfigRepository.getUpdateCheckConfig();
-    const event = createNotificationRunNowEvent(
+    const payload = createNotificationRunNowPayload(
       admin.username,
       parsed.data.eventType,
       Date.now,
       undefined,
       config.updateCheckTimezone,
     );
-    const result = await notificationDispatcher.dispatchEvent(event);
+    const result = await notificationDispatcher.dispatchPayload(payload);
 
     return NextResponse.json(
       {
-        eventType: event.type,
+        eventType: payload.type,
         success: result.success,
         totalChannels: result.totalChannels,
         succeeded: result.succeeded,

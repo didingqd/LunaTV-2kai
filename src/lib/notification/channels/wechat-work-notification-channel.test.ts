@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { WeChatWorkNotificationChannel } from './wechat-work-notification-channel';
 import type { NotificationMessage } from '../notification-types';
@@ -8,14 +8,14 @@ function message(
 ): NotificationMessage {
   return {
     userId: 'alice',
-    type: 'watching.update_found',
+    type: 'test.event',
     title: 'Demo',
     body: 'Source A 已从 10 集更新到 12 集',
     content: 'Source A 已从 10 集更新到 12 集',
     createdAt: Date.parse('2026-07-30T12:00:00.000Z'),
     payload: {
       source: 'Source A',
-      episode: '第12集',
+      displayTime: '2024-01-01 00:00:00',
     },
     ...overrides,
   };
@@ -65,7 +65,7 @@ describe('WeChatWorkNotificationChannel', () => {
 
     await channel.send(
       message({
-        type: 'watching.update_failed',
+        type: 'test.failed',
         title: 'Task A',
         body: '资源站异常',
         content: '资源站异常',

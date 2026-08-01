@@ -16,7 +16,8 @@ import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
   NOTIFICATION_EVENT_METAS,
-} from '@/lib/notification/notification-event-metadata';
+  NOTIFICATION_TEST_EVENT_TYPE,
+} from '@/lib/notification-event-bootstrap';
 
 import { NotificationChannelList } from './notification/NotificationChannelList';
 import { NotificationChannelModal } from './notification/NotificationChannelModal';
@@ -69,6 +70,9 @@ const NOTIFICATION_TEST_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/test`;
 const NOTIFICATION_RUN_NOW_ENDPOINT = `${NOTIFICATION_SETTINGS_ENDPOINT}/run-now`;
 const NOTIFICATION_PROVIDERS_ENDPOINT = '/api/user/notification-providers';
 const NOTIFICATION_LOGS_ENDPOINT = '/api/admin/notification-logs';
+const RUN_NOW_EVENT_METAS = NOTIFICATION_EVENT_METAS.filter(
+  (eventMeta) => eventMeta.type === NOTIFICATION_TEST_EVENT_TYPE,
+);
 
 async function readSettingsResponse(
   response: Response,
@@ -123,17 +127,9 @@ function isAdminRole(role?: string) {
   return role === 'owner' || role === 'admin';
 }
 
-function getCompatibleSubscribedEvents(
-  channel: NotificationChannelConfig,
-  settings: NotificationSettings,
-) {
+function getCompatibleSubscribedEvents(channel: NotificationChannelConfig) {
   if (Array.isArray(channel.subscribedEvents)) return channel.subscribedEvents;
-
-  const events: string[] = [];
-  if (settings.watchingUpdateFoundEnabled) events.push('watching.update_found');
-  if (settings.watchingUpdateFailedEnabled)
-    events.push('watching.update_failed');
-  return events;
+  return [...DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS];
 }
 
 function normalizeConfigForForm(
@@ -166,7 +162,7 @@ function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
 
 function buildEditForm(
   channel: NotificationChannelConfig,
-  settings: NotificationSettings,
+  _settings: NotificationSettings,
   provider: NotificationProviderMeta,
 ): ChannelFormState {
   const config = normalizeConfigForForm(provider, channel.config);
@@ -175,7 +171,7 @@ function buildEditForm(
     channelId: channel.id,
     providerType: channel.type,
     name: channel.name,
-    subscribedEvents: getCompatibleSubscribedEvents(channel, settings),
+    subscribedEvents: getCompatibleSubscribedEvents(channel),
     config,
     originalConfig: config,
   };
@@ -514,7 +510,7 @@ export default function NotificationSettingsPage({
   };
 
   const openRunNow = () => {
-    setRunNowEventType(DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS[0]);
+    setRunNowEventType(NOTIFICATION_TEST_EVENT_TYPE);
     setRunNowResult(null);
     setRunNowError(null);
     setRunNowOpen(true);
@@ -992,7 +988,7 @@ export default function NotificationSettingsPage({
                   onChange={(event) => setRunNowEventType(event.target.value)}
                   className='w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100'
                 >
-                  {NOTIFICATION_EVENT_METAS.map((eventMeta) => (
+                  {RUN_NOW_EVENT_METAS.map((eventMeta) => (
                     <option key={eventMeta.type} value={eventMeta.type}>
                       {eventMeta.label}
                     </option>

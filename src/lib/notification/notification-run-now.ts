@@ -1,16 +1,11 @@
 import { randomUUID } from 'crypto';
 
-import {
-  NotificationEventType,
-  type NotificationEvent,
-} from './notification-types';
+import { NOTIFICATION_TEST_EVENT_TYPE } from '../notification-test-event';
+import type { NotificationPayload } from './notification-types';
 import { timezoneService } from '../services/timezone_service';
 
 export const NOTIFICATION_RUN_NOW_EVENT_TYPES = [
-  NotificationEventType.WATCHING_UPDATE_FOUND,
-  NotificationEventType.WATCHING_UPDATE_FAILED,
-  NotificationEventType.SCHEDULER_FAILED,
-  NotificationEventType.SYSTEM_ERROR,
+  NOTIFICATION_TEST_EVENT_TYPE,
 ] as const;
 
 export type NotificationRunNowEventType =
@@ -24,13 +19,13 @@ export function isNotificationRunNowEventType(
   );
 }
 
-export function createNotificationRunNowEvent(
+export function createNotificationRunNowPayload(
   userId: string,
   eventType: NotificationRunNowEventType,
   now: () => number = Date.now,
   createId: () => string = randomUUID,
   timezone = 'UTC',
-): NotificationEvent {
+): NotificationPayload {
   const timestamp = now();
   const displayTime = timezoneService.format(timestamp, timezone);
   const message =
@@ -39,20 +34,20 @@ export function createNotificationRunNowEvent(
   return {
     id: createId(),
     type: eventType,
-    userId,
+    targetUser: userId,
+    occurredAt: timestamp,
     data: {
-      title: '\u6d4b\u8bd5\u66f4\u65b0\u901a\u77e5',
+      title: '\u6d4b\u8bd5\u901a\u77e5',
       message,
       content: message,
       source: 'notification-debug',
-      metadata: {
-        debug: true,
-        timezone,
-        displayTime,
-      },
       timestamp,
       displayTime,
     },
-    createdAt: timestamp,
+    metadata: {
+      debug: true,
+      timezone,
+      displayTime,
+    },
   };
 }

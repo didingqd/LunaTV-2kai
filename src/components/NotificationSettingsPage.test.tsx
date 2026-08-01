@@ -18,8 +18,18 @@ const baseSettings = {
   version: 2,
   notificationCenterEnabled: true,
   inboxEnabled: true,
-  watchingUpdateFoundEnabled: true,
-  watchingUpdateFailedEnabled: true,
+  subscriptions: [
+    {
+      eventType: 'watching.update_found',
+      enabled: true,
+      channels: ['inbox', 'wc-1'],
+    },
+    {
+      eventType: 'watching.update_failed',
+      enabled: true,
+      channels: ['inbox'],
+    },
+  ],
   channels: [
     {
       id: 'inbox',
@@ -265,7 +275,7 @@ describe('NotificationSettingsPage', () => {
         if (url === runNowEndpoint && init?.method === 'POST') {
           return Promise.resolve(
             jsonResponse({
-              eventType: 'watching.update_failed',
+              eventType: 'notification.test',
               success: true,
               totalChannels: 1,
               succeeded: 1,
@@ -288,22 +298,17 @@ describe('NotificationSettingsPage', () => {
       screen.getByRole('heading', { name: '立即测试通知' }),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('测试事件'), {
-      target: { value: 'watching.update_failed' },
-    });
     fireEvent.click(screen.getByRole('button', { name: '执行测试' }));
 
     await waitFor(() =>
       expect(screen.getByText('✓ 已发送')).toBeInTheDocument(),
     );
-    expect(
-      screen.getByText('事件类型：watching.update_failed'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('事件类型：notification.test')).toBeInTheDocument();
     expect(screen.getByText('匹配渠道数量：1')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(runNowEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventType: 'watching.update_failed' }),
+      body: JSON.stringify({ eventType: 'notification.test' }),
     });
   });
 

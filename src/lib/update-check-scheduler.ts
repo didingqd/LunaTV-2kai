@@ -1,9 +1,9 @@
 import type { AdminConfig, SystemConfig } from './admin.types';
 import { getConfig } from './config';
 import { db } from './db';
-import { notificationPayloadToEvent } from './notification/notification-event-adapter';
 import { notificationDispatcher } from './notification/notification-dispatcher';
 import type { NotificationPayload } from './notification/notification-types';
+import { normalizeTimezone } from './scheduler/timezone-utils';
 import { resolveUserWatchingUpdateSchedule } from './scheduler/user-watching-update-schedule-resolver';
 import { timezoneService } from './services/timezone_service';
 import {
@@ -37,8 +37,7 @@ type SchedulerTaskRepository = UpdateCheckTaskRepository &
   >;
 
 type NotificationPayloadDispatcher = {
-  dispatchPayload?: typeof notificationDispatcher.dispatchPayload;
-  dispatchEvent?: typeof notificationDispatcher.dispatchEvent;
+  dispatchPayload: typeof notificationDispatcher.dispatchPayload;
 };
 
 interface CompletedTask {
@@ -358,7 +357,7 @@ export class UpdateCheckScheduler {
           createWatchingUpdateFoundPayload({
             userId,
             newUpdates: analysis.newUpdates,
-            pendingUpdates: analysis.pendingUpdates,
+            updated: analysis.updated,
             checkedAt,
             timezone,
             displayTime,
@@ -433,15 +432,7 @@ export class UpdateCheckScheduler {
   }
 
   private dispatchNotificationPayload(payload: NotificationPayload) {
-    if (this.notifications.dispatchPayload) {
-      return this.notifications.dispatchPayload(payload);
-    }
-    if (this.notifications.dispatchEvent) {
-      return this.notifications.dispatchEvent(
-        notificationPayloadToEvent(payload, () => ''),
-      );
-    }
-    throw new Error('NOTIFICATION_PAYLOAD_DISPATCH_UNAVAILABLE');
+    return this.notifications.dispatchPayload(payload);
   }
 
   private buildFailureNotificationPayload(
@@ -486,14 +477,17 @@ export class UpdateCheckScheduler {
     timestamp: number,
   ): string {
     const user = usersById.get(userId);
-    return resolveUserWatchingUpdateSchedule({
+    const schedule = resolveUserWatchingUpdateSchedule({
       username: userId,
       userUpdateCheckBackendEnabled: authorizedUsers.has(userId),
       isOwner: userId === ownerId,
       systemConfig: settings,
       userConfig: user?.watchingUpdateConfig,
       from: new Date(timestamp),
-    }).timezone;
+    });
+    return schedule.source.timezone === 'default'
+      ? resolveSystemDefaultTimezone()
+      : schedule.timezone;
   }
 }
 
@@ -532,4 +526,8 @@ function sanitizeNotificationError(error: string | undefined): string {
 
 function formatNotificationTime(timestamp: number, timezone: string): string {
   return timezoneService.format(timestamp, timezone);
+}
+
+function resolveSystemDefaultTimezone(): string {
+  return normalizeTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
 }

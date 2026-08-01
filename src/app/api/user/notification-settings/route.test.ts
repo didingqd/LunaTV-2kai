@@ -28,8 +28,9 @@ const toPublicSettings =
 const defaultSettings = {
   notificationCenterEnabled: true,
   inboxEnabled: true,
-  watchingUpdateFoundEnabled: true,
-  watchingUpdateFailedEnabled: true,
+  subscriptions: [
+    { eventType: 'test.event', enabled: true, channels: ['inbox'] },
+  ],
   channels: [
     {
       id: 'inbox',
@@ -93,18 +94,22 @@ describe('user notification settings API', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it('saves legacy-compatible settings for administrators', async () => {
+  it('saves generic subscriptions for administrators', async () => {
     const response = await PATCH(
       request('PATCH', {
         inboxEnabled: false,
-        watchingUpdateFailedEnabled: false,
+        subscriptions: [
+          { eventType: 'test.event', enabled: false, channels: [] },
+        ],
       }),
     );
 
     expect(response.status).toBe(200);
     expect(save).toHaveBeenCalledWith('alice', {
       inboxEnabled: false,
-      watchingUpdateFailedEnabled: false,
+      subscriptions: [
+        { eventType: 'test.event', enabled: false, channels: [] },
+      ],
     });
   });
 

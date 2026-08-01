@@ -1,10 +1,11 @@
 /** @jest-environment node */
 
 import type { UpdateCheckSchedulerResult } from '@/lib/update-check-scheduler';
-import { NotificationEventType } from '@/lib/notification/notification-types';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 
 import { UpdateCheckJobRunner } from './update-check-job-runner';
+
+const SCHEDULER_FAILED_EVENT = 'scheduler.failed';
 
 const schedulerResult: UpdateCheckSchedulerResult = {
   inspected: 3,
@@ -244,7 +245,7 @@ describe('UpdateCheckJobRunner', () => {
       schedulerResult: null,
     });
     expect(dispatchEvent).toHaveBeenCalledWith({
-      type: NotificationEventType.SCHEDULER_FAILED,
+      type: SCHEDULER_FAILED_EVENT,
       targetUser: 'system',
       occurredAt: 2_040,
       data: {

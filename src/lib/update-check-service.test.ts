@@ -375,7 +375,9 @@ describe('UpdateCheckService', () => {
     const task = [...tasks.values.values()][0];
     await service.checkTask(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: task.followId, effectiveLatestEpisode: 12 }],
+      snapshots: [
+        { followId: task.followId, lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
       history: [
         {
           followId: task.followId,
@@ -407,7 +409,9 @@ describe('UpdateCheckService', () => {
       observedAt: 1000,
     });
     await notificationState.save('alice', {
-      snapshots: [{ followId: task.followId, effectiveLatestEpisode: 11 }],
+      snapshots: [
+        { followId: task.followId, lastNotifiedEffectiveLatestEpisode: 11 },
+      ],
       history: [],
     });
 
@@ -425,7 +429,9 @@ describe('UpdateCheckService', () => {
   it('clears notification state before scheduling a newly created follow', async () => {
     const task = [...tasks.values.values()][0];
     await notificationState.save('alice', {
-      snapshots: [{ followId: task.followId, effectiveLatestEpisode: 12 }],
+      snapshots: [
+        { followId: task.followId, lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
       history: [
         {
           followId: task.followId,
@@ -447,7 +453,9 @@ describe('UpdateCheckService', () => {
   it('cleans notification state when a scheduled follow no longer exists', async () => {
     const task = [...tasks.values.values()][0];
     await notificationState.save('alice', {
-      snapshots: [{ followId: task.followId, effectiveLatestEpisode: 12 }],
+      snapshots: [
+        { followId: task.followId, lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
       history: [
         {
           followId: task.followId,

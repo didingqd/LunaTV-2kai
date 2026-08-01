@@ -1,7 +1,7 @@
-// Phase 2 notification refactor: the registry is the only lookup table for
+﻿// Phase 2 notification refactor: the registry is the only lookup table for
 // notification provider discovery.  NotificationManager and settings services use
 // this registry to resolve a channel type, keeping concrete providers out of
-// update-check and other business flows.
+// application notification flows.
 
 import type { NotificationProvider } from './notification-provider';
 

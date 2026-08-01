@@ -7,7 +7,7 @@ jest.mock('@/lib/auth', () => ({
 }));
 jest.mock('@/lib/notification/notification-dispatcher', () => ({
   notificationDispatcher: {
-    dispatchEvent: jest.fn(),
+    dispatchPayload: jest.fn(),
   },
 }));
 jest.mock('@/lib/system-config-repository', () => ({
@@ -17,13 +17,13 @@ jest.mock('@/lib/system-config-repository', () => ({
 }));
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { NOTIFICATION_TEST_EVENT_TYPE } from '@/lib/notification-test-event';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
-import { NotificationEventType } from '@/lib/notification/notification-types';
 import { systemConfigRepository } from '@/lib/system-config-repository';
 import { POST } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
-const dispatchEvent = notificationDispatcher.dispatchEvent as jest.Mock;
+const dispatchPayload = notificationDispatcher.dispatchPayload as jest.Mock;
 const getUpdateCheckConfig =
   systemConfigRepository.getUpdateCheckConfig as jest.Mock;
 
@@ -35,7 +35,7 @@ describe('notification settings run-now API', () => {
     getUpdateCheckConfig.mockResolvedValue({
       updateCheckTimezone: 'Asia/Shanghai',
     });
-    dispatchEvent.mockResolvedValue({
+    dispatchPayload.mockResolvedValue({
       success: true,
       totalChannels: 2,
       succeeded: 2,
@@ -52,51 +52,51 @@ describe('notification settings run-now API', () => {
     getAuth.mockReturnValue(null);
 
     const response = await POST(
-      request({ eventType: NotificationEventType.WATCHING_UPDATE_FOUND }),
+      request({ eventType: NOTIFICATION_TEST_EVENT_TYPE }),
     );
 
     expect(response.status).toBe(401);
-    expect(dispatchEvent).not.toHaveBeenCalled();
+    expect(dispatchPayload).not.toHaveBeenCalled();
   });
 
   it('rejects normal users', async () => {
     getAuth.mockReturnValue({ username: 'bob', role: 'user' });
 
     const response = await POST(
-      request({ eventType: NotificationEventType.WATCHING_UPDATE_FOUND }),
+      request({ eventType: NOTIFICATION_TEST_EVENT_TYPE }),
     );
 
     expect(response.status).toBe(403);
-    expect(dispatchEvent).not.toHaveBeenCalled();
+    expect(dispatchPayload).not.toHaveBeenCalled();
   });
 
-  it('creates a debug NotificationEvent and dispatches it through dispatcher', async () => {
+  it('creates a debug NotificationPayload and dispatches it through dispatcher', async () => {
     const response = await POST(
-      request({ eventType: NotificationEventType.WATCHING_UPDATE_FOUND }),
+      request({ eventType: NOTIFICATION_TEST_EVENT_TYPE }),
     );
 
     expect(response.status).toBe(200);
-    expect(dispatchEvent).toHaveBeenCalledWith({
+    expect(dispatchPayload).toHaveBeenCalledWith({
       id: expect.any(String),
-      type: NotificationEventType.WATCHING_UPDATE_FOUND,
-      userId: 'alice',
+      type: NOTIFICATION_TEST_EVENT_TYPE,
+      targetUser: 'alice',
+      occurredAt: 1_700_000_000_000,
       data: {
-        title: '测试更新通知',
+        title: '测试通知',
         message: '这是 Run Now 生成的测试通知',
         content: '这是 Run Now 生成的测试通知',
         source: 'notification-debug',
-        metadata: {
-          debug: true,
-          timezone: 'Asia/Shanghai',
-          displayTime: '2023-11-15 06:13:20',
-        },
         timestamp: 1_700_000_000_000,
         displayTime: '2023-11-15 06:13:20',
       },
-      createdAt: 1_700_000_000_000,
+      metadata: {
+        debug: true,
+        timezone: 'Asia/Shanghai',
+        displayTime: '2023-11-15 06:13:20',
+      },
     });
     await expect(response.json()).resolves.toEqual({
-      eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+      eventType: NOTIFICATION_TEST_EVENT_TYPE,
       success: true,
       totalChannels: 2,
       succeeded: 2,
@@ -106,7 +106,7 @@ describe('notification settings run-now API', () => {
   });
 
   it('returns dispatcher failures without exposing provider config', async () => {
-    dispatchEvent.mockResolvedValue({
+    dispatchPayload.mockResolvedValue({
       success: false,
       totalChannels: 2,
       succeeded: 1,
@@ -115,12 +115,12 @@ describe('notification settings run-now API', () => {
     });
 
     const response = await POST(
-      request({ eventType: NotificationEventType.WATCHING_UPDATE_FOUND }),
+      request({ eventType: NOTIFICATION_TEST_EVENT_TYPE }),
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+      eventType: NOTIFICATION_TEST_EVENT_TYPE,
       success: false,
       totalChannels: 2,
       succeeded: 1,

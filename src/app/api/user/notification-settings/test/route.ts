@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import '@/lib/notification-event-bootstrap';
 import { notificationProviderRegistry } from '@/lib/notification/notification-provider-bootstrap';
 import { notificationSettingsService } from '@/lib/notification/notification-settings-service';
 

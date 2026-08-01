@@ -1,6 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-
-import { NotificationMessageType } from '@/lib/notification/notification-types';
+﻿import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import NotificationCenterPage from './NotificationCenterPage';
 
@@ -10,7 +8,7 @@ function notification(overrides: Record<string, unknown> = {}) {
   return {
     id: 'n-1',
     userId: 'alice',
-    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
+    type: 'test.event',
     title: '《Demo》发现更新',
     content: 'Source A 已从 10 集更新到 12 集',
     createdAt: Date.parse('2026-07-30T12:00:00.000Z'),
@@ -64,7 +62,9 @@ describe('NotificationCenterPage', () => {
     expect(screen.getByText('正在加载通知')).toBeInTheDocument();
     expect(await screen.findByText('通知中心')).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByText(/共\s*1\s*条通知，\s*1\s*条未读/)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/共\s*1\s*条通知，\s*1\s*条未读/),
+      ).toBeInTheDocument(),
     );
     expect(screen.getAllByText('《Demo》发现更新').length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith('/api/user/notifications', {
@@ -118,7 +118,9 @@ describe('NotificationCenterPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '标记未读' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ read: false });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      read: false,
+    });
   });
 
   it('deletes a single notification', async () => {

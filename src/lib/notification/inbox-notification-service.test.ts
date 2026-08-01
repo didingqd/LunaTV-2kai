@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 jest.mock('@/lib/db', () => ({
   db: {},
@@ -9,10 +9,7 @@ import {
   type InboxNotificationStore,
 } from './inbox-notification-repository';
 import { InboxNotificationService } from './inbox-notification-service';
-import {
-  NotificationMessageType,
-  type InboxNotification,
-} from './notification-types';
+import type { InboxNotification } from './notification-types';
 
 class MemoryInboxNotificationStore implements InboxNotificationStore {
   readonly values = new Map<string, unknown>();
@@ -36,9 +33,9 @@ function notification(
   return {
     id: 'n-1',
     userId: 'alice',
-    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
-    title: 'New episode',
-    content: 'Episode 10 is available.',
+    type: 'test.event',
+    title: 'Test notification',
+    content: 'Test notification content.',
     payload: { mediaId: 'm-1' },
     read: false,
     createdAt: 1_000,

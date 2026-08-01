@@ -1,6 +1,6 @@
 import { Check, X } from 'lucide-react';
 
-import { NOTIFICATION_EVENT_METAS } from '@/lib/notification/notification-event-metadata';
+import { NOTIFICATION_EVENT_METAS } from '@/lib/notification-event-bootstrap';
 
 import {
   NOTIFICATION_DELIVERY_STATUS_LABELS,

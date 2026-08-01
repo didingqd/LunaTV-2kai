@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { NotificationManager } from './notification-manager';
 import { NotificationProviderRegistry } from './notification-provider-registry';
@@ -6,10 +6,10 @@ import type { NotificationProvider } from './notification-provider';
 import type { NotificationSendLogEntry } from './notification-log-types';
 import type { UserNotificationChannelConfig } from './notification-settings-repository';
 import { clearNotificationDedupeStateForTests } from './notification-send-control';
-import {
-  NotificationEventType,
-  type NotificationEvent,
-} from './notification-types';
+import type { NotificationPayload } from './notification-types';
+
+const FOUND_EVENT = 'test.event';
+const FAILED_EVENT = 'test.failed';
 
 function channel(
   overrides: Partial<UserNotificationChannelConfig> = {},
@@ -19,19 +19,21 @@ function channel(
     type: 'fake',
     name: 'Fake provider',
     enabled: true,
-    subscribedEvents: [NotificationEventType.WATCHING_UPDATE_FOUND],
+    subscribedEvents: [FOUND_EVENT],
     config: {},
     ...overrides,
   };
 }
 
-function event(overrides: Partial<NotificationEvent> = {}): NotificationEvent {
+function payload(
+  overrides: Partial<NotificationPayload> = {},
+): NotificationPayload {
   return {
     id: 'event-1',
-    type: NotificationEventType.WATCHING_UPDATE_FOUND,
-    userId: 'alice',
+    type: FOUND_EVENT,
+    targetUser: 'alice',
     data: { title: 'Title' },
-    createdAt: 1_000,
+    occurredAt: 1_000,
     ...overrides,
   };
 }
@@ -54,7 +56,7 @@ describe('NotificationManager', () => {
       () => 'generated-event-id',
     );
 
-    await expect(manager.emit(event())).resolves.toEqual({
+    await expect(manager.notify(payload())).resolves.toEqual({
       success: true,
       totalChannels: 1,
       succeeded: 1,
@@ -64,13 +66,13 @@ describe('NotificationManager', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'alice',
-        type: NotificationEventType.WATCHING_UPDATE_FOUND,
+        type: FOUND_EVENT,
         title: 'Title',
         content: '',
         createdAt: 1_000,
         payload: expect.objectContaining({
           payloadId: 'event-1',
-          eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+          eventType: FOUND_EVENT,
           title: 'Title',
         }),
       }),
@@ -88,7 +90,7 @@ describe('NotificationManager', () => {
       new NotificationProviderRegistry(),
     );
 
-    await expect(manager.emit(event())).resolves.toMatchObject({
+    await expect(manager.notify(payload())).resolves.toMatchObject({
       success: false,
       totalChannels: 1,
       succeeded: 0,
@@ -108,13 +110,13 @@ describe('NotificationManager', () => {
       { getSubscribedChannelConfigs },
       new NotificationProviderRegistry(),
     );
-    const emitted = event({ id: '', data: { nested: 'value' } });
+    const emitted = payload({ id: '', data: { nested: 'value' } });
 
-    await manager.emit(emitted);
+    await manager.notify(emitted);
 
     expect(getSubscribedChannelConfigs).toHaveBeenCalledWith({
       id: expect.any(String),
-      type: NotificationEventType.WATCHING_UPDATE_FOUND,
+      type: FOUND_EVENT,
       targetUser: 'alice',
       occurredAt: 1_000,
       data: { nested: 'value' },
@@ -132,13 +134,13 @@ describe('NotificationManager', () => {
         id: 'found-channel',
         type: 'found',
         name: 'Found channel',
-        subscribedEvents: [NotificationEventType.WATCHING_UPDATE_FOUND],
+        subscribedEvents: [FOUND_EVENT],
       }),
       channel({
         id: 'failed-channel',
         type: 'failed',
         name: 'Failed channel',
-        subscribedEvents: [NotificationEventType.WATCHING_UPDATE_FAILED],
+        subscribedEvents: [FAILED_EVENT],
       }),
     ];
     const manager = new NotificationManager(
@@ -152,7 +154,7 @@ describe('NotificationManager', () => {
       registry,
     );
 
-    await expect(manager.emit(event())).resolves.toEqual({
+    await expect(manager.notify(payload())).resolves.toEqual({
       success: true,
       totalChannels: 1,
       succeeded: 1,
@@ -176,7 +178,7 @@ describe('NotificationManager', () => {
       registry,
     );
 
-    await expect(manager.emit(event())).resolves.toEqual({
+    await expect(manager.notify(payload())).resolves.toEqual({
       success: true,
       totalChannels: 1,
       succeeded: 0,
@@ -203,10 +205,10 @@ describe('NotificationManager', () => {
       { now: () => 2_000 },
     );
 
-    await manager.emit(event());
+    await manager.notify(payload());
 
     expect(append).toHaveBeenCalledWith({
-      eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+      eventType: FOUND_EVENT,
       channelId: 'channel-1',
       providerType: 'fake',
       status: 'success',
@@ -235,7 +237,7 @@ describe('NotificationManager', () => {
       { retryDelayMs: 0 },
     );
 
-    const result = await manager.emit(event());
+    const result = await manager.notify(payload());
 
     expect(result.success).toBe(false);
     expect(append).toHaveBeenCalledWith(
@@ -265,11 +267,11 @@ describe('NotificationManager', () => {
       { now: () => 2_000 },
     );
 
-    await manager.emit(event());
+    await manager.notify(payload());
 
     expect(send).not.toHaveBeenCalled();
     expect(append).toHaveBeenCalledWith({
-      eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+      eventType: FOUND_EVENT,
       channelId: 'channel-1',
       providerType: 'preview',
       status: 'skipped',
@@ -294,7 +296,7 @@ describe('NotificationManager', () => {
       { retryDelayMs: 0 },
     );
 
-    await expect(manager.emit(event())).resolves.toMatchObject({
+    await expect(manager.notify(payload())).resolves.toMatchObject({
       success: true,
       succeeded: 1,
       failed: 0,
@@ -319,7 +321,7 @@ describe('NotificationManager', () => {
       { retryDelayMs: 0 },
     );
 
-    await expect(manager.emit(event())).resolves.toMatchObject({
+    await expect(manager.notify(payload())).resolves.toMatchObject({
       success: false,
       succeeded: 0,
       failed: 1,
@@ -350,7 +352,7 @@ describe('NotificationManager', () => {
       { retryDelayMs: 0, timeoutMs: 10, maxAttempts: 1 },
     );
 
-    const result = manager.emit(event());
+    const result = manager.notify(payload());
     await jest.advanceTimersByTimeAsync(10);
 
     await expect(result).resolves.toMatchObject({
@@ -381,9 +383,9 @@ describe('NotificationManager', () => {
       { now: () => currentTime, dedupeWindowMs: 10_000 },
     );
 
-    await manager.emit(event());
+    await manager.notify(payload());
     currentTime = 2_000;
-    await manager.emit(event({ id: 'event-2' }));
+    await manager.notify(payload({ id: 'event-2' }));
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(append).toHaveBeenLastCalledWith(
@@ -407,12 +409,12 @@ describe('NotificationManager', () => {
       { append: jest.fn(async () => undefined) },
       { now: () => 1_000, dedupeWindowMs: 10_000 },
     );
-    const debugEvent = event({
+    const debugEvent = payload({
       data: { source: 'notification-debug', metadata: { debug: true } },
     });
 
-    await manager.emit(debugEvent);
-    await manager.emit({ ...debugEvent, id: 'event-2' });
+    await manager.notify(debugEvent);
+    await manager.notify({ ...debugEvent, id: 'event-2' });
 
     expect(send).toHaveBeenCalledTimes(2);
   });

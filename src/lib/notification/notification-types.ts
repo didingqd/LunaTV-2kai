@@ -1,9 +1,6 @@
 export const NotificationMessageType = {
-  WATCHING_UPDATE_FOUND: 'WATCHING_UPDATE_FOUND',
-  WATCHING_UPDATE_FAILED: 'WATCHING_UPDATE_FAILED',
   SYSTEM: 'SYSTEM',
   MANUAL_TRIGGER: 'MANUAL_TRIGGER',
-  DOWNLOAD: 'DOWNLOAD',
 } as const;
 
 export type NotificationMessageType =
@@ -46,18 +43,20 @@ export interface NotificationMessage {
   metadata?: Record<string, unknown>;
 }
 
-// Phase 2 notification refactor: domain events use the domain.action naming rule.
-// New events can be added as string values without changing provider dispatch logic.
+/**
+ * @deprecated Use NotificationPayload.type strings registered by the owning
+ * domain through the event registry.
+ */
 export const NotificationEventType = {
-  WATCHING_UPDATE_FOUND: 'watching.update_found',
-  WATCHING_UPDATE_FAILED: 'watching.update_failed',
-  SCHEDULER_FAILED: 'scheduler.failed',
   SYSTEM_ERROR: 'system.error',
 } as const;
 
 export type NotificationEventType =
   (typeof NotificationEventType)[keyof typeof NotificationEventType];
 
+/**
+ * @deprecated Use NotificationPayload.
+ */
 export interface NotificationEvent {
   id: string;
   type: string;

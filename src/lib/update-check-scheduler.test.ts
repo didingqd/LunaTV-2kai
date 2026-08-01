@@ -510,7 +510,9 @@ describe('UpdateCheckScheduler', () => {
       new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     await tasks.save(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 13 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 13 },
+      ],
       history: [],
     });
 
@@ -551,7 +553,7 @@ describe('UpdateCheckScheduler', () => {
             toEpisode: 14,
           },
         ],
-        pendingUpdates: [],
+        updated: [],
         checkedAt: runAt,
         timezone: 'UTC',
         displayTime: '2026-07-30 12:01:00',
@@ -563,6 +565,60 @@ describe('UpdateCheckScheduler', () => {
         displayTime: '2026-07-30 12:01:00',
       },
     });
+  });
+
+  it('commits the notification snapshot after successful dispatch and dedupes the next check', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 13 },
+      ],
+      history: [],
+    });
+    const updatedResult = updateResult({
+      hasUpdate: true,
+      metadata: {
+        ...updateResult().metadata,
+        baselineEpisode: 12,
+        effectiveLatestEpisode: 14,
+        releasedEpisodeCount: 2,
+      },
+    });
+
+    await createScheduler(tasks, successfulService(tasks, runAt, updatedResult), {
+      notifications: { dispatchPayload: dispatch },
+      notificationState,
+    }).run({ now: runAt });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(await notificationState.get('alice')).toMatchObject({
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 14 },
+      ],
+    });
+
+    await createScheduler(
+      tasks,
+      successfulService(
+        tasks,
+        runAt + 1,
+        updateResult({
+          ...updatedResult,
+          checkedAt: runAt + 1,
+        }),
+      ),
+      {
+        notifications: { dispatchPayload: dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt + 1 });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('does not notify for the first completed check when no new episode exists', async () => {
@@ -609,7 +665,9 @@ describe('UpdateCheckScheduler', () => {
       new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
     await tasks.save(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 12 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
       history: [
         {
           followId: 'follow-1',
@@ -631,12 +689,14 @@ describe('UpdateCheckScheduler', () => {
 
     expect(dispatch).not.toHaveBeenCalled();
     expect(await notificationState.get('alice')).toEqual({
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 12 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
       history: [],
     });
   });
 
-  it('includes pending unwatched updates from current UpdateResults when a new update triggers notification', async () => {
+  it('includes already updated items from current UpdateResults when a new update triggers notification', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
     const dispatch = createDispatch();
@@ -666,8 +726,11 @@ describe('UpdateCheckScheduler', () => {
     await tasks.save(task);
     await notificationState.save('alice', {
       snapshots: [
-        { followId: 'follow-1', effectiveLatestEpisode: 101 },
-        { followId: 'follow-bleach', effectiveLatestEpisode: 302 },
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 101 },
+        {
+          followId: 'follow-bleach',
+          lastNotifiedEffectiveLatestEpisode: 302,
+        },
       ],
       history: [
         {
@@ -702,7 +765,7 @@ describe('UpdateCheckScheduler', () => {
             toEpisode: 102,
           },
         ],
-        pendingUpdates: [
+        updated: [
           {
             followId: 'follow-bleach',
             title: '死神',
@@ -711,6 +774,91 @@ describe('UpdateCheckScheduler', () => {
           },
         ],
       },
+    });
+  });
+
+  it('does not include completed playback history in updated items', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    const newResult = updateResult({
+      hasUpdate: true,
+      metadata: {
+        ...updateResult().metadata,
+        baselineEpisode: 12,
+        effectiveLatestEpisode: 14,
+        releasedEpisodeCount: 2,
+      },
+    });
+    const completedResult = updateResult({
+      followId: 'follow-bleach',
+      resourceId: 'bleach',
+      title: '死神',
+      hasUpdate: false,
+      watchedEpisode: 20,
+      unwatchedCount: 0,
+      metadata: {
+        ...updateResult().metadata,
+        baselineEpisode: 20,
+        effectiveLatestEpisode: 20,
+        releasedEpisodeCount: 0,
+      },
+    });
+    await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 13 },
+        {
+          followId: 'follow-bleach',
+          lastNotifiedEffectiveLatestEpisode: 20,
+        },
+      ],
+      history: [
+        {
+          followId: 'follow-bleach',
+          fromEpisode: 18,
+          toEpisode: 20,
+          updatedAt: '2026-07-30T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await createScheduler(
+      tasks,
+      {
+        ...successfulService(tasks, runAt, newResult),
+        getResultsForUser: async () => [newResult, completedResult],
+      },
+      {
+        notifications: { dispatchPayload: dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      data: {
+        newUpdates: [
+          {
+            followId: 'follow-1',
+            title: 'Demo Show',
+            fromEpisode: 12,
+            toEpisode: 14,
+          },
+        ],
+        updated: [],
+      },
+    });
+    expect(await notificationState.get('alice')).toMatchObject({
+      history: [
+        {
+          followId: 'follow-1',
+          fromEpisode: 12,
+          toEpisode: 14,
+        },
+      ],
     });
   });
 
@@ -733,8 +881,11 @@ describe('UpdateCheckScheduler', () => {
     await tasks.save(second);
     await notificationState.save('alice', {
       snapshots: [
-        { followId: 'follow-one-piece', effectiveLatestEpisode: 11 },
-        { followId: 'follow-naruto', effectiveLatestEpisode: 13 },
+        {
+          followId: 'follow-one-piece',
+          lastNotifiedEffectiveLatestEpisode: 11,
+        },
+        { followId: 'follow-naruto', lastNotifiedEffectiveLatestEpisode: 13 },
       ],
       history: [],
     });
@@ -805,7 +956,9 @@ describe('UpdateCheckScheduler', () => {
     });
     await tasks.save(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 100 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 100 },
+      ],
       history: [],
     });
     const nextResult = updateResult({
@@ -825,7 +978,9 @@ describe('UpdateCheckScheduler', () => {
     }).run({ now: runAt });
 
     expect(await notificationState.get('alice')).toEqual({
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 100 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 100 },
+      ],
       history: [],
     });
 
@@ -842,7 +997,9 @@ describe('UpdateCheckScheduler', () => {
 
     expect(successfulDispatch).toHaveBeenCalledTimes(1);
     expect(await notificationState.get('alice')).toEqual({
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 101 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 101 },
+      ],
       history: [
         {
           followId: 'follow-1',
@@ -938,7 +1095,9 @@ describe('UpdateCheckScheduler', () => {
       .mockImplementation(() => undefined);
     await tasks.save(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 11 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 11 },
+      ],
       history: [],
     });
 
@@ -981,7 +1140,9 @@ describe('UpdateCheckScheduler', () => {
       .mockImplementation(() => undefined);
     await tasks.save(task);
     await notificationState.save('alice', {
-      snapshots: [{ followId: 'follow-1', effectiveLatestEpisode: 11 }],
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 11 },
+      ],
       history: [],
     });
     const scheduler = createScheduler(

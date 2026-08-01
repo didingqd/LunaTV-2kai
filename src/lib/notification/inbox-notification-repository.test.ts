@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 jest.mock('@/lib/db', () => ({
   db: {},
@@ -8,10 +8,7 @@ import {
   InboxNotificationRepository,
   type InboxNotificationStore,
 } from './inbox-notification-repository';
-import {
-  NotificationMessageType,
-  type InboxNotification,
-} from './notification-types';
+import type { InboxNotification } from './notification-types';
 
 class MemoryInboxNotificationStore implements InboxNotificationStore {
   readonly values = new Map<string, unknown>();
@@ -35,9 +32,9 @@ function notification(
   return {
     id: 'n-1',
     userId: 'alice',
-    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
-    title: 'New episode',
-    content: 'Episode 10 is available.',
+    type: 'test.event',
+    title: 'Test notification',
+    content: 'Test notification content.',
     payload: { mediaId: 'm-1' },
     read: false,
     createdAt: 1_000,
@@ -54,7 +51,10 @@ describe('InboxNotificationRepository', () => {
 
     await repository.append('alice', notification({ id: 'a-1' }));
     await repository.append('bob', notification({ id: 'b-1', userId: 'bob' }));
-    await repository.append('alice', notification({ id: 'a-2', createdAt: 2_000 }));
+    await repository.append(
+      'alice',
+      notification({ id: 'a-2', createdAt: 2_000 }),
+    );
 
     await expect(repository.listForUser('alice')).resolves.toEqual([
       notification({ id: 'a-2', createdAt: 2_000 }),
@@ -72,12 +72,12 @@ describe('InboxNotificationRepository', () => {
 
     await repository.append('alice', notification());
 
-    await expect(repository.markRead('alice', 'n-1', true, 2_000)).resolves.toEqual(
-      notification({ read: true, readAt: 2_000 }),
-    );
-    await expect(repository.markRead('alice', 'n-1', false, null)).resolves.toEqual(
-      notification({ read: false, readAt: null }),
-    );
+    await expect(
+      repository.markRead('alice', 'n-1', true, 2_000),
+    ).resolves.toEqual(notification({ read: true, readAt: 2_000 }));
+    await expect(
+      repository.markRead('alice', 'n-1', false, null),
+    ).resolves.toEqual(notification({ read: false, readAt: null }));
   });
 
   it('returns null when marking a missing notification', async () => {

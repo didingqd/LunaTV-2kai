@@ -1,5 +1,5 @@
 // Phase 2 compatibility wrapper: NotificationDispatcher remains exported so
-// current scheduler and tests keep working until Phase 3.  The shared singleton
+// current callers and tests keep working until Phase 3.  The shared singleton
 // routes through NotificationManager when no legacy test channels are registered.
 import { randomUUID } from 'crypto';
 
@@ -7,7 +7,6 @@ import type { NotificationChannel } from './notification-channel';
 import {
   notificationEventToPayload,
   notificationMessageToPayload,
-  notificationPayloadToEvent,
 } from './notification-event-adapter';
 import { notificationManager } from './notification-manager';
 import { notificationSettingsService } from './notification-settings-service';
@@ -55,14 +54,14 @@ export class NotificationDispatcher {
   >();
 
   private readonly settingsService: NotificationDispatchSettingsService;
-  private readonly manager?: Pick<typeof notificationManager, 'emit'> &
-    Partial<Pick<typeof notificationManager, 'notify'>>;
+  private readonly manager?: Pick<typeof notificationManager, 'notify'> &
+    Partial<Pick<typeof notificationManager, 'emit'>>;
   private readonly createId: () => string;
 
   constructor(
     settingsService?: NotificationDispatchSettingsService,
-    manager?: Pick<typeof notificationManager, 'emit'> &
-      Partial<Pick<typeof notificationManager, 'notify'>>,
+    manager?: Pick<typeof notificationManager, 'notify'> &
+      Partial<Pick<typeof notificationManager, 'emit'>>,
     createId: () => string = randomUUID,
   ) {
     this.settingsService = settingsService ?? notificationSettingsService;
@@ -99,9 +98,7 @@ export class NotificationDispatcher {
       this.channelFactories.size === 0
     ) {
       const payload = notificationMessageToPayload(message, this.createId);
-      return this.manager.notify
-        ? this.manager.notify(payload)
-        : this.manager.emit(notificationPayloadToEvent(payload, this.createId));
+      return this.manager.notify(payload);
     }
 
     return this.dispatchLegacyChannels(message);
@@ -113,9 +110,7 @@ export class NotificationDispatcher {
     if (!this.manager) {
       throw new Error('NOTIFICATION_EVENT_DISPATCH_UNAVAILABLE');
     }
-    return this.manager.notify
-      ? this.manager.notify(notificationEventToPayload(event))
-      : this.manager.emit(event);
+    return this.manager.notify(notificationEventToPayload(event));
   }
 
   async dispatchPayload(
@@ -124,9 +119,7 @@ export class NotificationDispatcher {
     if (!this.manager) {
       throw new Error('NOTIFICATION_PAYLOAD_DISPATCH_UNAVAILABLE');
     }
-    return this.manager.notify
-      ? this.manager.notify(payload)
-      : this.manager.emit(notificationPayloadToEvent(payload, this.createId));
+    return this.manager.notify(payload);
   }
 
   private async dispatchLegacyChannels(

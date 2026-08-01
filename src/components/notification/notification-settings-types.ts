@@ -11,10 +11,15 @@ export interface NotificationSettings {
   version?: number;
   notificationCenterEnabled: boolean;
   inboxEnabled: boolean;
-  watchingUpdateFoundEnabled: boolean;
-  watchingUpdateFailedEnabled: boolean;
+  subscriptions: NotificationSubscription[];
   channels: NotificationChannelConfig[];
   updatedAt?: number;
+}
+
+export interface NotificationSubscription {
+  eventType: string;
+  enabled: boolean;
+  channels: string[];
 }
 
 export interface ChannelFormState {

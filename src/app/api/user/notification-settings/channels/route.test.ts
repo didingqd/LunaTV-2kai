@@ -52,8 +52,18 @@ describe('user notification channel create API', () => {
     getAuth.mockReturnValue({ username: 'alice', role: 'admin' });
     createChannel.mockResolvedValue({
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: true,
-      watchingUpdateFailedEnabled: true,
+      subscriptions: [
+        {
+          eventType: 'watching.update_found',
+          enabled: true,
+          channels: ['inbox'],
+        },
+        {
+          eventType: 'watching.update_failed',
+          enabled: true,
+          channels: ['wc-1'],
+        },
+      ],
       channels: [
         {
           id: 'inbox',

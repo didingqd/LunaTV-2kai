@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import { TelegramNotificationProvider } from './telegram-notification-provider';
 
@@ -71,14 +71,14 @@ function setFetch(fetchMock: jest.Mock) {
 function message() {
   return {
     userId: 'alice',
-    type: 'watching.update_found',
+    type: 'test.event',
     title: 'Title',
     body: 'Content',
     content: 'Content',
     createdAt: 1_000,
     payload: {
       payloadId: 'event-1',
-      eventType: 'watching.update_found',
+      eventType: 'test.event',
       title: 'Title',
       content: 'Content',
     },
@@ -91,7 +91,7 @@ function channel() {
     type: 'telegram',
     name: 'Telegram',
     enabled: true,
-    subscribedEvents: ['watching.update_found'],
+    subscribedEvents: ['test.event'],
     config: {
       token: 'token',
       chatId: 'chat-1',

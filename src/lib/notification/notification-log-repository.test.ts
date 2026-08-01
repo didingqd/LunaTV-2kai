@@ -1,4 +1,4 @@
-/** @jest-environment node */
+﻿/** @jest-environment node */
 
 import {
   NOTIFICATION_SEND_LOG_CACHE_KEY,
@@ -22,7 +22,7 @@ function log(
   overrides: Partial<NotificationSendLogEntry> = {},
 ): NotificationSendLogEntry {
   return {
-    eventType: 'watching.update_found',
+    eventType: 'test.event',
     channelId: 'channel-1',
     providerType: 'webhook',
     status: 'success',

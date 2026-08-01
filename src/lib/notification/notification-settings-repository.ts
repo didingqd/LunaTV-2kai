@@ -4,7 +4,7 @@
 // while new code can use the channel subscription model.
 import { db } from '@/lib/db';
 
-import { NotificationEventType } from './notification-types';
+import { notificationEventRegistry } from './notification-event-registry';
 
 export const NotificationChannelType = {
   INBOX: 'inbox',
@@ -38,18 +38,22 @@ export interface UserNotificationSettings {
   version?: number;
   notificationCenterEnabled?: boolean;
   inboxEnabled?: boolean;
-  watchingUpdateFoundEnabled?: boolean;
-  watchingUpdateFailedEnabled?: boolean;
+  subscriptions?: NotificationSubscription[];
   channels?: UserNotificationChannelInput[];
   updatedAt?: number;
+}
+
+export interface NotificationSubscription {
+  eventType: string;
+  enabled: boolean;
+  channels: string[];
 }
 
 export interface NormalizedUserNotificationSettings {
   version: 2;
   notificationCenterEnabled: boolean;
   inboxEnabled: boolean;
-  watchingUpdateFoundEnabled: boolean;
-  watchingUpdateFailedEnabled: boolean;
+  subscriptions: NotificationSubscription[];
   channels: UserNotificationChannelConfig[];
   updatedAt?: number;
 }
@@ -70,29 +74,32 @@ export interface NotificationSettingsRepositoryContract {
   normalize(value: unknown): NormalizedUserNotificationSettings;
 }
 
-export const DEFAULT_SUBSCRIBED_EVENTS = [
-  NotificationEventType.WATCHING_UPDATE_FOUND,
-  NotificationEventType.WATCHING_UPDATE_FAILED,
-] as const;
+export function getDefaultSubscribedEvents(): string[] {
+  return notificationEventRegistry.defaultSubscribedEvents();
+}
 
-export const DEFAULT_NOTIFICATION_SETTINGS: NormalizedUserNotificationSettings =
-  {
+export function getDefaultNotificationSettings(): NormalizedUserNotificationSettings {
+  const subscribedEvents = getDefaultSubscribedEvents();
+  const channels: UserNotificationChannelConfig[] = [
+    {
+      id: 'inbox',
+      type: NotificationChannelType.INBOX,
+      name: '\u7ad9\u5185\u901a\u77e5',
+      enabled: true,
+      subscribedEvents,
+      config: {},
+    },
+  ];
+  return {
     version: 2,
     notificationCenterEnabled: true,
     inboxEnabled: true,
-    watchingUpdateFoundEnabled: true,
-    watchingUpdateFailedEnabled: true,
-    channels: [
-      {
-        id: 'inbox',
-        type: NotificationChannelType.INBOX,
-        name: '\u7ad9\u5185\u901a\u77e5',
-        enabled: true,
-        subscribedEvents: [...DEFAULT_SUBSCRIBED_EVENTS],
-        config: {},
-      },
-    ],
+    subscriptions: buildSubscriptions(channels),
+    channels,
   };
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS = getDefaultNotificationSettings();
 
 const SETTINGS_KEY_PREFIX = 'notification-settings:v1:user:';
 
@@ -116,10 +123,7 @@ function copyConfig(config: unknown): Record<string, unknown> {
 // Convert legacy global update switches into the v2 event subscription list.
 function normalizeSubscribedEvents(
   value: unknown,
-  legacy: {
-    watchingUpdateFoundEnabled: boolean;
-    watchingUpdateFailedEnabled: boolean;
-  },
+  fallback: string[],
 ): string[] {
   if (Array.isArray(value)) {
     return Array.from(
@@ -131,22 +135,12 @@ function normalizeSubscribedEvents(
     );
   }
 
-  const events: string[] = [];
-  if (legacy.watchingUpdateFoundEnabled) {
-    events.push(NotificationEventType.WATCHING_UPDATE_FOUND);
-  }
-  if (legacy.watchingUpdateFailedEnabled) {
-    events.push(NotificationEventType.WATCHING_UPDATE_FAILED);
-  }
-  return events;
+  return [...fallback];
 }
 
 function normalizeChannel(
   value: unknown,
-  legacy: {
-    watchingUpdateFoundEnabled: boolean;
-    watchingUpdateFailedEnabled: boolean;
-  },
+  fallbackSubscribedEvents: string[],
 ): UserNotificationChannelConfig | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const channel = value as UserNotificationChannelInput;
@@ -170,7 +164,7 @@ function normalizeChannel(
     enabled: booleanOrDefault(channel.enabled, true),
     subscribedEvents: normalizeSubscribedEvents(
       channel.subscribedEvents,
-      legacy,
+      fallbackSubscribedEvents,
     ),
     config: copyConfig(channel.config),
   };
@@ -179,14 +173,11 @@ function normalizeChannel(
 function normalizeChannels(
   value: unknown,
   inboxEnabled: boolean,
-  legacy: {
-    watchingUpdateFoundEnabled: boolean;
-    watchingUpdateFailedEnabled: boolean;
-  },
+  fallbackSubscribedEvents: string[],
 ): UserNotificationChannelConfig[] {
   const customChannels = Array.isArray(value)
     ? value
-        .map((item) => normalizeChannel(item, legacy))
+        .map((item) => normalizeChannel(item, fallbackSubscribedEvents))
         .filter(
           (channel): channel is UserNotificationChannelConfig =>
             Boolean(channel) && channel.type !== NotificationChannelType.INBOX,
@@ -195,7 +186,7 @@ function normalizeChannels(
 
   const explicitInbox = Array.isArray(value)
     ? value
-        .map((item) => normalizeChannel(item, legacy))
+        .map((item) => normalizeChannel(item, fallbackSubscribedEvents))
         .find((channel) => channel?.type === NotificationChannelType.INBOX)
     : null;
 
@@ -205,13 +196,77 @@ function normalizeChannels(
       type: NotificationChannelType.INBOX,
       name: explicitInbox?.name ?? '\u7ad9\u5185\u901a\u77e5',
       enabled: explicitInbox?.enabled ?? inboxEnabled,
-      subscribedEvents:
-        explicitInbox?.subscribedEvents ??
-        normalizeSubscribedEvents(undefined, legacy),
+      subscribedEvents: explicitInbox?.subscribedEvents ?? [
+        ...fallbackSubscribedEvents,
+      ],
       config: {},
     },
     ...customChannels,
   ];
+}
+
+function applyLegacySubscriptionPatches(
+  fallbackSubscribedEvents: string[],
+  settings: Record<string, unknown>,
+): string[] {
+  const events = new Set(fallbackSubscribedEvents);
+  for (const patch of notificationEventRegistry.readLegacySubscriptionPatches(
+    settings,
+  )) {
+    if (patch.enabled) events.add(patch.eventType);
+    else events.delete(patch.eventType);
+  }
+  return Array.from(events);
+}
+
+function buildSubscriptions(
+  channels: UserNotificationChannelConfig[],
+): NotificationSubscription[] {
+  const eventTypes = Array.from(
+    new Set(channels.flatMap((channel) => channel.subscribedEvents)),
+  );
+  return eventTypes.map((eventType) => {
+    const subscribedChannels = channels
+      .filter(
+        (channel) =>
+          channel.enabled && channel.subscribedEvents.includes(eventType),
+      )
+      .map((channel) => channel.id);
+    return {
+      eventType,
+      enabled: subscribedChannels.length > 0,
+      channels: subscribedChannels,
+    };
+  });
+}
+
+function applySubscriptions(
+  channels: UserNotificationChannelConfig[],
+  subscriptions: NotificationSubscription[] | undefined,
+): UserNotificationChannelConfig[] {
+  if (!Array.isArray(subscriptions)) return channels;
+  return channels.map((channel) => {
+    const events = new Set(channel.subscribedEvents);
+    for (const subscription of subscriptions) {
+      const eventType =
+        typeof subscription.eventType === 'string'
+          ? subscription.eventType.trim()
+          : '';
+      if (!eventType) continue;
+      const targets = Array.isArray(subscription.channels)
+        ? new Set(subscription.channels)
+        : new Set<string>();
+      if (subscription.enabled && targets.has(channel.id)) {
+        events.add(eventType);
+      } else if (!subscription.enabled || targets.has(channel.id)) {
+        events.delete(eventType);
+      }
+    }
+    return {
+      ...channel,
+      subscribedEvents: Array.from(events),
+    };
+  });
 }
 
 export class NotificationSettingsRepository implements NotificationSettingsRepositoryContract {
@@ -238,9 +293,10 @@ export class NotificationSettingsRepository implements NotificationSettingsRepos
 
   normalize(value: unknown): NormalizedUserNotificationSettings {
     if (!value || typeof value !== 'object') {
+      const defaults = getDefaultNotificationSettings();
       return {
-        ...DEFAULT_NOTIFICATION_SETTINGS,
-        channels: DEFAULT_NOTIFICATION_SETTINGS.channels.map((channel) => ({
+        ...defaults,
+        channels: defaults.channels.map((channel) => ({
           ...channel,
           subscribedEvents: [...channel.subscribedEvents],
           config: { ...channel.config },
@@ -251,30 +307,27 @@ export class NotificationSettingsRepository implements NotificationSettingsRepos
     const settings = value as UserNotificationSettings;
     const notificationCenterEnabled = booleanOrDefault(
       settings.notificationCenterEnabled,
-      DEFAULT_NOTIFICATION_SETTINGS.notificationCenterEnabled,
+      true,
     );
-    const inboxEnabled = booleanOrDefault(
-      settings.inboxEnabled,
-      DEFAULT_NOTIFICATION_SETTINGS.inboxEnabled,
+    const inboxEnabled = booleanOrDefault(settings.inboxEnabled, true);
+    const fallbackSubscribedEvents = applyLegacySubscriptionPatches(
+      getDefaultSubscribedEvents(),
+      settings as Record<string, unknown>,
     );
-    const watchingUpdateFoundEnabled = booleanOrDefault(
-      settings.watchingUpdateFoundEnabled,
-      DEFAULT_NOTIFICATION_SETTINGS.watchingUpdateFoundEnabled,
-    );
-    const watchingUpdateFailedEnabled = booleanOrDefault(
-      settings.watchingUpdateFailedEnabled,
-      DEFAULT_NOTIFICATION_SETTINGS.watchingUpdateFailedEnabled,
+    const channels = applySubscriptions(
+      normalizeChannels(
+        settings.channels,
+        inboxEnabled,
+        fallbackSubscribedEvents,
+      ),
+      settings.subscriptions,
     );
     return {
       version: 2,
       notificationCenterEnabled,
       inboxEnabled,
-      watchingUpdateFoundEnabled,
-      watchingUpdateFailedEnabled,
-      channels: normalizeChannels(settings.channels, inboxEnabled, {
-        watchingUpdateFoundEnabled,
-        watchingUpdateFailedEnabled,
-      }),
+      subscriptions: buildSubscriptions(channels),
+      channels,
       ...(typeof settings.updatedAt === 'number'
         ? { updatedAt: settings.updatedAt }
         : {}),

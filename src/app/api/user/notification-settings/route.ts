@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import '@/lib/notification-event-bootstrap';
 import { notificationSettingsService } from '@/lib/notification/notification-settings-service';
+import type { UserNotificationSettings } from '@/lib/notification/notification-settings-repository';
 
 export const runtime = 'nodejs';
 
@@ -10,8 +12,17 @@ const patchSchema = z
   .object({
     notificationCenterEnabled: z.boolean().optional(),
     inboxEnabled: z.boolean().optional(),
-    watchingUpdateFoundEnabled: z.boolean().optional(),
-    watchingUpdateFailedEnabled: z.boolean().optional(),
+    subscriptions: z
+      .array(
+        z
+          .object({
+            eventType: z.string().min(1),
+            enabled: z.boolean(),
+            channels: z.array(z.string().min(1)),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 
@@ -76,8 +87,18 @@ export async function PATCH(request: NextRequest) {
     return errorResponse('Invalid notification settings', 400);
 
   try {
+    const subscriptions = parsed.data.subscriptions?.map((subscription) => ({
+      eventType: subscription.eventType,
+      enabled: subscription.enabled,
+      channels: subscription.channels,
+    }));
+    const patch: UserNotificationSettings = {
+      notificationCenterEnabled: parsed.data.notificationCenterEnabled,
+      inboxEnabled: parsed.data.inboxEnabled,
+      subscriptions,
+    };
     return settingsResponse(
-      await notificationSettingsService.save(admin.username, parsed.data),
+      await notificationSettingsService.save(admin.username, patch),
     );
   } catch (error) {
     console.error('Failed to update notification settings', error);

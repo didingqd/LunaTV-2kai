@@ -13,10 +13,10 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { NotificationMessageType } from '@/lib/notification/notification-types';
+import { NOTIFICATION_EVENT_METAS } from '@/lib/notification-event-bootstrap';
 import type {
   InboxNotification,
-  NotificationMessageType as NotificationMessageTypeValue,
+  NotificationLevel,
 } from '@/lib/notification/notification-types';
 
 interface NotificationListResponse {
@@ -27,46 +27,37 @@ interface NotificationListResponse {
 
 const NOTIFICATIONS_ENDPOINT = '/api/user/notifications';
 
-const TYPE_META: Record<
-  NotificationMessageTypeValue,
-  {
-    label: string;
-    tone: string;
-    icon: typeof Bell;
-  }
-> = {
-  [NotificationMessageType.WATCHING_UPDATE_FOUND]: {
-    label: '追更更新',
-    tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-    icon: CheckCircle2,
-  },
-  [NotificationMessageType.WATCHING_UPDATE_FAILED]: {
-    label: '检查失败',
-    tone: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-    icon: AlertCircle,
-  },
-  [NotificationMessageType.SYSTEM]: {
-    label: '系统通知',
-    tone: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    icon: Bell,
-  },
-  [NotificationMessageType.MANUAL_TRIGGER]: {
-    label: '手动触发',
-    tone: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-    icon: RefreshCw,
-  },
-  [NotificationMessageType.DOWNLOAD]: {
-    label: '下载通知',
-    tone: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    icon: Inbox,
-  },
-};
+const EVENT_META_BY_TYPE = new Map(
+  NOTIFICATION_EVENT_METAS.map((eventMeta) => [eventMeta.type, eventMeta]),
+);
 
-function getTypeMeta(type: string) {
-  return (
-    TYPE_META[type as NotificationMessageTypeValue] ??
-    TYPE_META[NotificationMessageType.SYSTEM]
-  );
+function getTone(level?: NotificationLevel) {
+  if (level === 'success') {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  }
+  if (level === 'error') {
+    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+  }
+  if (level === 'warning') {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  }
+  return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+}
+
+function getIcon(level?: NotificationLevel) {
+  if (level === 'success') return CheckCircle2;
+  if (level === 'error') return AlertCircle;
+  if (level === 'warning') return Inbox;
+  return Bell;
+}
+
+function getTypeMeta(notification: InboxNotification) {
+  const eventMeta = EVENT_META_BY_TYPE.get(notification.type);
+  return {
+    label: eventMeta?.label ?? '系统通知',
+    tone: getTone(notification.level),
+    icon: getIcon(notification.level),
+  };
 }
 
 async function readNotificationResponse(response: Response) {
@@ -354,7 +345,7 @@ function NotificationListItem({
   saving: boolean;
   onSelect: () => void;
 }) {
-  const meta = getTypeMeta(notification.type);
+  const meta = getTypeMeta(notification);
   const Icon = meta.icon;
 
   return (
@@ -419,7 +410,7 @@ function NotificationDetail({
     );
   }
 
-  const meta = getTypeMeta(notification.type);
+  const meta = getTypeMeta(notification);
   const Icon = meta.icon;
 
   return (

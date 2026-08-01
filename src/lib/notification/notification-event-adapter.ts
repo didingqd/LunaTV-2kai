@@ -1,8 +1,3 @@
-// Phase 2 compatibility adapter: existing code still emits NotificationMessage
-// until the scheduler is decoupled in the next phase.  These helpers translate
-// legacy messages to domain events and translate events back to legacy messages
-// for the existing inbox and WeChat Work send implementations.
-
 import {
   NotificationEventType,
   NotificationMessageType,
@@ -11,24 +6,20 @@ import {
   type NotificationPayload,
 } from './notification-types';
 
-function stringValue(value: unknown, fallback = ''): string {
-  if (typeof value === 'string' && value.trim()) return value.trim();
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  return fallback;
-}
-
+/**
+ * @deprecated New code should create NotificationPayload directly.
+ */
 export function notificationMessageTypeToEventType(
   type: NotificationMessageType,
 ): string {
-  if (type === NotificationMessageType.WATCHING_UPDATE_FOUND) {
-    return NotificationEventType.WATCHING_UPDATE_FOUND;
-  }
-  if (type === NotificationMessageType.WATCHING_UPDATE_FAILED) {
-    return NotificationEventType.WATCHING_UPDATE_FAILED;
-  }
-  return NotificationEventType.SYSTEM_ERROR;
+  return type === NotificationMessageType.SYSTEM
+    ? NotificationEventType.SYSTEM_ERROR
+    : String(type).toLowerCase();
 }
 
+/**
+ * @deprecated New code should create NotificationPayload directly.
+ */
 export function notificationMessageToEvent(
   message: NotificationMessage,
   createId: () => string,
@@ -49,6 +40,9 @@ export function notificationMessageToEvent(
   };
 }
 
+/**
+ * @deprecated New code should dispatch NotificationPayload directly.
+ */
 export function notificationMessageToPayload(
   message: NotificationMessage,
   createId: () => string,
@@ -70,6 +64,9 @@ export function notificationMessageToPayload(
   };
 }
 
+/**
+ * @deprecated New code should dispatch NotificationPayload directly.
+ */
 export function notificationEventToPayload(
   event: NotificationEvent,
 ): NotificationPayload {
@@ -82,6 +79,9 @@ export function notificationEventToPayload(
   };
 }
 
+/**
+ * @deprecated New code should not convert payloads back into legacy events.
+ */
 export function notificationPayloadToEvent(
   payload: NotificationPayload,
   createId: () => string,
@@ -103,17 +103,25 @@ export function notificationPayloadToEvent(
   };
 }
 
+/**
+ * @deprecated New code should build NotificationMessage through a Builder.
+ */
 export function notificationEventToMessage(
   event: NotificationEvent,
 ): NotificationMessage {
-  const title = stringValue(event.data.title, getDefaultEventTitle(event));
-  const content = stringValue(
-    event.data.content,
-    getDefaultEventContent(event),
-  );
+  const title =
+    typeof event.data.title === 'string' && event.data.title.trim()
+      ? event.data.title.trim()
+      : event.type;
+  const content =
+    typeof event.data.content === 'string'
+      ? event.data.content
+      : typeof event.data.message === 'string'
+        ? event.data.message
+        : '';
   return {
     userId: event.userId ?? '',
-    type: eventTypeToMessageType(event.type),
+    type: event.type,
     title,
     content,
     createdAt: event.createdAt,
@@ -124,54 +132,4 @@ export function notificationEventToMessage(
       eventCreatedAt: event.createdAt,
     },
   };
-}
-
-function eventTypeToMessageType(type: string): NotificationMessageType {
-  if (type === NotificationEventType.WATCHING_UPDATE_FOUND) {
-    return NotificationMessageType.WATCHING_UPDATE_FOUND;
-  }
-  if (type === NotificationEventType.WATCHING_UPDATE_FAILED) {
-    return NotificationMessageType.WATCHING_UPDATE_FAILED;
-  }
-  return NotificationMessageType.SYSTEM;
-}
-
-function getDefaultEventTitle(event: NotificationEvent): string {
-  if (event.type === NotificationEventType.WATCHING_UPDATE_FOUND) {
-    return '\u8ffd\u66f4\u53d1\u73b0\u66f4\u65b0';
-  }
-  if (event.type === NotificationEventType.WATCHING_UPDATE_FAILED) {
-    return '\u8ffd\u66f4\u68c0\u67e5\u5931\u8d25';
-  }
-  if (event.type === NotificationEventType.SCHEDULER_FAILED) {
-    return '\u8ba1\u5212\u4efb\u52a1\u5931\u8d25';
-  }
-  return '\u7cfb\u7edf\u901a\u77e5';
-}
-
-function getDefaultEventContent(event: NotificationEvent): string {
-  if (event.type === NotificationEventType.WATCHING_UPDATE_FOUND) {
-    const source = stringValue(
-      event.data.sourceName,
-      stringValue(event.data.source, '-'),
-    );
-    const episode = stringValue(
-      event.data.latestEpisode,
-      stringValue(event.data.episode, '-'),
-    );
-    return `${source} \u5df2\u53d1\u73b0\u66f4\u65b0\uff0c\u6700\u65b0\u96c6\u6570\uff1a${episode}`;
-  }
-  if (event.type === NotificationEventType.WATCHING_UPDATE_FAILED) {
-    return stringValue(
-      event.data.error,
-      '\u8ffd\u66f4\u68c0\u67e5\u5931\u8d25',
-    );
-  }
-  return stringValue(
-    event.data.message,
-    stringValue(
-      event.data.displayTime,
-      `\u4e8b\u4ef6 ${event.type} \u5df2\u53d1\u751f`,
-    ),
-  );
 }

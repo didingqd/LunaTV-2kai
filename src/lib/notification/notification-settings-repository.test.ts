@@ -1,18 +1,19 @@
-﻿/** @jest-environment node */
+/** @jest-environment node */
 
 jest.mock('@/lib/db', () => ({
   db: {},
 }));
 
+import { notificationEventRegistry } from './notification-event-registry';
 import {
-  DEFAULT_NOTIFICATION_SETTINGS,
   NotificationSettingsRepository,
+  getDefaultNotificationSettings,
   type NotificationSettingsStore,
+  type UserNotificationSettings,
 } from './notification-settings-repository';
-import { NotificationEventType } from './notification-types';
 
-const FOUND_EVENT = NotificationEventType.WATCHING_UPDATE_FOUND;
-const FAILED_EVENT = NotificationEventType.WATCHING_UPDATE_FAILED;
+const FOUND_EVENT = 'test.event';
+const FAILED_EVENT = 'test.failed';
 
 class MemoryNotificationSettingsStore implements NotificationSettingsStore {
   readonly values = new Map<string, unknown>();
@@ -30,6 +31,24 @@ class MemoryNotificationSettingsStore implements NotificationSettingsStore {
   }
 }
 
+beforeEach(() => {
+  notificationEventRegistry.clearForTests();
+  notificationEventRegistry.registerMany([
+    {
+      type: FOUND_EVENT,
+      label: 'Test found',
+      description: 'Test found event.',
+      defaultSubscribed: true,
+    },
+    {
+      type: FAILED_EVENT,
+      label: 'Test failed',
+      description: 'Test failed event.',
+      defaultSubscribed: true,
+    },
+  ]);
+});
+
 describe('NotificationSettingsRepository', () => {
   it('returns default settings for old users without stored settings', async () => {
     const repository = new NotificationSettingsRepository(
@@ -37,7 +56,7 @@ describe('NotificationSettingsRepository', () => {
     );
 
     await expect(repository.getForUser('alice')).resolves.toEqual(
-      DEFAULT_NOTIFICATION_SETTINGS,
+      getDefaultNotificationSettings(),
     );
   });
 
@@ -48,32 +67,33 @@ describe('NotificationSettingsRepository', () => {
     await repository.save('alice', {
       version: 2,
       notificationCenterEnabled: true,
-      inboxEnabled: false,
-      watchingUpdateFoundEnabled: true,
-      watchingUpdateFailedEnabled: false,
+      inboxEnabled: true,
+      subscriptions: [
+        { eventType: FAILED_EVENT, enabled: false, channels: [] },
+      ],
       updatedAt: 1_000,
     });
     await repository.save('bob', {
       version: 2,
       notificationCenterEnabled: true,
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: false,
-      watchingUpdateFailedEnabled: true,
+      subscriptions: [{ eventType: FOUND_EVENT, enabled: false, channels: [] }],
       updatedAt: 2_000,
     });
 
     await expect(repository.getForUser('alice')).resolves.toEqual({
       version: 2,
       notificationCenterEnabled: true,
-      inboxEnabled: false,
-      watchingUpdateFoundEnabled: true,
-      watchingUpdateFailedEnabled: false,
+      inboxEnabled: true,
+      subscriptions: [
+        { eventType: FOUND_EVENT, enabled: true, channels: ['inbox'] },
+      ],
       channels: [
         {
           id: 'inbox',
           type: 'inbox',
           name: '站内通知',
-          enabled: false,
+          enabled: true,
           subscribedEvents: [FOUND_EVENT],
           config: {},
         },
@@ -84,8 +104,9 @@ describe('NotificationSettingsRepository', () => {
       version: 2,
       notificationCenterEnabled: true,
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: false,
-      watchingUpdateFailedEnabled: true,
+      subscriptions: [
+        { eventType: FAILED_EVENT, enabled: true, channels: ['inbox'] },
+      ],
       channels: [
         {
           id: 'inbox',
@@ -108,23 +129,23 @@ describe('NotificationSettingsRepository', () => {
     expect(
       repository.normalize({
         inboxEnabled: 'no',
-        watchingUpdateFoundEnabled: false,
-        watchingUpdateFailedEnabled: null,
         updatedAt: 123,
       }),
     ).toEqual({
       version: 2,
       notificationCenterEnabled: true,
       inboxEnabled: true,
-      watchingUpdateFoundEnabled: false,
-      watchingUpdateFailedEnabled: true,
+      subscriptions: [
+        { eventType: FOUND_EVENT, enabled: true, channels: ['inbox'] },
+        { eventType: FAILED_EVENT, enabled: true, channels: ['inbox'] },
+      ],
       channels: [
         {
           id: 'inbox',
           type: 'inbox',
           name: '站内通知',
           enabled: true,
-          subscribedEvents: [FAILED_EVENT],
+          subscribedEvents: [FOUND_EVENT, FAILED_EVENT],
           config: {},
         },
       ],
@@ -159,8 +180,41 @@ describe('NotificationSettingsRepository', () => {
       ],
     });
     await expect(repository.getForUser('bob')).resolves.toEqual(
-      DEFAULT_NOTIFICATION_SETTINGS,
+      getDefaultNotificationSettings(),
     );
+  });
+
+  it('migrates legacy settings through registered compatibility readers', () => {
+    notificationEventRegistry.registerLegacySubscriptionReader((settings) => [
+      {
+        eventType: FOUND_EVENT,
+        enabled: settings.legacyFoundEnabled === true,
+      },
+      {
+        eventType: FAILED_EVENT,
+        enabled: settings.legacyFailedEnabled === true,
+      },
+    ]);
+    const repository = new NotificationSettingsRepository(
+      new MemoryNotificationSettingsStore(),
+    );
+
+    expect(
+      repository.normalize({
+        legacyFoundEnabled: false,
+        legacyFailedEnabled: true,
+      } as unknown as UserNotificationSettings),
+    ).toMatchObject({
+      channels: [
+        {
+          id: 'inbox',
+          subscribedEvents: [FAILED_EVENT],
+        },
+      ],
+      subscriptions: [
+        { eventType: FAILED_EVENT, enabled: true, channels: ['inbox'] },
+      ],
+    });
   });
 
   it('deletes settings and falls back to defaults', async () => {
@@ -168,15 +222,11 @@ describe('NotificationSettingsRepository', () => {
       new MemoryNotificationSettingsStore(),
     );
 
-    await repository.save('alice', {
-      inboxEnabled: false,
-      watchingUpdateFoundEnabled: false,
-      watchingUpdateFailedEnabled: false,
-    });
+    await repository.save('alice', { inboxEnabled: false });
     await repository.delete('alice');
 
     await expect(repository.getForUser('alice')).resolves.toEqual(
-      DEFAULT_NOTIFICATION_SETTINGS,
+      getDefaultNotificationSettings(),
     );
   });
 });

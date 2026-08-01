@@ -5,7 +5,6 @@ import {
   type UpdateCheckSchedulerResult,
 } from '@/lib/update-check-scheduler';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
-import { notificationPayloadToEvent } from '@/lib/notification/notification-event-adapter';
 import type { NotificationPayload } from '@/lib/notification/notification-types';
 import { timezoneService } from '@/lib/services/timezone_service';
 import {
@@ -64,9 +63,8 @@ export interface UpdateCheckJobRunnerResult {
 
 type UpdateCheckSchedulerRunner = Pick<UpdateCheckScheduler, 'run'>;
 type UpdateCheckAuditLogger = Pick<WatchingUpdateCheckLogService, 'record'>;
-type NotificationEventDispatcher = {
-  dispatchPayload?: typeof notificationDispatcher.dispatchPayload;
-  dispatchEvent?: typeof notificationDispatcher.dispatchEvent;
+type NotificationPayloadDispatcher = {
+  dispatchPayload: typeof notificationDispatcher.dispatchPayload;
 };
 
 interface CompletedAuditTask {
@@ -223,7 +221,7 @@ export class UpdateCheckJobRunner {
     private readonly scheduler: UpdateCheckSchedulerRunner = updateCheckScheduler,
     private readonly now: () => number = Date.now,
     private readonly auditLogger: UpdateCheckAuditLogger | null = watchingUpdateCheckLogService,
-    private readonly notifications: NotificationEventDispatcher = notificationDispatcher,
+    private readonly notifications: NotificationPayloadDispatcher = notificationDispatcher,
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
   ) {}
 
@@ -465,15 +463,7 @@ export class UpdateCheckJobRunner {
   }
 
   private dispatchNotificationPayload(payload: NotificationPayload) {
-    if (this.notifications.dispatchPayload) {
-      return this.notifications.dispatchPayload(payload);
-    }
-    if (this.notifications.dispatchEvent) {
-      return this.notifications.dispatchEvent(
-        notificationPayloadToEvent(payload, () => ''),
-      );
-    }
-    throw new Error('NOTIFICATION_PAYLOAD_DISPATCH_UNAVAILABLE');
+    return this.notifications.dispatchPayload(payload);
   }
 
   private async resolveSchedulerFailureDisplayTime(

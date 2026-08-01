@@ -1,36 +1,32 @@
 // Phase 2 settings service role: channel validation and public masking are now
 // delegated to NotificationProvider instances resolved through the registry.
-// The old global event switches are retained only as compatibility inputs and
-// are translated into per-channel subscribedEvents before saving.
 import { randomUUID } from 'crypto';
 
 import { notificationProviderRegistry } from './notification-provider-bootstrap';
 import type { NotificationProviderRegistry } from './notification-provider-registry';
 import {
-  DEFAULT_SUBSCRIBED_EVENTS,
   NotificationChannelType,
+  getDefaultSubscribedEvents,
   notificationSettingsRepository,
   type NormalizedUserNotificationSettings,
+  type NotificationSubscription,
   type NotificationSettingsRepositoryContract,
   type UserNotificationChannelConfig,
   type UserNotificationSettings,
 } from './notification-settings-repository';
-import {
-  NotificationEventType,
-  NotificationMessageType,
-  type NotificationEvent,
-  type NotificationMessage,
-  type NotificationPayload,
+import type {
+  NotificationMessage,
+  NotificationPayload,
 } from './notification-types';
 
 export interface NotificationManagerSettingsService {
   getSubscribedChannelConfigs(
-    notification: NotificationEvent | NotificationPayload,
+    notification: NotificationPayload,
   ): Promise<UserNotificationChannelConfig[]>;
 }
 
 function normalizeSubscribedEvents(value: unknown): string[] {
-  if (!Array.isArray(value)) return [...DEFAULT_SUBSCRIBED_EVENTS];
+  if (!Array.isArray(value)) return getDefaultSubscribedEvents();
   return Array.from(
     new Set(
       value
@@ -40,36 +36,28 @@ function normalizeSubscribedEvents(value: unknown): string[] {
   );
 }
 
-function setEventSubscription(
-  events: string[],
-  eventType: string,
-  enabled: boolean,
-): string[] {
-  const next = new Set(events);
-  if (enabled) next.add(eventType);
-  else next.delete(eventType);
-  return Array.from(next);
-}
-
-function getLegacyEventType(
-  messageType: NotificationMessageType,
-): string | null {
-  if (messageType === NotificationMessageType.WATCHING_UPDATE_FOUND) {
-    return NotificationEventType.WATCHING_UPDATE_FOUND;
-  }
-  if (messageType === NotificationMessageType.WATCHING_UPDATE_FAILED) {
-    return NotificationEventType.WATCHING_UPDATE_FAILED;
-  }
-  return null;
-}
-
-function getNotificationUserId(
-  notification: NotificationEvent | NotificationPayload,
-): string | undefined {
-  return (
-    (notification as NotificationPayload).targetUser ??
-    (notification as NotificationEvent).userId
-  );
+function applySubscriptions(
+  channels: UserNotificationChannelConfig[],
+  subscriptions: NotificationSubscription[] | undefined,
+): UserNotificationChannelConfig[] {
+  if (!Array.isArray(subscriptions)) return channels;
+  return channels.map((channel) => {
+    const events = new Set(channel.subscribedEvents);
+    for (const subscription of subscriptions) {
+      const eventType = subscription.eventType.trim();
+      if (!eventType) continue;
+      const targets = new Set(subscription.channels);
+      if (subscription.enabled && targets.has(channel.id)) {
+        events.add(eventType);
+      } else if (!subscription.enabled || targets.has(channel.id)) {
+        events.delete(eventType);
+      }
+    }
+    return {
+      ...channel,
+      subscribedEvents: Array.from(events),
+    };
+  });
 }
 
 export class NotificationSettingsService implements NotificationManagerSettingsService {
@@ -104,30 +92,7 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
       config: { ...channel.config },
     }));
 
-    // Compatibility bridge for old PATCH /notification-settings payloads.
-    // A legacy global switch now updates the matching event subscription on each
-    // existing channel, so stored settings still become the v2 channel model.
-    if (typeof settings.watchingUpdateFoundEnabled === 'boolean') {
-      channels = channels.map((channel) => ({
-        ...channel,
-        subscribedEvents: setEventSubscription(
-          channel.subscribedEvents,
-          NotificationEventType.WATCHING_UPDATE_FOUND,
-          settings.watchingUpdateFoundEnabled as boolean,
-        ),
-      }));
-    }
-
-    if (typeof settings.watchingUpdateFailedEnabled === 'boolean') {
-      channels = channels.map((channel) => ({
-        ...channel,
-        subscribedEvents: setEventSubscription(
-          channel.subscribedEvents,
-          NotificationEventType.WATCHING_UPDATE_FAILED,
-          settings.watchingUpdateFailedEnabled as boolean,
-        ),
-      }));
-    }
+    channels = applySubscriptions(channels, settings.subscriptions);
 
     channels = channels.map((channel) =>
       channel.type === NotificationChannelType.INBOX
@@ -157,20 +122,16 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
     const settings = await this.repository.getForUser(message.userId);
     if (!settings.notificationCenterEnabled) return false;
 
-    const eventType = getLegacyEventType(
-      message.type as NotificationMessageType,
-    );
-    if (!eventType) return true;
     return settings.channels.some(
       (channel) =>
-        channel.enabled && channel.subscribedEvents.includes(eventType),
+        channel.enabled && channel.subscribedEvents.includes(message.type),
     );
   }
 
   async getSubscribedChannelConfigs(
-    notification: NotificationEvent | NotificationPayload,
+    notification: NotificationPayload,
   ): Promise<UserNotificationChannelConfig[]> {
-    const userId = getNotificationUserId(notification);
+    const userId = notification.targetUser;
     if (!userId) return [];
     const settings = await this.repository.getForUser(userId);
     if (!settings.notificationCenterEnabled) return [];

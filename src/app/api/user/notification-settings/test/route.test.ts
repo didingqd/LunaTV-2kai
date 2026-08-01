@@ -30,8 +30,7 @@ function settings(channel: Record<string, unknown>) {
   return {
     notificationCenterEnabled: true,
     inboxEnabled: true,
-    watchingUpdateFoundEnabled: true,
-    watchingUpdateFailedEnabled: true,
+    subscriptions: [],
     channels: [channel],
   };
 }

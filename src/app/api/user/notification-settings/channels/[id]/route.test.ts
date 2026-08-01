@@ -23,8 +23,7 @@ const deleteChannel = notificationSettingsService.deleteChannel as jest.Mock;
 
 const settings = {
   inboxEnabled: true,
-  watchingUpdateFoundEnabled: true,
-  watchingUpdateFailedEnabled: true,
+  subscriptions: [],
   channels: [],
 };
 
