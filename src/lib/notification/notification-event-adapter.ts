@@ -8,6 +8,7 @@ import {
   NotificationMessageType,
   type NotificationEvent,
   type NotificationMessage,
+  type NotificationPayload,
 } from './notification-types';
 
 function stringValue(value: unknown, fallback = ''): string {
@@ -34,7 +35,9 @@ export function notificationMessageToEvent(
 ): NotificationEvent {
   return {
     id: createId(),
-    type: notificationMessageTypeToEventType(message.type),
+    type: notificationMessageTypeToEventType(
+      message.type as NotificationMessageType,
+    ),
     userId: message.userId,
     createdAt: message.createdAt,
     data: {
@@ -42,6 +45,60 @@ export function notificationMessageToEvent(
       content: message.content,
       messageType: message.type,
       ...(message.payload ?? {}),
+    },
+  };
+}
+
+export function notificationMessageToPayload(
+  message: NotificationMessage,
+  createId: () => string,
+): NotificationPayload {
+  return {
+    id: createId(),
+    type: notificationMessageTypeToEventType(
+      message.type as NotificationMessageType,
+    ),
+    targetUser: message.userId,
+    occurredAt: message.createdAt,
+    data: {
+      title: message.title,
+      content: message.content,
+      messageType: message.type,
+      ...(message.payload ?? {}),
+    },
+    metadata: message.metadata,
+  };
+}
+
+export function notificationEventToPayload(
+  event: NotificationEvent,
+): NotificationPayload {
+  return {
+    id: event.id,
+    type: event.type,
+    targetUser: event.userId,
+    occurredAt: event.createdAt,
+    data: { ...event.data },
+  };
+}
+
+export function notificationPayloadToEvent(
+  payload: NotificationPayload,
+  createId: () => string,
+): NotificationEvent {
+  const occurredAt =
+    typeof payload.occurredAt === 'number' &&
+    Number.isFinite(payload.occurredAt)
+      ? payload.occurredAt
+      : Date.now();
+  return {
+    id: payload.id || createId(),
+    type: payload.type,
+    userId: payload.targetUser,
+    createdAt: occurredAt,
+    data: {
+      ...payload.data,
+      ...(payload.metadata ? { metadata: payload.metadata } : {}),
     },
   };
 }

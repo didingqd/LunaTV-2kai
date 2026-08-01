@@ -23,7 +23,7 @@ describe('TelegramNotificationProvider', () => {
     );
     setFetch(fetchMock);
 
-    await new TelegramNotificationProvider().send(event(), channel());
+    await new TelegramNotificationProvider().send(message(), channel());
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.telegram.org/bottoken/sendMessage',
@@ -55,7 +55,7 @@ describe('TelegramNotificationProvider', () => {
     );
 
     await expect(
-      new TelegramNotificationProvider().send(event(), channel()),
+      new TelegramNotificationProvider().send(message(), channel()),
     ).rejects.toThrow('Bad Request');
   });
 });
@@ -68,13 +68,20 @@ function setFetch(fetchMock: jest.Mock) {
   });
 }
 
-function event() {
+function message() {
   return {
-    id: 'event-1',
-    type: 'watching.update_found',
     userId: 'alice',
-    data: { title: 'Title', content: 'Content' },
+    type: 'watching.update_found',
+    title: 'Title',
+    body: 'Content',
+    content: 'Content',
     createdAt: 1_000,
+    payload: {
+      payloadId: 'event-1',
+      eventType: 'watching.update_found',
+      title: 'Title',
+      content: 'Content',
+    },
   };
 }
 

@@ -18,7 +18,7 @@ describe('WebhookNotificationProvider', () => {
     setFetch(fetchMock);
     const provider = new WebhookNotificationProvider();
 
-    await provider.send(event(), channel());
+    await provider.send(message(), channel());
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.com/webhook',
@@ -35,7 +35,12 @@ describe('WebhookNotificationProvider', () => {
           eventType: 'watching.update_found',
           eventId: 'event-1',
           createdAt: 1_000,
-          data: { title: 'Title', content: 'Content' },
+          data: {
+            payloadId: 'event-1',
+            eventType: 'watching.update_found',
+            title: 'Title',
+            content: 'Content',
+          },
         }),
         signal: expect.any(AbortSignal),
       }),
@@ -47,7 +52,7 @@ describe('WebhookNotificationProvider', () => {
     setFetch(fetchMock);
 
     await expect(
-      new WebhookNotificationProvider().send(event(), channel()),
+      new WebhookNotificationProvider().send(message(), channel()),
     ).rejects.toThrow('Webhook notification failed with 500');
   });
 });
@@ -60,13 +65,20 @@ function setFetch(fetchMock: jest.Mock) {
   });
 }
 
-function event() {
+function message() {
   return {
-    id: 'event-1',
-    type: 'watching.update_found',
     userId: 'alice',
-    data: { title: 'Title', content: 'Content' },
+    type: 'watching.update_found',
+    title: 'Title',
+    body: 'Content',
+    content: 'Content',
     createdAt: 1_000,
+    payload: {
+      payloadId: 'event-1',
+      eventType: 'watching.update_found',
+      title: 'Title',
+      content: 'Content',
+    },
   };
 }
 

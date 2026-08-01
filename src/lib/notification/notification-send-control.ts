@@ -1,6 +1,10 @@
 import type { NotificationProvider } from './notification-provider';
 import type { UserNotificationChannelConfig } from './notification-settings-repository';
-import type { NotificationEvent } from './notification-types';
+import type {
+  NotificationEvent,
+  NotificationMessage,
+  NotificationPayload,
+} from './notification-types';
 
 export const DEFAULT_NOTIFICATION_PROVIDER_TIMEOUT_MS = 10_000;
 export const DEFAULT_NOTIFICATION_RETRY_DELAY_MS = 100;
@@ -15,24 +19,39 @@ interface RetryOptions {
 
 const recentEventDispatches = new Map<string, number>();
 
-export function isNotificationDebugEvent(event: NotificationEvent): boolean {
+function getNotificationUserId(
+  event: NotificationEvent | NotificationPayload,
+): string | undefined {
+  return (
+    (event as NotificationPayload).targetUser ??
+    (event as NotificationEvent).userId
+  );
+}
+
+export function isNotificationDebugEvent(
+  event: NotificationEvent | NotificationPayload,
+): boolean {
+  const data = event.data;
+  const metadataSource =
+    'metadata' in event && event.metadata ? event.metadata : data.metadata;
   const metadata =
-    event.data.metadata &&
-    typeof event.data.metadata === 'object' &&
-    !Array.isArray(event.data.metadata)
-      ? (event.data.metadata as Record<string, unknown>)
+    metadataSource &&
+    typeof metadataSource === 'object' &&
+    !Array.isArray(metadataSource)
+      ? (metadataSource as Record<string, unknown>)
       : {};
-  return metadata.debug === true || event.data.source === 'notification-debug';
+  return metadata.debug === true || data.source === 'notification-debug';
 }
 
 export function shouldSkipDuplicateNotificationEvent(
-  event: NotificationEvent,
+  event: NotificationEvent | NotificationPayload,
   now: number,
   windowMs = DEFAULT_NOTIFICATION_DEDUP_WINDOW_MS,
 ): boolean {
   if (isNotificationDebugEvent(event)) return false;
 
-  const key = `${event.userId ?? 'global'}:${event.type}`;
+  const userId = getNotificationUserId(event);
+  const key = `${userId ?? 'global'}:${event.type}`;
   const previous = recentEventDispatches.get(key);
   if (typeof previous === 'number' && now - previous < windowMs) {
     return true;
@@ -70,7 +89,7 @@ function withTimeout<T>(
 
 export async function sendProviderWithRetry(
   provider: NotificationProvider,
-  event: NotificationEvent,
+  message: NotificationMessage,
   channel: UserNotificationChannelConfig,
   options: RetryOptions = {},
 ): Promise<void> {
@@ -88,7 +107,7 @@ export async function sendProviderWithRetry(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      await withTimeout(provider.send(event, channel), timeoutMs);
+      await withTimeout(provider.send(message, channel), timeoutMs);
       return;
     } catch (error) {
       lastError = error;

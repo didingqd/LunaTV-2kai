@@ -9,7 +9,8 @@ describe('schema-only notification providers', () => {
     const config = provider
       .getConfigSchema()
       .fields.reduce<Record<string, string>>((next, field) => {
-        next[field.key] = field.type === 'url' ? 'https://example.com' : 'value';
+        next[field.key] =
+          field.type === 'url' ? 'https://example.com' : 'value';
         return next;
       }, {});
     const channel = {
@@ -26,8 +27,11 @@ describe('schema-only notification providers', () => {
       provider.send(
         {
           id: 'preview-event',
+          userId: 'alice',
           type: 'system.error',
-          data: { title: 'preview', body: 'preview only' },
+          title: 'preview',
+          body: 'preview only',
+          content: 'preview only',
           createdAt: Date.now(),
         },
         channel,

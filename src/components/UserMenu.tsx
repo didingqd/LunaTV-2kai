@@ -46,6 +46,19 @@ import NotificationCenterPage from './NotificationCenterPage';
 import NotificationSettingsPage from './NotificationSettingsPage';
 import VideoCard from './VideoCard';
 import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
+import {
+  WATCHING_UPDATE_CARD_CONTENT_CLASS,
+  WATCHING_UPDATE_CARD_GRID_CLASS,
+  WATCHING_UPDATE_CARD_SHELL_CLASS,
+  WATCHING_UPDATE_EMPTY_DETAIL_CLASS,
+  WATCHING_UPDATE_EMPTY_STATE_CLASS,
+  WATCHING_UPDATE_EMPTY_TITLE_CLASS,
+  WATCHING_UPDATE_FOOTNOTE_CLASS,
+  WATCHING_UPDATE_SECTION_CLASS,
+  WATCHING_UPDATE_SECTION_COUNT_CLASS,
+  WATCHING_UPDATE_SECTION_HEADER_CLASS,
+  WATCHING_UPDATE_SECTION_TITLE_CLASS,
+} from './watching-update-card-ui';
 import { SettingsPanel } from './SettingsPanel';
 import {
   MOBILE_DIALOG_CONTENT_CLASS,
@@ -1101,11 +1114,11 @@ export const UserMenu: React.FC = () => {
               <div className='space-y-8'>
                 {/* 没有更新时的提示 */}
                 {!hasActualUpdates && (
-                  <div className='text-center py-8'>
-                    <div className='text-gray-500 dark:text-gray-400 text-sm'>
+                  <div className={WATCHING_UPDATE_EMPTY_STATE_CLASS}>
+                    <div className={WATCHING_UPDATE_EMPTY_TITLE_CLASS}>
                       暂无新剧集更新
                     </div>
-                    <div className='text-xs text-gray-400 dark:text-gray-500 mt-2'>
+                    <div className={WATCHING_UPDATE_EMPTY_DETAIL_CLASS}>
                       系统会定期检查您观看过的剧集是否有新集数更新
                     </div>
                   </div>
@@ -1119,14 +1132,16 @@ export const UserMenu: React.FC = () => {
                         `${series.sourceKey}+${series.videoId}`,
                       ),
                   ).length > 0 && (
-                    <div className='mb-8'>
-                      <div className='flex items-center gap-2 mb-4'>
-                        <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
+                    <div className={WATCHING_UPDATE_SECTION_CLASS}>
+                      <div className={WATCHING_UPDATE_SECTION_HEADER_CLASS}>
+                        <h4 className={WATCHING_UPDATE_SECTION_TITLE_CLASS}>
                           🎬 新上映
                         </h4>
                         <div className='flex items-center gap-1'>
                           <div className='w-2 h-2 bg-green-500 rounded-full animate-pulse'></div>
-                          <span className='text-sm text-green-500 font-medium'>
+                          <span
+                            className={`${WATCHING_UPDATE_SECTION_COUNT_CLASS} text-green-500`}
+                          >
                             {
                               watchingUpdates.updatedSeries.filter(
                                 (series) =>
@@ -1141,7 +1156,7 @@ export const UserMenu: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
+                      <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
                         {watchingUpdates.updatedSeries
                           .filter(
                             (series) =>
@@ -1153,9 +1168,11 @@ export const UserMenu: React.FC = () => {
                           .map((series, index) => (
                             <div
                               key={`release-${series.title}_${series.year}_${index}`}
-                              className='relative group/card'
+                              className={WATCHING_UPDATE_CARD_SHELL_CLASS}
                             >
-                              <div className='relative group-hover/card:z-5 transition-all duration-300'>
+                              <div
+                                className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
+                              >
                                 <VideoCard
                                   title={series.title}
                                   poster={series.cover}
@@ -1203,13 +1220,15 @@ export const UserMenu: React.FC = () => {
                     (series) => series.hasNewEpisode,
                   ).length > 0 && (
                     <div>
-                      <div className='flex items-center gap-2 mb-4'>
-                        <h4 className='text-lg font-semibold text-gray-900 dark:text-white'>
+                      <div className={WATCHING_UPDATE_SECTION_HEADER_CLASS}>
+                        <h4 className={WATCHING_UPDATE_SECTION_TITLE_CLASS}>
                           新集更新
                         </h4>
                         <div className='flex items-center gap-1'>
                           <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
-                          <span className='text-sm text-red-500 font-medium'>
+                          <span
+                            className={`${WATCHING_UPDATE_SECTION_COUNT_CLASS} text-red-500`}
+                          >
                             {
                               watchingUpdates.updatedSeries.filter(
                                 (series) => series.hasNewEpisode,
@@ -1220,15 +1239,17 @@ export const UserMenu: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
+                      <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
                         {watchingUpdates.updatedSeries
                           .filter((series) => series.hasNewEpisode)
                           .map((series, index) => (
                             <div
                               key={`new-${series.title}_${series.year}_${index}`}
-                              className='relative group/card'
+                              className={WATCHING_UPDATE_CARD_SHELL_CLASS}
                             >
-                              <div className='relative group-hover/card:z-5 transition-all duration-300'>
+                              <div
+                                className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
+                              >
                                 <VideoCard
                                   title={series.title}
                                   poster={series.cover}
@@ -1256,7 +1277,7 @@ export const UserMenu: React.FC = () => {
 
               {/* 底部说明 */}
               <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
-                <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+                <p className={WATCHING_UPDATE_FOOTNOTE_CLASS}>
                   点击海报即可观看新更新的剧集
                 </p>
               </div>
@@ -1266,43 +1287,53 @@ export const UserMenu: React.FC = () => {
               role='tabpanel'
               className={watchingUpdatesTab === 'follows' ? 'block' : 'hidden'}
             >
-              <div className='mb-3 flex items-center justify-between gap-3'>
-                <h4 className='text-base font-semibold text-gray-900 dark:text-white'>
+              <div className={WATCHING_UPDATE_SECTION_HEADER_CLASS}>
+                <h4 className={WATCHING_UPDATE_SECTION_TITLE_CLASS}>
                   追更列表
                 </h4>
                 {watchingFollows.length > 0 && (
-                  <span className='text-xs text-gray-500 dark:text-gray-400'>
+                  <span
+                    className={`${WATCHING_UPDATE_SECTION_COUNT_CLASS} text-gray-500 dark:text-gray-400`}
+                  >
                     共 {watchingFollows.length} 项
                   </span>
                 )}
               </div>
 
-              <div className='grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4'>
+              <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
                 {watchingFollows.map((follow) => {
                   const update = watchingUpdates?.updatedSeries.find((series) =>
                     compareContentIdentity(series, follow),
                   );
 
                   return (
-                    <VideoCard
+                    <div
                       key={watchingFollowKey(follow.source, follow.id)}
-                      id={follow.id}
-                      title={follow.title}
-                      poster={follow.cover}
-                      year={follow.year}
-                      source={follow.source}
-                      source_name={
-                        watchingFollowSourceNames.get(follow.source) ||
-                        follow.source
-                      }
-                      episodes={update?.latestEpisodes}
-                      currentEpisode={update?.currentEpisode}
-                      from='follow'
-                      type={follow.type || ''}
-                      onDelete={() =>
-                        void deleteFollow(follow.source, follow.id)
-                      }
-                    />
+                      className={WATCHING_UPDATE_CARD_SHELL_CLASS}
+                    >
+                      <div className={WATCHING_UPDATE_CARD_CONTENT_CLASS}>
+                        <VideoCard
+                          id={follow.id}
+                          title={follow.title}
+                          poster={follow.cover}
+                          year={follow.year}
+                          source={follow.source}
+                          source_name={
+                            watchingFollowSourceNames.get(follow.source) ||
+                            follow.source
+                          }
+                          episodes={
+                            update?.latestEpisodes ?? follow.originalEpisodes
+                          }
+                          currentEpisode={update?.currentEpisode}
+                          from='follow'
+                          type={follow.type || ''}
+                          onDelete={() =>
+                            void deleteFollow(follow.source, follow.id)
+                          }
+                        />
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1320,7 +1351,7 @@ export const UserMenu: React.FC = () => {
               )}
 
               <div className='mt-6 border-t border-gray-200 pt-4 dark:border-gray-700'>
-                <p className='text-center text-xs text-gray-500 dark:text-gray-400'>
+                <p className={WATCHING_UPDATE_FOOTNOTE_CLASS}>
                   点击海报即可播放，长按或右键查看更多操作
                 </p>
               </div>

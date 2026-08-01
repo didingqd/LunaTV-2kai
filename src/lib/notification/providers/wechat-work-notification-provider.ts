@@ -4,41 +4,26 @@
 // or API routes.
 
 import { WeChatWorkNotificationChannel } from '../channels/wechat-work-notification-channel';
-import { notificationEventToMessage } from '../notification-event-adapter';
 import type {
   NotificationProvider,
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
+import { createProviderTestMessage } from './notification-provider-utils';
 
 export class WeChatWorkNotificationProvider implements NotificationProvider {
   readonly type = 'wechat_work';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
-    await new WeChatWorkNotificationChannel(channelConfig.config).send(
-      notificationEventToMessage(event),
-    );
+    await new WeChatWorkNotificationChannel(channelConfig.config).send(message);
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(
-      {
-        id: `test-${Date.now()}`,
-        type: 'system.error',
-        userId: 'notification-test',
-        data: {
-          title: '\u6d4b\u8bd5\u901a\u77e5',
-          content:
-            '\u8fd9\u662f\u4e00\u6761\u4f01\u4e1a\u5fae\u4fe1\u901a\u77e5\u6d4b\u8bd5\u6d88\u606f\u3002',
-        },
-        createdAt: Date.now(),
-      },
-      channelConfig,
-    );
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

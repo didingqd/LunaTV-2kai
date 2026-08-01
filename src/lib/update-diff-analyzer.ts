@@ -3,7 +3,6 @@ import type {
   NotificationHistory,
   NotificationSnapshot,
   WatchingUpdateChange,
-  WatchingUpdateHistory,
   WatchingUpdateNotificationCandidate,
   WatchingUpdateNotificationState,
 } from './watching-update-notification-types';
@@ -30,14 +29,25 @@ function normalizeEpisode(value: unknown): number {
     : 0;
 }
 
+function normalizeBaselineEpisode(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
 function normalizeSnapshot(
   snapshot: NotificationSnapshot,
 ): NotificationSnapshot | null {
   const followId =
     typeof snapshot.followId === 'string' ? snapshot.followId.trim() : '';
-  const episode = normalizeEpisode(snapshot.episode);
-  if (!followId || episode <= 0) return null;
-  return { followId, episode };
+  const legacySnapshot = snapshot as NotificationSnapshot & {
+    episode?: unknown;
+  };
+  const effectiveLatestEpisode = normalizeEpisode(
+    legacySnapshot.effectiveLatestEpisode ?? legacySnapshot.episode,
+  );
+  if (!followId || effectiveLatestEpisode <= 0) return null;
+  return { followId, effectiveLatestEpisode };
 }
 
 function snapshotMap(
@@ -48,7 +58,10 @@ function snapshotMap(
     const snapshot = normalizeSnapshot(item);
     if (!snapshot) continue;
     const existing = values.get(snapshot.followId);
-    if (!existing || snapshot.episode >= existing.episode) {
+    if (
+      !existing ||
+      snapshot.effectiveLatestEpisode >= existing.effectiveLatestEpisode
+    ) {
       values.set(snapshot.followId, snapshot);
     }
   }
@@ -64,11 +77,18 @@ function candidateMap(
       typeof candidate.followId === 'string' ? candidate.followId.trim() : '';
     const title =
       typeof candidate.title === 'string' ? candidate.title.trim() : '';
-    const episode = normalizeEpisode(candidate.episode);
-    if (!followId || !title || episode <= 0) continue;
-    const normalized = { followId, title, episode };
+    const fromEpisode = normalizeBaselineEpisode(candidate.fromEpisode);
+    const toEpisode = normalizeEpisode(candidate.toEpisode);
+    if (!followId || !title || toEpisode <= 0) continue;
+    const normalized = {
+      followId,
+      title,
+      fromEpisode,
+      toEpisode,
+      hasUpdate: candidate.hasUpdate === true,
+    };
     const existing = values.get(followId);
-    if (!existing || normalized.episode >= existing.episode) {
+    if (!existing || normalized.toEpisode >= existing.toEpisode) {
       values.set(followId, normalized);
     }
   }
@@ -105,59 +125,81 @@ export class UpdateDiffAnalyzer {
     currentCandidates: WatchingUpdateNotificationCandidate[],
     previousState: WatchingUpdateNotificationState,
     checkedAt: number,
+    pendingCandidates: WatchingUpdateNotificationCandidate[] = currentCandidates,
   ): UpdateDiffAnalysis {
     const previousSnapshots = snapshotMap(previousState.snapshots);
     const current = candidateMap(currentCandidates);
-    const history = historyMap(previousState.history);
+    const currentPending = candidateMap(pendingCandidates);
+    const previousHistory = historyMap(previousState.history);
+    const nextHistory = new Map<string, NotificationHistory>();
     const newUpdates: WatchingUpdateChange[] = [];
     const nextSnapshots = new Map(previousSnapshots);
 
     for (const candidate of current.values()) {
       const previous = previousSnapshots.get(candidate.followId);
-      if (!previous) {
-        nextSnapshots.set(candidate.followId, {
-          followId: candidate.followId,
-          episode: candidate.episode,
-        });
+      if (!previous && candidate.toEpisode <= candidate.fromEpisode) {
         continue;
       }
-      if (candidate.episode <= previous.episode) continue;
+      if (
+        previous &&
+        candidate.toEpisode <= previous.effectiveLatestEpisode
+      ) {
+        continue;
+      }
 
       const change = {
         followId: candidate.followId,
         title: candidate.title,
-        fromEpisode: previous.episode,
-        toEpisode: candidate.episode,
+        fromEpisode: candidate.fromEpisode,
+        toEpisode: candidate.toEpisode,
       };
       newUpdates.push(change);
-      history.set(candidate.followId, {
-        followId: candidate.followId,
-        fromEpisode: previous.episode,
-        toEpisode: candidate.episode,
-        updatedAt: new Date(checkedAt).toISOString(),
-      });
+      if (candidate.hasUpdate) {
+        nextHistory.set(candidate.followId, {
+          followId: candidate.followId,
+          fromEpisode: candidate.fromEpisode,
+          toEpisode: candidate.toEpisode,
+          updatedAt: new Date(checkedAt).toISOString(),
+        });
+      }
       nextSnapshots.set(candidate.followId, {
         followId: candidate.followId,
-        episode: candidate.episode,
+        effectiveLatestEpisode: candidate.toEpisode,
       });
     }
 
     const newUpdateIds = new Set(newUpdates.map((item) => item.followId));
-    const updatedHistory = sortByTitle<WatchingUpdateHistory>(
-      [...current.values()].flatMap((candidate) => {
-        const item = history.get(candidate.followId);
-        return item && !newUpdateIds.has(candidate.followId)
-          ? [{ ...item, title: candidate.title }]
-          : [];
-      }),
+    for (const candidate of currentPending.values()) {
+      if (!candidate.hasUpdate || newUpdateIds.has(candidate.followId)) {
+        continue;
+      }
+      const existing = previousHistory.get(candidate.followId);
+      if (existing) nextHistory.set(candidate.followId, existing);
+    }
+
+    const pendingUpdates = sortByTitle(
+      [...currentPending.values()].flatMap((candidate) =>
+        candidate.hasUpdate &&
+        !newUpdateIds.has(candidate.followId) &&
+        candidate.toEpisode > candidate.fromEpisode
+          ? [
+              {
+                followId: candidate.followId,
+                title: candidate.title,
+                fromEpisode: candidate.fromEpisode,
+                toEpisode: candidate.toEpisode,
+              },
+            ]
+          : [],
+      ),
     );
 
     return {
       newUpdates: sortByTitle(newUpdates),
-      updatedHistory,
+      pendingUpdates,
       nextState: {
         snapshots: sortByFollowId([...nextSnapshots.values()]),
-        history: sortByFollowId([...history.values()]),
+        history: sortByFollowId([...nextHistory.values()]),
       },
     };
   }

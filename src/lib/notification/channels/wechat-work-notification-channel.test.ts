@@ -1,13 +1,16 @@
 /** @jest-environment node */
 
 import { WeChatWorkNotificationChannel } from './wechat-work-notification-channel';
-import { NotificationMessageType, type NotificationMessage } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 
-function message(overrides: Partial<NotificationMessage> = {}): NotificationMessage {
+function message(
+  overrides: Partial<NotificationMessage> = {},
+): NotificationMessage {
   return {
     userId: 'alice',
-    type: NotificationMessageType.WATCHING_UPDATE_FOUND,
+    type: 'watching.update_found',
     title: 'Demo',
+    body: 'Source A 已从 10 集更新到 12 集',
     content: 'Source A 已从 10 集更新到 12 集',
     createdAt: Date.parse('2026-07-30T12:00:00.000Z'),
     payload: {
@@ -31,8 +34,7 @@ describe('WeChatWorkNotificationChannel', () => {
     const fetchMock = jest.fn().mockResolvedValue(response({ errcode: 0 }));
     const channel = new WeChatWorkNotificationChannel(
       {
-        webhookUrl:
-          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
       fetchMock,
     );
@@ -48,31 +50,30 @@ describe('WeChatWorkNotificationChannel', () => {
     );
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.msgtype).toBe('markdown');
-    expect(body.markdown.content).toContain('追更更新');
     expect(body.markdown.content).toContain('Demo');
-    expect(body.markdown.content).toContain('第12集');
+    expect(body.markdown.content).toContain('Source A 已从 10 集更新到 12 集');
   });
 
-  it('maps failed update messages', async () => {
+  it('sends failed messages without business-specific formatting', async () => {
     const fetchMock = jest.fn().mockResolvedValue(response({ errcode: 0 }));
     const channel = new WeChatWorkNotificationChannel(
       {
-        webhookUrl:
-          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
       fetchMock,
     );
 
     await channel.send(
       message({
-        type: NotificationMessageType.WATCHING_UPDATE_FAILED,
+        type: 'watching.update_failed',
         title: 'Task A',
+        body: '资源站异常',
         content: '资源站异常',
       }),
     );
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.markdown.content).toContain('追更失败');
+    expect(body.markdown.content).toContain('Task A');
     expect(body.markdown.content).toContain('资源站异常');
   });
 
@@ -80,8 +81,7 @@ describe('WeChatWorkNotificationChannel', () => {
     const fetchMock = jest.fn().mockResolvedValue(response({}, false, 500));
     const channel = new WeChatWorkNotificationChannel(
       {
-        webhookUrl:
-          'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       },
       fetchMock,
     );

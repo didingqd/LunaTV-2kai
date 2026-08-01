@@ -1,8 +1,5 @@
 import type { NotificationChannel } from '../notification-channel';
-import {
-  NotificationMessageType,
-  type NotificationMessage,
-} from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 
 export interface WeChatWorkNotificationChannelConfig {
   webhookUrl?: unknown;
@@ -13,42 +10,11 @@ interface WeChatWorkResponse {
   errmsg?: string;
 }
 
-function getPayloadString(
-  message: NotificationMessage,
-  keys: string[],
-): string | null {
-  for (const key of keys) {
-    const value = message.payload?.[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-    if (typeof value === 'number' && Number.isFinite(value))
-      return String(value);
-  }
-  return null;
-}
-
 function toMarkdownContent(message: NotificationMessage): string {
-  const displayTime = getPayloadString(message, ['displayTime']) ?? '-';
-
-  if (message.type === NotificationMessageType.WATCHING_UPDATE_FOUND) {
-    return [
-      '### 追更更新',
-      `作品：${message.title}`,
-      `内容：${message.content}`,
-      `资源站：${getPayloadString(message, ['source', 'sourceName']) ?? '-'}`,
-      `最新：${getPayloadString(message, ['episode', 'latestEpisode', 'newEpisode']) ?? '-'}`,
-      `时间：${displayTime}`,
-    ].join('\n');
-  }
-
-  if (message.type === NotificationMessageType.WATCHING_UPDATE_FAILED) {
-    return [
-      '### 追更失败',
-      `任务：${message.title}`,
-      `原因：${message.content}`,
-      `时间：${displayTime}`,
-    ].join('\n');
-  }
-
+  const displayTime =
+    typeof message.payload?.displayTime === 'string'
+      ? message.payload.displayTime
+      : '-';
   return [`### ${message.title}`, message.content, `时间：${displayTime}`].join(
     '\n',
   );

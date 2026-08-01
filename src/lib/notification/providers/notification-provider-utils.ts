@@ -1,10 +1,9 @@
-﻿import { notificationEventToMessage } from '../notification-event-adapter';
 import type {
   NotificationProviderConfigField,
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 
 const DEFAULT_NOTIFICATION_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -83,21 +82,28 @@ function maskValue(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
-export function getNotificationContent(event: NotificationEvent) {
-  const message = notificationEventToMessage(event);
+export function getNotificationContent(message: NotificationMessage) {
   return { title: message.title, content: message.content };
 }
 
-export function createProviderTestEvent(): NotificationEvent {
+export function createProviderTestMessage(
+  userId = 'notification-test',
+): NotificationMessage {
+  const createdAt = Date.now();
+  const content =
+    '\u8fd9\u662f\u4e00\u6761 LunaTV \u6d4b\u8bd5\u901a\u77e5\u3002';
   return {
-    id: `test-${Date.now()}`,
+    userId,
     type: 'system.error',
-    userId: 'notification-test',
-    data: {
-      title: '\u6d4b\u8bd5\u901a\u77e5',
-      content: '\u8fd9\u662f\u4e00\u6761 LunaTV \u6d4b\u8bd5\u901a\u77e5\u3002',
+    title: '\u6d4b\u8bd5\u901a\u77e5',
+    body: content,
+    content,
+    createdAt,
+    payload: {
+      payloadId: `test-${createdAt}`,
+      eventType: 'system.error',
+      eventCreatedAt: createdAt,
     },
-    createdAt: Date.now(),
   };
 }
 

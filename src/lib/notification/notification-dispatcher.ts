@@ -4,7 +4,11 @@
 import { randomUUID } from 'crypto';
 
 import type { NotificationChannel } from './notification-channel';
-import { notificationMessageToEvent } from './notification-event-adapter';
+import {
+  notificationEventToPayload,
+  notificationMessageToPayload,
+  notificationPayloadToEvent,
+} from './notification-event-adapter';
 import { notificationManager } from './notification-manager';
 import { notificationSettingsService } from './notification-settings-service';
 import type {
@@ -16,6 +20,7 @@ import type {
   NotificationDispatchResult,
   NotificationEvent,
   NotificationMessage,
+  NotificationPayload,
 } from './notification-types';
 
 interface NotificationDispatchSettingsService {
@@ -50,12 +55,14 @@ export class NotificationDispatcher {
   >();
 
   private readonly settingsService: NotificationDispatchSettingsService;
-  private readonly manager?: Pick<typeof notificationManager, 'emit'>;
+  private readonly manager?: Pick<typeof notificationManager, 'emit'> &
+    Partial<Pick<typeof notificationManager, 'notify'>>;
   private readonly createId: () => string;
 
   constructor(
     settingsService?: NotificationDispatchSettingsService,
-    manager?: Pick<typeof notificationManager, 'emit'>,
+    manager?: Pick<typeof notificationManager, 'emit'> &
+      Partial<Pick<typeof notificationManager, 'notify'>>,
     createId: () => string = randomUUID,
   ) {
     this.settingsService = settingsService ?? notificationSettingsService;
@@ -91,9 +98,10 @@ export class NotificationDispatcher {
       this.channels.size === 0 &&
       this.channelFactories.size === 0
     ) {
-      return this.manager.emit(
-        notificationMessageToEvent(message, this.createId),
-      );
+      const payload = notificationMessageToPayload(message, this.createId);
+      return this.manager.notify
+        ? this.manager.notify(payload)
+        : this.manager.emit(notificationPayloadToEvent(payload, this.createId));
     }
 
     return this.dispatchLegacyChannels(message);
@@ -105,7 +113,20 @@ export class NotificationDispatcher {
     if (!this.manager) {
       throw new Error('NOTIFICATION_EVENT_DISPATCH_UNAVAILABLE');
     }
-    return this.manager.emit(event);
+    return this.manager.notify
+      ? this.manager.notify(notificationEventToPayload(event))
+      : this.manager.emit(event);
+  }
+
+  async dispatchPayload(
+    payload: NotificationPayload,
+  ): Promise<NotificationDispatchResult> {
+    if (!this.manager) {
+      throw new Error('NOTIFICATION_PAYLOAD_DISPATCH_UNAVAILABLE');
+    }
+    return this.manager.notify
+      ? this.manager.notify(payload)
+      : this.manager.emit(notificationPayloadToEvent(payload, this.createId));
   }
 
   private async dispatchLegacyChannels(

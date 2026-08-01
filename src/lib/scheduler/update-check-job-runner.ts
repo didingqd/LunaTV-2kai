@@ -5,7 +5,8 @@ import {
   type UpdateCheckSchedulerResult,
 } from '@/lib/update-check-scheduler';
 import { notificationDispatcher } from '@/lib/notification/notification-dispatcher';
-import { createSchedulerFailedEvent } from '@/lib/notification/notification-event-builder';
+import { notificationPayloadToEvent } from '@/lib/notification/notification-event-adapter';
+import type { NotificationPayload } from '@/lib/notification/notification-types';
 import { timezoneService } from '@/lib/services/timezone_service';
 import {
   systemConfigRepository,
@@ -63,10 +64,10 @@ export interface UpdateCheckJobRunnerResult {
 
 type UpdateCheckSchedulerRunner = Pick<UpdateCheckScheduler, 'run'>;
 type UpdateCheckAuditLogger = Pick<WatchingUpdateCheckLogService, 'record'>;
-type NotificationEventDispatcher = Pick<
-  typeof notificationDispatcher,
-  'dispatchEvent'
->;
+type NotificationEventDispatcher = {
+  dispatchPayload?: typeof notificationDispatcher.dispatchPayload;
+  dispatchEvent?: typeof notificationDispatcher.dispatchEvent;
+};
 
 interface CompletedAuditTask {
   task: UpdateCheckTask;
@@ -125,6 +126,36 @@ function createDefaultAuditRequest(
     client: {
       platform: 'server',
       device: 'server',
+    },
+  };
+}
+
+function createSchedulerFailedPayload(input: {
+  userId: string;
+  taskName: string;
+  error: string;
+  timestamp: number;
+  displayTime: string;
+}): NotificationPayload {
+  const message = `${input.taskName} 执行失败：${input.error}。执行时间：${input.displayTime}`;
+  return {
+    type: 'scheduler.failed',
+    targetUser: input.userId,
+    occurredAt: input.timestamp,
+    data: {
+      taskName: input.taskName,
+      error: input.error,
+      timestamp: input.timestamp,
+      displayTime: input.displayTime,
+      title: '调度失败',
+      message,
+      content: message,
+      level: 'error',
+    },
+    metadata: {
+      source: 'update-check-job-runner',
+      taskName: input.taskName,
+      displayTime: input.displayTime,
     },
   };
 }
@@ -408,13 +439,15 @@ export class UpdateCheckJobRunner {
     if (!userId) return;
 
     try {
-      const result = await this.notifications.dispatchEvent(
-        createSchedulerFailedEvent({
+      const displayTime =
+        await this.resolveSchedulerFailureDisplayTime(timestamp);
+      const result = await this.dispatchNotificationPayload(
+        createSchedulerFailedPayload({
           userId,
           taskName: 'update-checks',
           error,
           timestamp,
-          displayTime: await this.resolveSchedulerFailureDisplayTime(timestamp),
+          displayTime,
         }),
       );
       if (!result.success) {
@@ -429,6 +462,18 @@ export class UpdateCheckJobRunner {
         dispatchError,
       );
     }
+  }
+
+  private dispatchNotificationPayload(payload: NotificationPayload) {
+    if (this.notifications.dispatchPayload) {
+      return this.notifications.dispatchPayload(payload);
+    }
+    if (this.notifications.dispatchEvent) {
+      return this.notifications.dispatchEvent(
+        notificationPayloadToEvent(payload, () => ''),
+      );
+    }
+    throw new Error('NOTIFICATION_PAYLOAD_DISPATCH_UNAVAILABLE');
   }
 
   private async resolveSchedulerFailureDisplayTime(

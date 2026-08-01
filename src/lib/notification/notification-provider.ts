@@ -4,7 +4,7 @@
 // providers instead of adding channel-specific if/switch branches in business code.
 
 import type { UserNotificationChannelConfig } from './notification-settings-repository';
-import type { NotificationEvent } from './notification-types';
+import type { NotificationMessage } from './notification-types';
 
 export type NotificationProviderConfigFieldType = 'text' | 'password' | 'url';
 
@@ -24,7 +24,7 @@ export interface NotificationProviderConfigSchema {
 export interface NotificationProvider {
   readonly type: string;
   send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void>;
   test(channelConfig: UserNotificationChannelConfig): Promise<void>;

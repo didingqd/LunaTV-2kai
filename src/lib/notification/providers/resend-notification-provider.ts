@@ -3,9 +3,9 @@ import type {
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
-  createProviderTestEvent,
+  createProviderTestMessage,
   fetchWithNotificationTimeout,
   getChannelConfig,
   getConfigRecord,
@@ -39,11 +39,11 @@ export class ResendNotificationProvider implements NotificationProvider {
   readonly type = 'resend';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     const config = this.validateConfig(getChannelConfig(channelConfig));
-    const { title, content } = getNotificationContent(event);
+    const { title, content } = getNotificationContent(message);
     const response = await fetchWithNotificationTimeout(
       'https://api.resend.com/emails',
       {
@@ -67,7 +67,7 @@ export class ResendNotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestEvent(), channelConfig);
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

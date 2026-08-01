@@ -61,7 +61,21 @@ describe('NotificationManager', () => {
       failed: 0,
       errors: [],
     });
-    expect(send).toHaveBeenCalledWith(event(), target);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'alice',
+        type: NotificationEventType.WATCHING_UPDATE_FOUND,
+        title: 'Title',
+        content: '',
+        createdAt: 1_000,
+        payload: expect.objectContaining({
+          payloadId: 'event-1',
+          eventType: NotificationEventType.WATCHING_UPDATE_FOUND,
+          title: 'Title',
+        }),
+      }),
+      target,
+    );
   });
 
   it('reports unsupported providers without hard-coded type branches', async () => {
@@ -99,8 +113,10 @@ describe('NotificationManager', () => {
     await manager.emit(emitted);
 
     expect(getSubscribedChannelConfigs).toHaveBeenCalledWith({
-      ...emitted,
       id: expect.any(String),
+      type: NotificationEventType.WATCHING_UPDATE_FOUND,
+      targetUser: 'alice',
+      occurredAt: 1_000,
       data: { nested: 'value' },
     });
   });

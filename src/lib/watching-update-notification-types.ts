@@ -1,6 +1,6 @@
 export interface NotificationSnapshot {
   followId: string;
-  episode: number;
+  effectiveLatestEpisode: number;
 }
 
 export interface NotificationHistory {
@@ -18,7 +18,9 @@ export interface WatchingUpdateNotificationState {
 export interface WatchingUpdateNotificationCandidate {
   followId: string;
   title: string;
-  episode: number;
+  fromEpisode: number;
+  toEpisode: number;
+  hasUpdate: boolean;
 }
 
 export interface WatchingUpdateChange {
@@ -28,12 +30,8 @@ export interface WatchingUpdateChange {
   toEpisode: number;
 }
 
-export interface WatchingUpdateHistory extends WatchingUpdateChange {
-  updatedAt: string;
-}
-
 export interface UpdateDiffAnalysis {
   newUpdates: WatchingUpdateChange[];
-  updatedHistory: WatchingUpdateHistory[];
+  pendingUpdates: WatchingUpdateChange[];
   nextState: WatchingUpdateNotificationState;
 }

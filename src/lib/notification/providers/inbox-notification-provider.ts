@@ -3,21 +3,23 @@
 // only the architecture boundary changes so managers can route events uniformly.
 
 import { inboxNotificationChannel } from '../inbox-notification-channel';
-import { notificationEventToMessage } from '../notification-event-adapter';
 import type { NotificationProviderConfigSchema } from '../notification-provider';
 import type { NotificationProvider } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
+import { createProviderTestMessage } from './notification-provider-utils';
 
 export class InboxNotificationProvider implements NotificationProvider {
   readonly type = 'inbox';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     _channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
-    if (!event.userId) throw new Error('Notification event userId is required');
-    await inboxNotificationChannel.send(notificationEventToMessage(event));
+    if (!message.userId) {
+      throw new Error('Notification message userId is required');
+    }
+    await inboxNotificationChannel.send(message);
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
@@ -26,20 +28,7 @@ export class InboxNotificationProvider implements NotificationProvider {
         ? channelConfig.config.userId
         : '';
     if (!userId) throw new Error('Inbox notification test requires userId');
-    await this.send(
-      {
-        id: `test-${Date.now()}`,
-        type: 'system.error',
-        userId,
-        data: {
-          title: '\u6d4b\u8bd5\u901a\u77e5',
-          content:
-            '\u8fd9\u662f\u4e00\u6761\u7ad9\u5185\u901a\u77e5\u6d4b\u8bd5\u6d88\u606f\u3002',
-        },
-        createdAt: Date.now(),
-      },
-      channelConfig,
-    );
+    await this.send(createProviderTestMessage(userId), channelConfig);
   }
 
   validateConfig(_config: unknown): Record<string, unknown> {

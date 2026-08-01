@@ -5,6 +5,11 @@
 
 import { randomUUID } from 'crypto';
 
+import {
+  notificationBuilderRegistry,
+  normalizeNotificationPayload,
+  type NotificationBuilderRegistry,
+} from './notification-builder';
 import { notificationProviderRegistry } from './notification-provider-bootstrap';
 import {
   notificationSendLogRepository,
@@ -24,7 +29,9 @@ import type {
   NotificationDispatchError,
   NotificationDispatchResult,
   NotificationEvent,
+  NotificationPayload,
 } from './notification-types';
+import { notificationEventToPayload } from './notification-event-adapter';
 
 function toDispatchError(
   channel: string,
@@ -54,25 +61,36 @@ export class NotificationManager {
       'append'
     > = notificationSendLogRepository,
     private readonly options: NotificationManagerOptions = {},
+    private readonly builders: Pick<
+      NotificationBuilderRegistry,
+      'build'
+    > = notificationBuilderRegistry,
   ) {}
 
   async emit(event: NotificationEvent): Promise<NotificationDispatchResult> {
-    const normalizedEvent = {
-      ...event,
-      id: event.id || this.createId(),
-      data: { ...event.data },
-    };
+    return this.notify(notificationEventToPayload(event));
+  }
+
+  async notify(
+    payload: NotificationPayload,
+  ): Promise<NotificationDispatchResult> {
+    const normalizedPayload = normalizeNotificationPayload(
+      payload,
+      this.createId,
+      this.options.now ?? Date.now,
+    );
     const channels =
-      await this.settingsService.getSubscribedChannelConfigs(normalizedEvent);
+      await this.settingsService.getSubscribedChannelConfigs(normalizedPayload);
     const errors: NotificationDispatchError[] = [];
     let succeeded = 0;
     const now = this.options.now ?? Date.now;
     const dedupeWindowMs = this.options.dedupeWindowMs;
     const duplicateEvent = shouldSkipDuplicateNotificationEvent(
-      normalizedEvent,
+      normalizedPayload,
       now(),
       dedupeWindowMs,
     );
+    const message = await this.builders.build(normalizedPayload);
 
     for (const channel of channels) {
       const provider = this.registry.get(channel.type);
@@ -82,33 +100,33 @@ export class NotificationManager {
           channel: channel.name,
           message: `Unsupported notification provider: ${channel.type}`,
         });
-        await this.recordLog(normalizedEvent.type, channel, 'failed', {
+        await this.recordLog(normalizedPayload.type, channel, 'failed', {
           message: `Unsupported notification provider: ${channel.type}`,
         });
         continue;
       }
       if (capabilities?.canSend === false) {
-        await this.recordLog(normalizedEvent.type, channel, 'skipped');
+        await this.recordLog(normalizedPayload.type, channel, 'skipped');
         continue;
       }
       if (duplicateEvent) {
-        await this.recordLog(normalizedEvent.type, channel, 'skipped', {
+        await this.recordLog(normalizedPayload.type, channel, 'skipped', {
           message: 'Duplicate notification event skipped',
         });
         continue;
       }
 
       try {
-        await sendProviderWithRetry(provider, normalizedEvent, channel, {
+        await sendProviderWithRetry(provider, message, channel, {
           maxAttempts: this.options.maxAttempts,
           retryDelayMs: this.options.retryDelayMs,
           timeoutMs: this.options.timeoutMs,
         });
         succeeded += 1;
-        await this.recordLog(normalizedEvent.type, channel, 'success');
+        await this.recordLog(normalizedPayload.type, channel, 'success');
       } catch (error) {
         errors.push(toDispatchError(channel.name, error));
-        await this.recordLog(normalizedEvent.type, channel, 'failed', error);
+        await this.recordLog(normalizedPayload.type, channel, 'failed', error);
       }
     }
 

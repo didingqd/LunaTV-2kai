@@ -62,8 +62,11 @@ const TYPE_META: Record<
   },
 };
 
-function getTypeMeta(type: NotificationMessageTypeValue) {
-  return TYPE_META[type] ?? TYPE_META[NotificationMessageType.SYSTEM];
+function getTypeMeta(type: string) {
+  return (
+    TYPE_META[type as NotificationMessageTypeValue] ??
+    TYPE_META[NotificationMessageType.SYSTEM]
+  );
 }
 
 async function readNotificationResponse(response: Response) {
@@ -71,7 +74,8 @@ async function readNotificationResponse(response: Response) {
   if (!response.ok) {
     if (response.status === 401) throw new Error('请先登录后查看通知');
     if (response.status === 404) throw new Error('通知不存在');
-    if (response.status === 400) throw new Error(data.error || '通知请求格式无效');
+    if (response.status === 400)
+      throw new Error(data.error || '通知请求格式无效');
     throw new Error(data.error || '通知请求失败');
   }
   return data;
@@ -153,12 +157,17 @@ export default function NotificationCenterPage({
     setSavingId(notification.id);
     setError(null);
     try {
-      const response = await fetch(`${NOTIFICATIONS_ENDPOINT}/${notification.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ read }),
-      });
-      const next = (await readNotificationResponse(response)) as InboxNotification;
+      const response = await fetch(
+        `${NOTIFICATIONS_ENDPOINT}/${notification.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ read }),
+        },
+      );
+      const next = (await readNotificationResponse(
+        response,
+      )) as InboxNotification;
       updateLocalNotification(next);
       setSelectedId(next.id);
     } catch (reason) {
@@ -179,9 +188,12 @@ export default function NotificationCenterPage({
     setSavingId(notification.id);
     setError(null);
     try {
-      const response = await fetch(`${NOTIFICATIONS_ENDPOINT}/${notification.id}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(
+        `${NOTIFICATIONS_ENDPOINT}/${notification.id}`,
+        {
+          method: 'DELETE',
+        },
+      );
       await readNotificationResponse(response);
       const wasRead = notification.read;
       setNotifications((current) => {
@@ -234,7 +246,13 @@ export default function NotificationCenterPage({
       >
         <header className='flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-end sm:justify-between'>
           <div>
-            <h1 className={embedded ? 'text-lg font-semibold' : 'text-2xl font-semibold'}>通知中心</h1>
+            <h1
+              className={
+                embedded ? 'text-lg font-semibold' : 'text-2xl font-semibold'
+              }
+            >
+              通知中心
+            </h1>
             <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
               共 {total} 条通知，{unread} 条未读
             </p>
@@ -310,10 +328,12 @@ export default function NotificationCenterPage({
               notification={selectedNotification}
               saving={savingId === selectedNotification?.id}
               onMarkRead={(read) => {
-                if (selectedNotification) void markRead(selectedNotification, read);
+                if (selectedNotification)
+                  void markRead(selectedNotification, read);
               }}
               onDelete={() => {
-                if (selectedNotification) void deleteNotification(selectedNotification);
+                if (selectedNotification)
+                  void deleteNotification(selectedNotification);
               }}
             />
           </section>
@@ -462,16 +482,17 @@ function NotificationDetail({
         <p className='whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-200'>
           {notification.content}
         </p>
-        {notification.payload && Object.keys(notification.payload).length > 0 && (
-          <div className='rounded-md bg-gray-50 p-3 dark:bg-gray-950'>
-            <p className='mb-2 text-xs font-medium uppercase tracking-wide text-gray-500'>
-              Payload
-            </p>
-            <pre className='overflow-auto text-xs text-gray-600 dark:text-gray-300'>
-              {JSON.stringify(notification.payload, null, 2)}
-            </pre>
-          </div>
-        )}
+        {notification.payload &&
+          Object.keys(notification.payload).length > 0 && (
+            <div className='rounded-md bg-gray-50 p-3 dark:bg-gray-950'>
+              <p className='mb-2 text-xs font-medium uppercase tracking-wide text-gray-500'>
+                Payload
+              </p>
+              <pre className='overflow-auto text-xs text-gray-600 dark:text-gray-300'>
+                {JSON.stringify(notification.payload, null, 2)}
+              </pre>
+            </div>
+          )}
       </div>
     </article>
   );

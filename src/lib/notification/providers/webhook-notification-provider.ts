@@ -3,9 +3,9 @@
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
-  createProviderTestEvent,
+  createProviderTestMessage,
   fetchWithNotificationTimeout,
   getChannelConfig,
   getConfigRecord,
@@ -78,7 +78,7 @@ function renderBody(template: string, title: string, content: string): string {
 }
 
 function buildWebhookPayload(
-  event: NotificationEvent,
+  message: NotificationMessage,
   template: string,
   title: string,
   content: string,
@@ -87,12 +87,15 @@ function buildWebhookPayload(
     title,
     content,
     message: content,
-    eventType: event.type,
-    eventId: event.id,
-    createdAt: event.createdAt,
-    data: event.data,
-    ...(typeof event.data.displayTime === 'string'
-      ? { displayTime: event.data.displayTime }
+    eventType: message.type,
+    eventId:
+      typeof message.payload?.payloadId === 'string'
+        ? message.payload.payloadId
+        : undefined,
+    createdAt: message.createdAt,
+    data: message.payload ?? {},
+    ...(typeof message.payload?.displayTime === 'string'
+      ? { displayTime: message.payload.displayTime }
       : {}),
     ...(template ? { body: renderBody(template, title, content) } : {}),
   };
@@ -102,11 +105,11 @@ export class WebhookNotificationProvider implements NotificationProvider {
   readonly type = 'webhook';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     const config = this.validateConfig(getChannelConfig(channelConfig));
-    const { title, content } = getNotificationContent(event);
+    const { title, content } = getNotificationContent(message);
     const headers = {
       'Content-Type': 'application/json',
       ...parseHeaders(String(config.headers)),
@@ -115,14 +118,14 @@ export class WebhookNotificationProvider implements NotificationProvider {
       method: 'POST',
       headers,
       body: JSON.stringify(
-        buildWebhookPayload(event, String(config.body), title, content),
+        buildWebhookPayload(message, String(config.body), title, content),
       ),
     });
     await throwOnUnsuccessfulResponse(response, 'Webhook');
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestEvent(), channelConfig);
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

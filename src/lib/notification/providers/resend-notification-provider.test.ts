@@ -17,7 +17,7 @@ describe('ResendNotificationProvider', () => {
     const fetchMock = jest.fn(async () => new Response('{}', { status: 200 }));
     setFetch(fetchMock);
 
-    await new ResendNotificationProvider().send(event(), channel());
+    await new ResendNotificationProvider().send(message(), channel());
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.resend.com/emails',
@@ -50,7 +50,7 @@ describe('ResendNotificationProvider', () => {
     );
 
     await expect(
-      new ResendNotificationProvider().send(event(), channel()),
+      new ResendNotificationProvider().send(message(), channel()),
     ).rejects.toThrow('Invalid API key');
   });
 });
@@ -63,13 +63,20 @@ function setFetch(fetchMock: jest.Mock) {
   });
 }
 
-function event() {
+function message() {
   return {
-    id: 'event-1',
-    type: 'watching.update_found',
     userId: 'alice',
-    data: { title: 'Title', content: 'Content' },
+    type: 'watching.update_found',
+    title: 'Title',
+    body: 'Content',
+    content: 'Content',
     createdAt: 1_000,
+    payload: {
+      payloadId: 'event-1',
+      eventType: 'watching.update_found',
+      title: 'Title',
+      content: 'Content',
+    },
   };
 }
 

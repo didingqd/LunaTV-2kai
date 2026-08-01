@@ -9,13 +9,41 @@ export const NotificationMessageType = {
 export type NotificationMessageType =
   (typeof NotificationMessageType)[keyof typeof NotificationMessageType];
 
+export type NotificationLevel = 'info' | 'success' | 'warning' | 'error';
+
+export interface NotificationAction {
+  label: string;
+  url: string;
+}
+
+export interface NotificationAttachment {
+  name: string;
+  url: string;
+  contentType?: string;
+}
+
+export interface NotificationPayload {
+  id?: string;
+  type: string;
+  targetUser?: string;
+  data: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  occurredAt?: number;
+}
+
 export interface NotificationMessage {
+  id?: string;
   userId: string;
-  type: NotificationMessageType;
+  type: string;
   title: string;
+  body?: string;
   content: string;
+  level?: NotificationLevel;
   createdAt: number;
   payload?: Record<string, unknown>;
+  actions?: NotificationAction[];
+  attachments?: NotificationAttachment[];
+  metadata?: Record<string, unknown>;
 }
 
 // Phase 2 notification refactor: domain events use the domain.action naming rule.

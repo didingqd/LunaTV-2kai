@@ -3,9 +3,9 @@
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
-  createProviderTestEvent,
+  createProviderTestMessage,
   getChannelConfig,
   getNotificationContent,
   getRequiredConfigString,
@@ -24,11 +24,11 @@ export class ServerChan3NotificationProvider implements NotificationProvider {
   readonly type = 'serverchan3';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     const config = this.validateConfig(getChannelConfig(channelConfig));
-    const { title, content } = getNotificationContent(event);
+    const { title, content } = getNotificationContent(message);
     const uid = String(config.uid);
     const key = String(config.key);
     const search = new URLSearchParams({ title, desp: content });
@@ -39,7 +39,7 @@ export class ServerChan3NotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestEvent(), channelConfig);
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {
@@ -69,4 +69,3 @@ export class ServerChan3NotificationProvider implements NotificationProvider {
 
 export const serverChan3NotificationProvider =
   new ServerChan3NotificationProvider();
-

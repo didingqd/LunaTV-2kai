@@ -4,7 +4,7 @@ import type {
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
   maskConfigBySchema,
   validateSchemaConfig,
@@ -108,7 +108,7 @@ class SchemaOnlyNotificationProvider implements NotificationProvider {
   }
 
   async send(
-    _event: NotificationEvent,
+    _message: NotificationMessage,
     _channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     // Preview behavior is deliberately harmless for normal dispatches.

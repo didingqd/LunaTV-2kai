@@ -69,7 +69,7 @@ function noAuditRunner(
     now,
     null,
     {
-      dispatchEvent: jest.fn(async () => ({
+      dispatchPayload: jest.fn(async () => ({
         success: true,
         totalChannels: 0,
         succeeded: 0,
@@ -226,7 +226,7 @@ describe('UpdateCheckJobRunner', () => {
       },
       clock(2_000, 2_040),
       auditLogger,
-      { dispatchEvent },
+      { dispatchPayload: dispatchEvent },
       configReader(),
     );
 
@@ -244,9 +244,9 @@ describe('UpdateCheckJobRunner', () => {
       schedulerResult: null,
     });
     expect(dispatchEvent).toHaveBeenCalledWith({
-      id: '',
       type: NotificationEventType.SCHEDULER_FAILED,
-      userId: 'system',
+      targetUser: 'system',
+      occurredAt: 2_040,
       data: {
         taskName: 'update-checks',
         error: 'scheduler failed',
@@ -257,8 +257,13 @@ describe('UpdateCheckJobRunner', () => {
           'update-checks 执行失败：scheduler failed。执行时间：1970-01-01 00:00:02',
         content:
           'update-checks 执行失败：scheduler failed。执行时间：1970-01-01 00:00:02',
+        level: 'error',
       },
-      createdAt: 2_040,
+      metadata: {
+        source: 'update-check-job-runner',
+        taskName: 'update-checks',
+        displayTime: '1970-01-01 00:00:02',
+      },
     });
     expect(auditLogger.record).toHaveBeenCalledTimes(2);
     expect(auditLogger.record).toHaveBeenLastCalledWith(

@@ -3,9 +3,9 @@ import type {
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
-  createProviderTestEvent,
+  createProviderTestMessage,
   escapeHtml,
   getChannelConfig,
   getNotificationContent,
@@ -15,20 +15,18 @@ import {
 } from './notification-provider-utils';
 
 const schema: NotificationProviderConfigSchema = {
-  fields: [
-    { key: 'token', type: 'password', label: 'Token', required: true },
-  ],
+  fields: [{ key: 'token', type: 'password', label: 'Token', required: true }],
 };
 
 export class PushPlusNotificationProvider implements NotificationProvider {
   readonly type = 'pushplus';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     const config = this.validateConfig(getChannelConfig(channelConfig));
-    const { title, content } = getNotificationContent(event);
+    const { title, content } = getNotificationContent(message);
     const response = await fetch('https://www.pushplus.plus/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -43,7 +41,7 @@ export class PushPlusNotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestEvent(), channelConfig);
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

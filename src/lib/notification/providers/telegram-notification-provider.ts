@@ -3,9 +3,9 @@
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationEvent } from '../notification-types';
+import type { NotificationMessage } from '../notification-types';
 import {
-  createProviderTestEvent,
+  createProviderTestMessage,
   escapeHtml,
   fetchWithNotificationTimeout,
   getChannelConfig,
@@ -55,14 +55,14 @@ export class TelegramNotificationProvider implements NotificationProvider {
   readonly type = 'telegram';
 
   async send(
-    event: NotificationEvent,
+    message: NotificationMessage,
     channelConfig: UserNotificationChannelConfig,
   ): Promise<void> {
     const config = this.validateConfig(getChannelConfig(channelConfig));
     const token = String(config.token);
     const chatId = String(config.chatId);
     const apiServer = String(config.apiServer || 'https://api.telegram.org');
-    const { title, content } = getNotificationContent(event);
+    const { title, content } = getNotificationContent(message);
     const response = await fetchWithNotificationTimeout(
       `${trimTrailingSlash(apiServer)}/bot${encodeURIComponent(token)}/sendMessage`,
       {
@@ -79,7 +79,7 @@ export class TelegramNotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestEvent(), channelConfig);
+    await this.send(createProviderTestMessage(), channelConfig);
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

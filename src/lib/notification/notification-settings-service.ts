@@ -20,11 +20,12 @@ import {
   NotificationMessageType,
   type NotificationEvent,
   type NotificationMessage,
+  type NotificationPayload,
 } from './notification-types';
 
 export interface NotificationManagerSettingsService {
   getSubscribedChannelConfigs(
-    event: NotificationEvent,
+    notification: NotificationEvent | NotificationPayload,
   ): Promise<UserNotificationChannelConfig[]>;
 }
 
@@ -60,6 +61,15 @@ function getLegacyEventType(
     return NotificationEventType.WATCHING_UPDATE_FAILED;
   }
   return null;
+}
+
+function getNotificationUserId(
+  notification: NotificationEvent | NotificationPayload,
+): string | undefined {
+  return (
+    (notification as NotificationPayload).targetUser ??
+    (notification as NotificationEvent).userId
+  );
 }
 
 export class NotificationSettingsService implements NotificationManagerSettingsService {
@@ -147,7 +157,9 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
     const settings = await this.repository.getForUser(message.userId);
     if (!settings.notificationCenterEnabled) return false;
 
-    const eventType = getLegacyEventType(message.type);
+    const eventType = getLegacyEventType(
+      message.type as NotificationMessageType,
+    );
     if (!eventType) return true;
     return settings.channels.some(
       (channel) =>
@@ -156,14 +168,15 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
   }
 
   async getSubscribedChannelConfigs(
-    event: NotificationEvent,
+    notification: NotificationEvent | NotificationPayload,
   ): Promise<UserNotificationChannelConfig[]> {
-    if (!event.userId) return [];
-    const settings = await this.repository.getForUser(event.userId);
+    const userId = getNotificationUserId(notification);
+    if (!userId) return [];
+    const settings = await this.repository.getForUser(userId);
     if (!settings.notificationCenterEnabled) return [];
     return settings.channels.filter(
       (channel) =>
-        channel.enabled && channel.subscribedEvents.includes(event.type),
+        channel.enabled && channel.subscribedEvents.includes(notification.type),
     );
   }
 
