@@ -7,6 +7,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { updateCheckRuntime } from '@/lib/scheduler/update-check-runtime';
+import { DEFAULT_TRIGGER_LINK_ACCESS_CONTROL } from '@/lib/trigger-link-access-control-service';
 import { resolveUserWatchingUpdateConfig } from '@/lib/user-watching-update-config-resolver';
 import {
   userWatchingUpdateConfigService,
@@ -27,6 +28,33 @@ const patchSchema = z
     timezone: z.string().optional(),
     allowCustomSchedule: z.boolean().optional(),
     allowTriggerLink: z.boolean().optional(),
+    triggerLinkAccessControl: z
+      .object({
+        enabled: z.boolean().optional(),
+        ipLimit: z
+          .object({
+            enabled: z.boolean().optional(),
+            windowMinutes: z.number().int().positive().optional(),
+            maxAttempts: z.number().int().positive().optional(),
+            blockMinutes: z.number().int().positive().optional(),
+          })
+          .optional(),
+        userLimit: z
+          .object({
+            enabled: z.boolean().optional(),
+            windowMinutes: z.number().int().positive().optional(),
+            maxAttempts: z.number().int().positive().optional(),
+          })
+          .optional(),
+        autoDisable: z
+          .object({
+            enabled: z.boolean().optional(),
+            violationThreshold: z.number().int().positive().optional(),
+            violationWindowMinutes: z.number().int().positive().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   })
   .strict();
 
@@ -114,6 +142,9 @@ function buildConfigResponse(
           timezone: userConfig.timezone,
         }
       : null,
+    triggerLinkAccessControl:
+      userConfig?.triggerLinkAccessControl ??
+      DEFAULT_TRIGGER_LINK_ACCESS_CONTROL,
     effective: {
       enabled: resolved.enabled,
       cronExpression: resolved.cronExpression,
@@ -123,7 +154,8 @@ function buildConfigResponse(
     audit: {
       updatedAt:
         userConfig?.updatedAt ?? user.updateCheckPermissionUpdatedAt ?? null,
-      operator: userConfig?.operator ?? user.updateCheckPermissionOperator ?? null,
+      operator:
+        userConfig?.operator ?? user.updateCheckPermissionOperator ?? null,
     },
   };
 }
@@ -175,6 +207,7 @@ function mapServiceError(error: unknown, operation: string) {
       error.message === 'INVALID_CRON_EXPRESSION' ||
       error.message === 'INVALID_TIMEZONE' ||
       error.message === 'INVALID_LOG_RETENTION_COUNT' ||
+      error.message === 'INVALID_TRIGGER_LINK_ACCESS_CONTROL' ||
       error.message === 'UNSUPPORTED_USER_WATCHING_UPDATE_CONFIG_FIELD'
     ) {
       return errorResponse('Invalid user watching update config', 400);
@@ -236,6 +269,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ...(parsed.data.timezone !== undefined
         ? { timezone: parsed.data.timezone }
         : {}),
+      ...(parsed.data.triggerLinkAccessControl !== undefined
+        ? { triggerLinkAccessControl: parsed.data.triggerLinkAccessControl }
+        : {}),
     };
     const shouldUpdateUserConfig = Object.keys(configPatch).length > 0;
     if (shouldUpdateUserConfig) {
@@ -244,7 +280,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         configPatch,
       );
       clearConfigCache();
-      await updateCheckRuntime.reconcileUser(access.username);
+      if (
+        parsed.data.cronExpression !== undefined ||
+        parsed.data.timezone !== undefined
+      ) {
+        await updateCheckRuntime.reconcileUser(access.username);
+      }
     }
 
     const latestConfig = await getConfig();

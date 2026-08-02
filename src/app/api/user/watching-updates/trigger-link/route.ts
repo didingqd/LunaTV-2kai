@@ -58,6 +58,9 @@ function serializeTriggerLink(
   const tokenForUrl = plainToken ?? status.maskedToken;
   return {
     enabled: status.enabled,
+    disabledReason: status.disabledReason,
+    disabledAt: status.disabledAt,
+    disabledSource: status.disabledSource,
     createdAt: status.createdAt,
     rotatedAt: status.rotatedAt,
     expiresAt: status.expiresAt,
@@ -135,6 +138,20 @@ async function requireTriggerLinkPermission(request: NextRequest) {
   return access;
 }
 
+async function forbidSystemDisabledMutation(username: string) {
+  const status = await triggerTokenService.getStatus(username);
+  if (
+    status.hasToken &&
+    !status.enabled &&
+    status.disabledSource === 'system'
+  ) {
+    return {
+      response: errorResponse('Trigger Link disabled by system', 403),
+    };
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const access = await requireTriggerLinkPermission(request);
@@ -151,9 +168,12 @@ export async function POST(request: NextRequest) {
   try {
     const access = await requireTriggerLinkPermission(request);
     if ('response' in access) return access.response;
+    const blocked = await forbidSystemDisabledMutation(access.username);
+    if (blocked) return blocked.response;
 
     const parsed = postSchema.safeParse(await request.json().catch(() => ({})));
-    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
 
     const result = await triggerTokenService.createToken(access.username, {
       expiresAt: parsed.data.expiresAt,
@@ -169,9 +189,14 @@ export async function PATCH(request: NextRequest) {
   try {
     const access = await requireTriggerLinkPermission(request);
     if ('response' in access) return access.response;
+    const blocked = await forbidSystemDisabledMutation(access.username);
+    if (blocked) return blocked.response;
 
-    const parsed = patchSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+    const parsed = patchSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
 
     let result;
     if (parsed.data.action === 'rotate') {
@@ -202,11 +227,16 @@ export async function PUT(request: NextRequest) {
     const access = await requireTriggerLinkPermission(request);
     if ('response' in access) return access.response;
 
-    const parsed = revealSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+    const parsed = revealSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
 
     const result = await triggerTokenService.revealToken(access.username);
-    return jsonNoStore(serializeTriggerLink(request, result, result.plainToken));
+    return jsonNoStore(
+      serializeTriggerLink(request, result, result.plainToken),
+    );
   } catch (error) {
     return mapServiceError(error, 'reveal');
   }
@@ -216,11 +246,14 @@ export async function DELETE(request: NextRequest) {
   try {
     const access = await requireTriggerLinkPermission(request);
     if ('response' in access) return access.response;
+    const blocked = await forbidSystemDisabledMutation(access.username);
+    if (blocked) return blocked.response;
 
     const body = await request.text();
     if (body.trim()) {
       const parsed = z.object({}).strict().safeParse(JSON.parse(body));
-      if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+      if (!parsed.success)
+        return errorResponse('Invalid trigger link request', 400);
     }
 
     const result = await triggerTokenService.deleteToken(access.username);

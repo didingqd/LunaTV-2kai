@@ -13,6 +13,9 @@ import {
 
 export interface TriggerLinkStatus {
   enabled: boolean;
+  disabledReason: string | null;
+  disabledAt: number | null;
+  disabledSource: 'admin' | 'system' | 'user' | null;
   createdAt: number | null;
   rotatedAt: number | null;
   expiresAt: number | null;
@@ -84,7 +87,8 @@ function hasUserConfigOverride(config: UserWatchingUpdateConfig): boolean {
     config.cronExpression !== undefined ||
     config.timezone !== undefined ||
     config.logRetentionCount !== undefined ||
-    config.triggerLink !== undefined
+    config.triggerLink !== undefined ||
+    config.triggerLinkAccessControl !== undefined
   );
 }
 
@@ -97,13 +101,18 @@ function statusFromRecord(
   const hasToken = Boolean(record);
   return {
     enabled: hasToken ? record!.enabled : false,
+    disabledReason: record?.disabledReason ?? metadata?.disabledReason ?? null,
+    disabledAt: record?.disabledAt ?? metadata?.disabledAt ?? null,
+    disabledSource: record?.disabledSource ?? metadata?.disabledSource ?? null,
     createdAt: record?.createdAt ?? metadata?.createdAt ?? null,
     rotatedAt: record?.rotatedAt ?? metadata?.rotatedAt ?? null,
     expiresAt,
     hasToken,
     expired: typeof expiresAt === 'number' && expiresAt <= now,
     tokenId: record?.tokenId ?? metadata?.tokenId ?? null,
-    maskedToken: record?.plainToken ? maskTriggerToken(record.plainToken) : null,
+    maskedToken: record?.plainToken
+      ? maskTriggerToken(record.plainToken)
+      : null,
     canRevealToken: Boolean(record?.plainToken),
   };
 }
@@ -112,17 +121,20 @@ export class TriggerTokenService {
   constructor(
     private readonly tokenRepository: TriggerTokenRepositoryContract = triggerTokenRepository,
     private readonly configRepository: UserWatchingUpdateConfigRepositoryContract = userWatchingUpdateConfigRepository,
-    private readonly clock: TriggerTokenServiceClock = { now: () => Date.now() },
+    private readonly clock: TriggerTokenServiceClock = {
+      now: () => Date.now(),
+    },
   ) {}
 
   async getStatus(username: string): Promise<TriggerLinkStatus> {
-    const userConfig = await this.configRepository.getUserWatchingUpdateConfig(
-      username,
-    );
+    const userConfig =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
     const tokenId =
       userConfig?.triggerLink?.tokenId ??
       (await this.tokenRepository.getTokenIdForUser(username));
-    const record = tokenId ? await this.tokenRepository.getToken(tokenId) : null;
+    const record = tokenId
+      ? await this.tokenRepository.getToken(tokenId)
+      : null;
     return statusFromRecord(record, userConfig?.triggerLink, this.clock.now());
   }
 
@@ -180,15 +192,17 @@ export class TriggerTokenService {
       lookupHash: hashTriggerTokenSecret(toPlainToken(tokenId, secret)),
       plainToken: toPlainToken(tokenId, secret),
       enabled: true,
+      disabledReason: undefined,
+      disabledAt: undefined,
+      disabledSource: undefined,
       createdAt: now,
       rotatedAt: now,
       expiresAt: options.expiresAt ?? null,
       lastUsedAt: null,
     };
 
-    const current = await this.configRepository.getUserWatchingUpdateConfig(
-      username,
-    );
+    const current =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
     const currentTokenId = current?.triggerLink?.tokenId;
     if (currentTokenId && currentTokenId !== tokenId) {
       await this.tokenRepository.deleteToken(currentTokenId);
@@ -215,22 +229,41 @@ export class TriggerTokenService {
     const parsed = parseDottedPlainToken(trimmed);
     const tokenId = parsed ? parsed.tokenId : await this.createUniqueTokenId();
     const secret = parsed ? parsed.secret : trimmed;
+    const lookupHash = hashTriggerTokenSecret(trimmed);
+    if (parsed) {
+      const existing = await this.tokenRepository.getToken(tokenId);
+      if (existing && existing.userId !== username) {
+        throw new Error('TRIGGER_TOKEN_ID_COLLISION');
+      }
+    }
+    const existingLookupTokenId =
+      await this.tokenRepository.getTokenIdForLookupHash(lookupHash);
+    if (existingLookupTokenId && existingLookupTokenId !== tokenId) {
+      const existingLookupRecord = await this.tokenRepository.getToken(
+        existingLookupTokenId,
+      );
+      if (existingLookupRecord?.userId !== username) {
+        throw new Error('TRIGGER_TOKEN_ID_COLLISION');
+      }
+    }
     const record: TriggerTokenRecord = {
       tokenId,
       userId: username,
       secretHash: hashTriggerTokenSecret(secret),
-      lookupHash: hashTriggerTokenSecret(trimmed),
+      lookupHash,
       plainToken: trimmed,
       enabled: options.enabled ?? true,
+      disabledReason: undefined,
+      disabledAt: undefined,
+      disabledSource: undefined,
       createdAt: now,
       rotatedAt: now,
       expiresAt: options.expiresAt ?? null,
       lastUsedAt: null,
     };
 
-    const current = await this.configRepository.getUserWatchingUpdateConfig(
-      username,
-    );
+    const current =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
     const currentTokenId = current?.triggerLink?.tokenId;
     if (currentTokenId && currentTokenId !== tokenId) {
       await this.tokenRepository.deleteToken(currentTokenId);
@@ -255,6 +288,9 @@ export class TriggerTokenService {
       lookupHash: hashTriggerTokenSecret(plainToken),
       plainToken,
       enabled: true,
+      disabledReason: undefined,
+      disabledAt: undefined,
+      disabledSource: undefined,
       rotatedAt: now,
     });
     await this.saveMetadata(username, userConfig, updated);
@@ -276,13 +312,34 @@ export class TriggerTokenService {
   async setEnabled(
     username: string,
     enabled: boolean,
+    options: {
+      disabledReason?: string;
+      disabledAt?: number;
+      disabledSource?: 'admin' | 'system' | 'user';
+    } = {},
   ): Promise<TriggerLinkStatus> {
     const { record, userConfig } = await this.getCurrentRecord(username);
+    const disabledAt = options.disabledAt ?? this.clock.now();
     const updated = await this.tokenRepository.updateToken(record.tokenId, {
       enabled,
+      ...(enabled
+        ? {
+            disabledReason: undefined,
+            disabledAt: undefined,
+            disabledSource: undefined,
+          }
+        : {
+            disabledReason: options.disabledReason,
+            disabledAt,
+            disabledSource: options.disabledSource,
+          }),
     });
     await this.saveMetadata(username, userConfig, updated);
-    return statusFromRecord(updated, recordToMetadata(updated), this.clock.now());
+    return statusFromRecord(
+      updated,
+      recordToMetadata(updated),
+      this.clock.now(),
+    );
   }
 
   async setExpiresAt(
@@ -294,7 +351,11 @@ export class TriggerTokenService {
       expiresAt,
     });
     await this.saveMetadata(username, userConfig, updated);
-    return statusFromRecord(updated, recordToMetadata(updated), this.clock.now());
+    return statusFromRecord(
+      updated,
+      recordToMetadata(updated),
+      this.clock.now(),
+    );
   }
 
   async expireToken(username: string): Promise<TriggerLinkStatus> {
@@ -302,9 +363,8 @@ export class TriggerTokenService {
   }
 
   async deleteToken(username: string): Promise<TriggerLinkStatus> {
-    const userConfig = await this.configRepository.getUserWatchingUpdateConfig(
-      username,
-    );
+    const userConfig =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
     if (userConfig?.triggerLink?.tokenId) {
       await this.tokenRepository.deleteToken(userConfig.triggerLink.tokenId);
     }
@@ -312,6 +372,9 @@ export class TriggerTokenService {
     await this.clearMetadata(username, userConfig);
     return {
       enabled: false,
+      disabledReason: null,
+      disabledAt: null,
+      disabledSource: null,
       createdAt: null,
       rotatedAt: null,
       expiresAt: null,
@@ -335,13 +398,14 @@ export class TriggerTokenService {
     record: TriggerTokenRecord;
     userConfig: UserWatchingUpdateConfig | null;
   }> {
-    const userConfig = await this.configRepository.getUserWatchingUpdateConfig(
-      username,
-    );
+    const userConfig =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
     const tokenId =
       userConfig?.triggerLink?.tokenId ??
       (await this.tokenRepository.getTokenIdForUser(username));
-    const record = tokenId ? await this.tokenRepository.getToken(tokenId) : null;
+    const record = tokenId
+      ? await this.tokenRepository.getToken(tokenId)
+      : null;
     if (!record) throw new Error('TRIGGER_TOKEN_NOT_FOUND');
     if (record.userId !== username) throw new Error('TRIGGER_TOKEN_NOT_FOUND');
     return { record, userConfig };
@@ -383,6 +447,15 @@ function recordToMetadata(record: TriggerTokenRecord) {
     createdAt: record.createdAt,
     rotatedAt: record.rotatedAt,
     expiresAt: record.expiresAt ?? undefined,
+    ...(record.disabledReason !== undefined
+      ? { disabledReason: record.disabledReason }
+      : {}),
+    ...(record.disabledAt !== undefined
+      ? { disabledAt: record.disabledAt }
+      : {}),
+    ...(record.disabledSource !== undefined
+      ? { disabledSource: record.disabledSource }
+      : {}),
   };
 }
 

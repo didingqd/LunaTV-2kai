@@ -20,6 +20,28 @@ export interface UserWatchingUpdateConfig {
     createdAt?: number;
     rotatedAt?: number;
     expiresAt?: number;
+    disabledReason?: string;
+    disabledAt?: number;
+    disabledSource?: 'admin' | 'system' | 'user';
+  };
+  triggerLinkAccessControl?: {
+    enabled?: boolean;
+    ipLimit?: {
+      enabled?: boolean;
+      windowMinutes?: number;
+      maxAttempts?: number;
+      blockMinutes?: number;
+    };
+    userLimit?: {
+      enabled?: boolean;
+      windowMinutes?: number;
+      maxAttempts?: number;
+    };
+    autoDisable?: {
+      enabled?: boolean;
+      violationThreshold?: number;
+      violationWindowMinutes?: number;
+    };
   };
   updatedAt?: number;
   operator?: string;

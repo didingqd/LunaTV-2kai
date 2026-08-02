@@ -136,6 +136,25 @@ describe('user watching update config Management API', () => {
         cron: 'user',
         timezone: 'user',
       },
+      triggerLinkAccessControl: {
+        enabled: true,
+        ipLimit: {
+          enabled: true,
+          windowMinutes: 60,
+          maxAttempts: 5,
+          blockMinutes: 30,
+        },
+        userLimit: {
+          enabled: true,
+          windowMinutes: 1440,
+          maxAttempts: 20,
+        },
+        autoDisable: {
+          enabled: true,
+          violationThreshold: 3,
+          violationWindowMinutes: 60,
+        },
+      },
       audit: {
         updatedAt: 1000,
         operator: 'owner',
@@ -277,6 +296,38 @@ describe('user watching update config Management API', () => {
       timezone: 'Asia/Shanghai',
     });
     expect(reconcileUser).toHaveBeenCalledWith('alice');
+  });
+
+  it('saves trigger link access-control settings through the service', async () => {
+    const triggerLinkAccessControl = {
+      enabled: true,
+      ipLimit: {
+        enabled: true,
+        windowMinutes: 30,
+        maxAttempts: 3,
+        blockMinutes: 10,
+      },
+      userLimit: {
+        enabled: true,
+        windowMinutes: 60,
+        maxAttempts: 8,
+      },
+      autoDisable: {
+        enabled: true,
+        violationThreshold: 2,
+        violationWindowMinutes: 30,
+      },
+    };
+
+    const response = await patchUserConfig('alice', {
+      triggerLinkAccessControl,
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateUserConfigOverride).toHaveBeenCalledWith('alice', {
+      triggerLinkAccessControl,
+    });
+    expect(reconcileUser).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the service rejects an invalid cron expression', async () => {

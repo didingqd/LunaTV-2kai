@@ -393,9 +393,7 @@ describe('WatchingUpdateSettingsPage', () => {
 
     expect(await screen.findByText('链接状态')).toBeInTheDocument();
     expect(screen.getByText('toke****cret')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: '查看触发链接' }),
-    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
     expectTriggerRequest(fetchMock, 1);
   });
 

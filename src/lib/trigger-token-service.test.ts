@@ -42,7 +42,9 @@ class MemoryTokenRepository implements TriggerTokenRepositoryContract {
 
   async updateToken(
     tokenId: string,
-    patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
+    patch: Partial<
+      Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>
+    >,
   ): Promise<TriggerTokenRecord> {
     const current = this.tokens.get(tokenId);
     if (!current) throw new Error('TRIGGER_TOKEN_NOT_FOUND');
@@ -71,7 +73,12 @@ class MemoryConfigRepository implements UserWatchingUpdateConfigRepositoryContra
     username: string,
   ): Promise<UserWatchingUpdateConfig | null> {
     const config = this.configs.get(username);
-    return config ? { ...config, triggerLink: config.triggerLink && { ...config.triggerLink } } : null;
+    return config
+      ? {
+          ...config,
+          triggerLink: config.triggerLink && { ...config.triggerLink },
+        }
+      : null;
   }
 
   async updateUserWatchingUpdateConfig(
@@ -136,7 +143,9 @@ describe('TriggerTokenService', () => {
       enabled: true,
     });
     expect(stored?.secretHash).not.toBe(secret);
-    expect(JSON.stringify(configRepository.configs.get('alice'))).not.toContain(secret);
+    expect(JSON.stringify(configRepository.configs.get('alice'))).not.toContain(
+      secret,
+    );
     expect(configRepository.configs.get('alice')?.triggerLink).toEqual({
       enabled: true,
       tokenId,
@@ -159,6 +168,9 @@ describe('TriggerTokenService', () => {
       expiresAt: null,
       hasToken: true,
       expired: false,
+      disabledReason: null,
+      disabledAt: null,
+      disabledSource: null,
       tokenId: expect.any(String),
       maskedToken: expect.stringContaining('****'),
       canRevealToken: true,
@@ -264,7 +276,9 @@ describe('TriggerTokenService', () => {
     await service.deleteToken('alice');
 
     await expect(tokenRepository.getToken(tokenId)).resolves.toBeNull();
-    await expect(tokenRepository.getTokenIdForUser('alice')).resolves.toBeNull();
+    await expect(
+      tokenRepository.getTokenIdForUser('alice'),
+    ).resolves.toBeNull();
     expect(configRepository.configs.has('alice')).toBe(false);
   });
 
@@ -296,6 +310,9 @@ describe('TriggerTokenService', () => {
       expiresAt: null,
       hasToken: false,
       expired: false,
+      disabledReason: null,
+      disabledAt: null,
+      disabledSource: null,
       tokenId: null,
       maskedToken: null,
       canRevealToken: false,
@@ -323,5 +340,24 @@ describe('TriggerTokenService', () => {
     await expect(service.verify('wrong-token')).rejects.toThrow(
       'TRIGGER_TOKEN_INVALID',
     );
+  });
+
+  it('does not let a manual dotted token overwrite another user token id', async () => {
+    const { service } = createService();
+    const created = await service.createToken('alice');
+
+    await expect(service.setToken('bob', created.plainToken)).rejects.toThrow(
+      'TRIGGER_TOKEN_ID_COLLISION',
+    );
+  });
+
+  it('does not let users share the same manual token value', async () => {
+    const { service } = createService();
+
+    await service.setToken('alice', 'shared-custom-token');
+
+    await expect(
+      service.setToken('bob', 'shared-custom-token'),
+    ).rejects.toThrow('TRIGGER_TOKEN_ID_COLLISION');
   });
 });

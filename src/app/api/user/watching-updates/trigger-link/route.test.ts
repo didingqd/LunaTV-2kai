@@ -60,11 +60,18 @@ describe('user watching updates trigger link API', () => {
     loadConfig.mockResolvedValue(adminConfig());
     getStatus.mockResolvedValue(status);
     createToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
-    rotateToken.mockResolvedValue({ ...status, plainToken: 'token.new-secret' });
+    rotateToken.mockResolvedValue({
+      ...status,
+      plainToken: 'token.new-secret',
+    });
     revealToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     setEnabled.mockResolvedValue({ ...status, enabled: false });
     setExpiresAt.mockResolvedValue({ ...status, expiresAt: 5000 });
-    expireToken.mockResolvedValue({ ...status, expiresAt: 2000, expired: true });
+    expireToken.mockResolvedValue({
+      ...status,
+      expiresAt: 2000,
+      expired: true,
+    });
     deleteToken.mockResolvedValue({
       enabled: false,
       createdAt: null,
@@ -164,6 +171,21 @@ describe('user watching updates trigger link API', () => {
     expect(setEnabled).toHaveBeenCalledWith('alice', false);
   });
 
+  it('prevents users from re-enabling a system-disabled token', async () => {
+    getStatus.mockResolvedValue({
+      ...status,
+      enabled: false,
+      disabledReason: 'rate_limit_exceeded',
+      disabledAt: 2000,
+      disabledSource: 'system',
+    });
+
+    const response = await PATCH(request('PATCH', { enabled: true }));
+
+    expect(response.status).toBe(403);
+    expect(setEnabled).not.toHaveBeenCalled();
+  });
+
   it('sets and expires a token', async () => {
     const setResponse = await PATCH(request('PATCH', { expiresAt: 5000 }));
     const expireResponse = await PATCH(request('PATCH', { action: 'expire' }));
@@ -198,18 +220,16 @@ function adminConfig(
 ): AdminConfig {
   return {
     UserConfig: {
-      Users:
-        users ??
-        [
-          {
-            username: 'alice',
-            role: 'user',
-            updateCheckBackendEnabled: true,
-            allowCustomSchedule: true,
-            allowTriggerLink: true,
-            ...alice,
-          },
-        ],
+      Users: users ?? [
+        {
+          username: 'alice',
+          role: 'user',
+          updateCheckBackendEnabled: true,
+          allowCustomSchedule: true,
+          allowTriggerLink: true,
+          ...alice,
+        },
+      ],
     },
   } as AdminConfig;
 }

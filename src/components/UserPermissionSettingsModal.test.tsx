@@ -125,10 +125,15 @@ describe('UserPermissionSettingsModal', () => {
       .mockResolvedValueOnce(
         jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: false })),
       )
+      .mockResolvedValueOnce(jsonResponse(triggerLinkResponse()))
       .mockResolvedValueOnce(jsonResponse({ success: true }))
       .mockResolvedValueOnce(
         jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: true })),
-      );
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: true })),
+      )
+      .mockResolvedValueOnce(jsonResponse(triggerLinkResponse()));
 
     render(
       <UserPermissionSettingsModal
@@ -184,6 +189,51 @@ function watchingUpdateConfigResponse({
     sources: {
       cron: 'system',
       timezone: 'system',
+    },
+    triggerLinkAccessControl: {
+      enabled: true,
+      ipLimit: {
+        enabled: true,
+        windowMinutes: 60,
+        maxAttempts: 5,
+        blockMinutes: 30,
+      },
+      userLimit: {
+        enabled: true,
+        windowMinutes: 1440,
+        maxAttempts: 20,
+      },
+      autoDisable: {
+        enabled: true,
+        violationThreshold: 3,
+        violationWindowMinutes: 60,
+      },
+    },
+  };
+}
+
+function triggerLinkResponse() {
+  return {
+    username: user.username,
+    permission: {
+      allowTriggerLink: true,
+    },
+    triggerLink: {
+      enabled: true,
+      disabledReason: null,
+      disabledAt: null,
+      disabledSource: null,
+      createdAt: 1000,
+      rotatedAt: 1000,
+      expiresAt: null,
+      hasToken: true,
+      tokenConfigured: true,
+      expired: false,
+      tokenId: 'token-1',
+      maskedToken: 'toke****cret',
+      canRevealToken: true,
+      triggerLink:
+        'http://localhost/api/update-check-trigger?token=toke****cret',
     },
   };
 }

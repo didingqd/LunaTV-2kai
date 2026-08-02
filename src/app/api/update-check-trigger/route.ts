@@ -9,6 +9,7 @@ import {
   triggerTokenService,
   type TriggerTokenVerifyResult,
 } from '@/lib/trigger-token-service';
+import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
 
 export const runtime = 'nodejs';
@@ -98,6 +99,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const requestContext = getWatchingUpdateCheckLogRequestContext(
+    request,
+    verified.userId,
+    undefined,
+  );
+  const accessDecision = await triggerLinkAccessControlService.authorize({
+    tokenId: verified.tokenId,
+    userId: verified.userId,
+    ip: requestContext.request.client.ip,
+    userAgent: requestContext.request.client.userAgent,
+  });
+  if (!accessDecision.allowed) {
+    return noStoreJson(
+      {
+        success: false,
+        error: accessDecision.error,
+        ...(accessDecision.autoDisabled ? { triggerLinkDisabled: true } : {}),
+      },
+      accessDecision.status ?? 429,
+    );
+  }
+
   if (isStatusOnly(request)) {
     return noStoreJson(
       responseFromStatus(updateCheckJobRunner.getStatus(), false),
@@ -110,11 +133,7 @@ export async function GET(request: NextRequest) {
   }
 
   const triggerSource = requestedTriggerSource(request);
-  const logRequest = getWatchingUpdateCheckLogRequestContext(
-    request,
-    verified.userId,
-    undefined,
-  ).request;
+  const logRequest = requestContext.request;
   const status = updateCheckJobRunner.runInBackground({
     trigger: 'cron',
     triggerSource,

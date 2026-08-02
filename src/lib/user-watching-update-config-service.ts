@@ -19,7 +19,8 @@ import {
 export type UserWatchingUpdateConfigField =
   | 'cronExpression'
   | 'timezone'
-  | 'logRetentionCount';
+  | 'logRetentionCount'
+  | 'triggerLinkAccessControl';
 
 export type UserWatchingUpdateConfigPatch = Partial<
   Pick<UserWatchingUpdateConfig, UserWatchingUpdateConfigField>
@@ -29,7 +30,18 @@ const UPDATE_FIELDS = new Set<UserWatchingUpdateConfigField>([
   'cronExpression',
   'timezone',
   'logRetentionCount',
+  'triggerLinkAccessControl',
 ]);
+
+function normalizePositiveInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
 
 function hasOwn(value: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -77,6 +89,67 @@ function validatePatch(
     normalized.logRetentionCount = patch.logRetentionCount;
   }
 
+  if (hasOwn(patch, 'triggerLinkAccessControl')) {
+    const value = patch.triggerLinkAccessControl;
+    if (!value || typeof value !== 'object') {
+      throw new Error('INVALID_TRIGGER_LINK_ACCESS_CONTROL');
+    }
+    normalized.triggerLinkAccessControl = {
+      enabled: value.enabled !== false,
+      ipLimit: {
+        enabled: value.ipLimit?.enabled !== false,
+        windowMinutes: normalizePositiveInteger(
+          value.ipLimit?.windowMinutes,
+          60,
+          1,
+          7 * 24 * 60,
+        ),
+        maxAttempts: normalizePositiveInteger(
+          value.ipLimit?.maxAttempts,
+          5,
+          1,
+          100000,
+        ),
+        blockMinutes: normalizePositiveInteger(
+          value.ipLimit?.blockMinutes,
+          30,
+          1,
+          7 * 24 * 60,
+        ),
+      },
+      userLimit: {
+        enabled: value.userLimit?.enabled !== false,
+        windowMinutes: normalizePositiveInteger(
+          value.userLimit?.windowMinutes,
+          24 * 60,
+          1,
+          30 * 24 * 60,
+        ),
+        maxAttempts: normalizePositiveInteger(
+          value.userLimit?.maxAttempts,
+          20,
+          1,
+          100000,
+        ),
+      },
+      autoDisable: {
+        enabled: value.autoDisable?.enabled !== false,
+        violationThreshold: normalizePositiveInteger(
+          value.autoDisable?.violationThreshold,
+          3,
+          1,
+          100000,
+        ),
+        violationWindowMinutes: normalizePositiveInteger(
+          value.autoDisable?.violationWindowMinutes,
+          60,
+          1,
+          30 * 24 * 60,
+        ),
+      },
+    };
+  }
+
   return normalized;
 }
 
@@ -85,7 +158,8 @@ function hasUserOverride(config: UserWatchingUpdateConfig): boolean {
     config.cronExpression !== undefined ||
     config.timezone !== undefined ||
     config.logRetentionCount !== undefined ||
-    config.triggerLink !== undefined
+    config.triggerLink !== undefined ||
+    config.triggerLinkAccessControl !== undefined
   );
 }
 

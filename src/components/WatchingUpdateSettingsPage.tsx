@@ -358,9 +358,9 @@ export default function WatchingUpdateSettingsPage({
       if (!link) return;
 
       const response = await fetch(link, { cache: 'no-store' });
-      const data = (await response.json().catch(() => ({}))) as Partial<
-        TriggerTestResult
-      >;
+      const data = (await response
+        .json()
+        .catch(() => ({}))) as Partial<TriggerTestResult>;
       setTriggerTestResult({
         ok: response.ok,
         statusCode: response.status,

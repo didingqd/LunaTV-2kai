@@ -5,6 +5,7 @@ import type { AdminConfig } from '@/lib/admin.types';
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
+import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { triggerTokenService } from '@/lib/trigger-token-service';
 
 export const runtime = 'nodejs';
@@ -64,6 +65,9 @@ function serializeTriggerLink(
   const tokenForUrl = plainToken ?? status.maskedToken;
   return {
     enabled: status.enabled,
+    disabledReason: status.disabledReason,
+    disabledAt: status.disabledAt,
+    disabledSource: status.disabledSource,
     createdAt: status.createdAt,
     rotatedAt: status.rotatedAt,
     expiresAt: status.expiresAt,
@@ -125,6 +129,9 @@ function mapServiceError(error: unknown, operation: string) {
         409,
       );
     }
+    if (error.message === 'TRIGGER_TOKEN_ID_COLLISION') {
+      return errorResponse('Trigger token id already exists', 409);
+    }
   }
 
   console.error(`Failed to ${operation} admin trigger link token`, error);
@@ -155,13 +162,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const parsed = patchSchema.safeParse(
       await request.json().catch(() => null),
     );
-    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
 
     let status;
     if (parsed.data.token !== undefined) {
-      status = await triggerTokenService.setToken(access.username, parsed.data.token, {
-        enabled: parsed.data.enabled,
-      });
+      status = await triggerTokenService.setToken(
+        access.username,
+        parsed.data.token,
+        {
+          enabled: parsed.data.enabled,
+        },
+      );
     } else if (parsed.data.action === 'generate') {
       status = await triggerTokenService.createToken(access.username);
       if (parsed.data.enabled === false) {
@@ -172,6 +184,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         access.username,
         parsed.data.enabled ?? false,
       );
+      if (parsed.data.enabled === true) {
+        await triggerLinkAccessControlService.clearUserState(access.username);
+      }
     }
 
     clearConfigCache();
@@ -195,8 +210,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const access = await authorizeTarget(request, context);
     if ('response' in access) return access.response;
 
-    const parsed = revealSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+    const parsed = revealSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
 
     const result = await triggerTokenService.revealToken(access.username);
     return jsonNoStore({

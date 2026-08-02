@@ -7,6 +7,9 @@ export interface TriggerTokenRecord {
   lookupHash?: string;
   plainToken?: string;
   enabled: boolean;
+  disabledReason?: string;
+  disabledAt?: number;
+  disabledSource?: 'admin' | 'system' | 'user';
   createdAt: number;
   rotatedAt: number;
   expiresAt: number | null;
@@ -26,7 +29,9 @@ export interface TriggerTokenRepositoryContract {
   getTokenIdForLookupHash(lookupHash: string): Promise<string | null>;
   updateToken(
     tokenId: string,
-    patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
+    patch: Partial<
+      Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>
+    >,
   ): Promise<TriggerTokenRecord>;
   deleteToken(tokenId: string): Promise<void>;
   deleteTokenForUser(userId: string): Promise<void>;
@@ -59,9 +64,19 @@ function isTokenRecord(value: unknown): value is TriggerTokenRecord {
     typeof record.tokenId === 'string' &&
     typeof record.userId === 'string' &&
     typeof record.secretHash === 'string' &&
-    (record.lookupHash === undefined || typeof record.lookupHash === 'string') &&
-    (record.plainToken === undefined || typeof record.plainToken === 'string') &&
+    (record.lookupHash === undefined ||
+      typeof record.lookupHash === 'string') &&
+    (record.plainToken === undefined ||
+      typeof record.plainToken === 'string') &&
     typeof record.enabled === 'boolean' &&
+    (record.disabledReason === undefined ||
+      typeof record.disabledReason === 'string') &&
+    (record.disabledAt === undefined ||
+      typeof record.disabledAt === 'number') &&
+    (record.disabledSource === undefined ||
+      record.disabledSource === 'admin' ||
+      record.disabledSource === 'system' ||
+      record.disabledSource === 'user') &&
     typeof record.createdAt === 'number' &&
     typeof record.rotatedAt === 'number' &&
     (typeof record.expiresAt === 'number' || record.expiresAt === null) &&
@@ -112,7 +127,9 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
 
   async updateToken(
     tokenId: string,
-    patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
+    patch: Partial<
+      Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>
+    >,
   ): Promise<TriggerTokenRecord> {
     return this.enqueueWrite(async () => {
       const current = await this.getToken(tokenId);

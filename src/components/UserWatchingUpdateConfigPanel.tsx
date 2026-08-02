@@ -23,6 +23,26 @@ type ConfigField = 'cronExpression' | 'timezone';
 type ConfigSource = 'user' | 'system' | 'default';
 type PanelMode = 'standalone' | 'admin-management';
 
+interface TriggerLinkAccessControlConfig {
+  enabled: boolean;
+  ipLimit: {
+    enabled: boolean;
+    windowMinutes: number;
+    maxAttempts: number;
+    blockMinutes: number;
+  };
+  userLimit: {
+    enabled: boolean;
+    windowMinutes: number;
+    maxAttempts: number;
+  };
+  autoDisable: {
+    enabled: boolean;
+    violationThreshold: number;
+    violationWindowMinutes: number;
+  };
+}
+
 interface UserWatchingUpdateConfigResponse {
   username: string;
   permission: {
@@ -47,6 +67,7 @@ interface UserWatchingUpdateConfigResponse {
     updatedAt?: number | null;
     operator?: string | null;
   };
+  triggerLinkAccessControl: TriggerLinkAccessControlConfig;
 }
 
 interface AdminTriggerLinkResponse {
@@ -56,6 +77,9 @@ interface AdminTriggerLinkResponse {
   };
   triggerLink: {
     enabled: boolean;
+    disabledReason: string | null;
+    disabledAt: number | null;
+    disabledSource: 'admin' | 'system' | 'user' | null;
     createdAt: number | null;
     rotatedAt: number | null;
     expiresAt: number | null;
@@ -102,6 +126,30 @@ const SOURCE_LABELS: Record<ConfigSource, string> = {
   default: '默认值',
 };
 
+const DEFAULT_TRIGGER_LINK_ACCESS_CONTROL: TriggerLinkAccessControlConfig = {
+  enabled: true,
+  ipLimit: {
+    enabled: true,
+    windowMinutes: 60,
+    maxAttempts: 5,
+    blockMinutes: 30,
+  },
+  userLimit: {
+    enabled: true,
+    windowMinutes: 24 * 60,
+    maxAttempts: 20,
+  },
+  autoDisable: {
+    enabled: true,
+    violationThreshold: 3,
+    violationWindowMinutes: 60,
+  },
+};
+
+const DISABLED_REASON_LABELS: Record<string, string> = {
+  rate_limit_exceeded: '访问频率异常',
+};
+
 async function readResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -140,14 +188,19 @@ export default function UserWatchingUpdateConfigPanel({
   const [cronExpression, setCronExpression] = useState('*/30 * * * *');
   const [timezoneMode, setTimezoneMode] = useState<ConfigMode>('inherit');
   const [timezone, setTimezone] = useState('UTC');
+  const [accessControl, setAccessControl] =
+    useState<TriggerLinkAccessControlConfig>(
+      DEFAULT_TRIGGER_LINK_ACCESS_CONTROL,
+    );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [triggerLink, setTriggerLink] =
-    useState<AdminTriggerLinkResponse['triggerLink'] | null>(null);
+  const [triggerLink, setTriggerLink] = useState<
+    AdminTriggerLinkResponse['triggerLink'] | null
+  >(null);
   const [triggerLoading, setTriggerLoading] = useState(false);
   const [triggerSaving, setTriggerSaving] = useState<
     'enabled' | 'reveal' | 'manual' | 'generate' | null
@@ -174,6 +227,9 @@ export default function UserWatchingUpdateConfigPanel({
         next.userConfig?.timezone === undefined ? 'inherit' : 'custom',
       );
       setTimezone(next.userConfig?.timezone ?? next.effective.timezone);
+      setAccessControl(
+        next.triggerLinkAccessControl ?? DEFAULT_TRIGGER_LINK_ACCESS_CONTROL,
+      );
     },
     [],
   );
@@ -191,9 +247,7 @@ export default function UserWatchingUpdateConfigPanel({
       setMessage({
         type: 'error',
         text:
-          error instanceof Error
-            ? error.message
-            : '触发链接 Token 加载失败',
+          error instanceof Error ? error.message : '触发链接 Token 加载失败',
       });
     } finally {
       setTriggerLoading(false);
@@ -217,10 +271,7 @@ export default function UserWatchingUpdateConfigPanel({
         if (requestId === requestSequence.current) {
           setMessage({
             type: 'error',
-            text:
-              error instanceof Error
-                ? error.message
-                : '追更配置加载失败',
+            text: error instanceof Error ? error.message : '追更配置加载失败',
           });
         }
       } finally {
@@ -297,6 +348,7 @@ export default function UserWatchingUpdateConfigPanel({
         body: JSON.stringify({
           allowCustomSchedule,
           allowTriggerLink,
+          triggerLinkAccessControl: accessControl,
           ...(cronMode === 'custom' ? { cronExpression } : {}),
           ...(timezoneMode === 'custom' ? { timezone } : {}),
         }),
@@ -317,10 +369,7 @@ export default function UserWatchingUpdateConfigPanel({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : '追更系统设置保存失败',
+        text: error instanceof Error ? error.message : '追更系统设置保存失败',
       });
     } finally {
       setSaving(false);
@@ -344,8 +393,7 @@ export default function UserWatchingUpdateConfigPanel({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : '恢复系统配置失败',
+        text: error instanceof Error ? error.message : '恢复系统配置失败',
       });
     } finally {
       setSaving(false);
@@ -373,9 +421,7 @@ export default function UserWatchingUpdateConfigPanel({
       setMessage({
         type: 'error',
         text:
-          error instanceof Error
-            ? error.message
-            : '触发链接 Token 更新失败',
+          error instanceof Error ? error.message : '触发链接 Token 更新失败',
       });
     } finally {
       setTriggerSaving(null);
@@ -398,9 +444,7 @@ export default function UserWatchingUpdateConfigPanel({
       setMessage({
         type: 'error',
         text:
-          error instanceof Error
-            ? error.message
-            : '触发链接 Token 查看失败',
+          error instanceof Error ? error.message : '触发链接 Token 查看失败',
       });
     } finally {
       setTriggerSaving(null);
@@ -417,6 +461,24 @@ export default function UserWatchingUpdateConfigPanel({
       token,
       enabled: triggerLink?.enabled ?? true,
     });
+  };
+
+  const updateAccessControl = (
+    patch: Partial<TriggerLinkAccessControlConfig>,
+  ) => {
+    setAccessControl((current) => ({ ...current, ...patch }));
+  };
+
+  const updateAccessControlGroup = <
+    T extends keyof Omit<TriggerLinkAccessControlConfig, 'enabled'>,
+  >(
+    group: T,
+    patch: Partial<TriggerLinkAccessControlConfig[T]>,
+  ) => {
+    setAccessControl((current) => ({
+      ...current,
+      [group]: { ...current[group], ...patch },
+    }));
   };
 
   if (loading) {
@@ -448,9 +510,7 @@ export default function UserWatchingUpdateConfigPanel({
         <SectionHeading icon='shield' title='追更权限' />
         <div className='flex flex-wrap items-center justify-between gap-4'>
           <div className='text-sm text-gray-600 dark:text-gray-400'>
-            <p>
-              授权状态：{displayedPermission ? '已启用' : '已禁用'}
-            </p>
+            <p>授权状态：{displayedPermission ? '已启用' : '已禁用'}</p>
             <p>生效状态：{config.effective.enabled ? '已启用' : '已禁用'}</p>
             <p>操作人：{config.audit?.operator ?? '-'}</p>
           </div>
@@ -517,6 +577,19 @@ export default function UserWatchingUpdateConfigPanel({
             label='最后修改'
             value={formatTimestamp(triggerLink?.rotatedAt)}
           />
+          <TokenStatusItem
+            label='关闭原因'
+            value={
+              triggerLink?.disabledReason
+                ? (DISABLED_REASON_LABELS[triggerLink.disabledReason] ??
+                  triggerLink.disabledReason)
+                : '-'
+            }
+          />
+          <TokenStatusItem
+            label='关闭时间'
+            value={formatTimestamp(triggerLink?.disabledAt)}
+          />
         </div>
 
         <div className='flex flex-wrap gap-2'>
@@ -556,7 +629,9 @@ export default function UserWatchingUpdateConfigPanel({
           <button
             type='button'
             disabled={triggerLoading || triggerSaving !== null}
-            onClick={() => void updateTriggerLink('generate', { action: 'generate' })}
+            onClick={() =>
+              void updateTriggerLink('generate', { action: 'generate' })
+            }
             className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
           >
             <RefreshCw className='h-4 w-4' />
@@ -604,6 +679,148 @@ export default function UserWatchingUpdateConfigPanel({
         </div>
       </section>
 
+      <section className='space-y-4 border-b border-gray-200 pb-5 dark:border-gray-700'>
+        <SectionHeading icon='shield' title='触发链接限制' />
+        <SwitchRow
+          label='总限制开关'
+          description='关闭后不执行 IP、用户访问次数和自动关闭检查。'
+          checked={accessControl.enabled}
+          disabled={saving}
+          onChange={() =>
+            updateAccessControl({ enabled: !accessControl.enabled })
+          }
+        />
+
+        <div className='grid gap-3 lg:grid-cols-3'>
+          <div className='space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700'>
+            <Switch
+              label='IP访问限制'
+              checked={accessControl.ipLimit.enabled}
+              disabled={saving || !accessControl.enabled}
+              onChange={() =>
+                updateAccessControlGroup('ipLimit', {
+                  enabled: !accessControl.ipLimit.enabled,
+                })
+              }
+            />
+            <div>
+              <h4 className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                IP访问限制
+              </h4>
+              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                超过次数后拒绝请求并临时封禁 IP。
+              </p>
+            </div>
+            <NumberField
+              label='时间窗口（分钟）'
+              value={accessControl.ipLimit.windowMinutes}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('ipLimit', {
+                  windowMinutes: value,
+                })
+              }
+            />
+            <NumberField
+              label='最大访问次数'
+              value={accessControl.ipLimit.maxAttempts}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('ipLimit', { maxAttempts: value })
+              }
+            />
+            <NumberField
+              label='IP封禁时间（分钟）'
+              value={accessControl.ipLimit.blockMinutes}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('ipLimit', { blockMinutes: value })
+              }
+            />
+          </div>
+
+          <div className='space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700'>
+            <Switch
+              label='用户访问限制'
+              checked={accessControl.userLimit.enabled}
+              disabled={saving || !accessControl.enabled}
+              onChange={() =>
+                updateAccessControlGroup('userLimit', {
+                  enabled: !accessControl.userLimit.enabled,
+                })
+              }
+            />
+            <div>
+              <h4 className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                用户访问限制
+              </h4>
+              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                基于 Token 对应用户统计访问次数。
+              </p>
+            </div>
+            <NumberField
+              label='时间窗口（分钟）'
+              value={accessControl.userLimit.windowMinutes}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('userLimit', {
+                  windowMinutes: value,
+                })
+              }
+            />
+            <NumberField
+              label='最大访问次数'
+              value={accessControl.userLimit.maxAttempts}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('userLimit', { maxAttempts: value })
+              }
+            />
+          </div>
+
+          <div className='space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700'>
+            <Switch
+              label='自动关闭策略'
+              checked={accessControl.autoDisable.enabled}
+              disabled={saving || !accessControl.enabled}
+              onChange={() =>
+                updateAccessControlGroup('autoDisable', {
+                  enabled: !accessControl.autoDisable.enabled,
+                })
+              }
+            />
+            <div>
+              <h4 className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                自动关闭策略
+              </h4>
+              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                违规达到阈值后关闭该用户触发链接。
+              </p>
+            </div>
+            <NumberField
+              label='违规次数阈值'
+              value={accessControl.autoDisable.violationThreshold}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('autoDisable', {
+                  violationThreshold: value,
+                })
+              }
+            />
+            <NumberField
+              label='违规统计周期（分钟）'
+              value={accessControl.autoDisable.violationWindowMinutes}
+              disabled={saving || !accessControl.enabled}
+              onChange={(value) =>
+                updateAccessControlGroup('autoDisable', {
+                  violationWindowMinutes: value,
+                })
+              }
+            />
+          </div>
+        </div>
+      </section>
+
       <section className='space-y-0'>
         <SectionHeading icon='sliders' title='用户配置管理' />
         <StrategySection
@@ -630,7 +847,8 @@ export default function UserWatchingUpdateConfigPanel({
                       : ''
                   }
                   onChange={(event) => {
-                    if (event.target.value) setCronExpression(event.target.value);
+                    if (event.target.value)
+                      setCronExpression(event.target.value);
                   }}
                   className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
                 >
@@ -765,7 +983,11 @@ function SectionHeading({
   title: string;
 }) {
   const Icon =
-    icon === 'shield' ? ShieldCheck : icon === 'key' ? KeyRound : SlidersHorizontal;
+    icon === 'shield'
+      ? ShieldCheck
+      : icon === 'key'
+        ? KeyRound
+        : SlidersHorizontal;
   return (
     <div className='flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100'>
       <Icon className='h-4 w-4 text-blue-600 dark:text-blue-400' />
@@ -794,6 +1016,36 @@ function TokenStatusItem({
         {value}
       </div>
     </div>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className='block'>
+      <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
+        {label}
+      </span>
+      <input
+        type='number'
+        min={1}
+        value={value}
+        disabled={disabled}
+        onChange={(event) =>
+          onChange(Math.max(1, Number.parseInt(event.target.value, 10) || 1))
+        }
+        className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+      />
+    </label>
   );
 }
 

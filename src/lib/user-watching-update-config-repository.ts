@@ -25,6 +25,26 @@ function copyUserWatchingUpdateConfig(
     ...(config.triggerLink
       ? { triggerLink: { ...config.triggerLink } }
       : undefined),
+    ...(config.triggerLinkAccessControl
+      ? {
+          triggerLinkAccessControl: {
+            ...config.triggerLinkAccessControl,
+            ...(config.triggerLinkAccessControl.ipLimit
+              ? { ipLimit: { ...config.triggerLinkAccessControl.ipLimit } }
+              : undefined),
+            ...(config.triggerLinkAccessControl.userLimit
+              ? { userLimit: { ...config.triggerLinkAccessControl.userLimit } }
+              : undefined),
+            ...(config.triggerLinkAccessControl.autoDisable
+              ? {
+                  autoDisable: {
+                    ...config.triggerLinkAccessControl.autoDisable,
+                  },
+                }
+              : undefined),
+          },
+        }
+      : undefined),
   };
 }
 

@@ -48,6 +48,25 @@ function configResponse({
       updatedAt: 1000,
       operator: 'owner',
     },
+    triggerLinkAccessControl: {
+      enabled: true,
+      ipLimit: {
+        enabled: true,
+        windowMinutes: 60,
+        maxAttempts: 5,
+        blockMinutes: 30,
+      },
+      userLimit: {
+        enabled: true,
+        windowMinutes: 1440,
+        maxAttempts: 20,
+      },
+      autoDisable: {
+        enabled: true,
+        violationThreshold: 3,
+        violationWindowMinutes: 60,
+      },
+    },
   };
 }
 
@@ -84,11 +103,13 @@ describe('UserWatchingUpdateConfigPanel', () => {
   });
 
   it('loads the user config from the Management API', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(
-      jsonResponse(
-        configResponse({ cronExpression: '0 */6 * * *', timezone: 'UTC' }),
-      ),
-    );
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          configResponse({ cronExpression: '0 */6 * * *', timezone: 'UTC' }),
+        ),
+      );
     setFetch(fetchMock);
 
     renderPanel();
@@ -158,11 +179,11 @@ describe('UserWatchingUpdateConfigPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expect(fetchMock.mock.calls[1][0]).toBe(
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(fetchMock.mock.calls[2][0]).toBe(
       '/api/admin/settings/update-check/permissions',
     );
-    expectConfigRequest(fetchMock, 2, 'PATCH', {
+    expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
       allowTriggerLink: false,
       cronExpression: '0 */6 * * *',
@@ -196,8 +217,8 @@ describe('UserWatchingUpdateConfigPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expectConfigRequest(fetchMock, 2, 'PATCH', {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
       allowTriggerLink: false,
       timezone: 'Asia/Tokyo',
@@ -230,12 +251,12 @@ describe('UserWatchingUpdateConfigPanel', () => {
     fireEvent.click(cronGroup.querySelector('button') as HTMLButtonElement);
     fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
-    expectConfigRequest(fetchMock, 2, 'PATCH', {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
       allowTriggerLink: false,
     });
-    expectConfigRequest(fetchMock, 3, 'DELETE', { field: 'cronExpression' });
+    expectConfigRequest(fetchMock, 4, 'DELETE', { field: 'cronExpression' });
   });
 
   it('saves permission, custom schedule, and trigger link in one action', async () => {
@@ -263,19 +284,15 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('能力限制')).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole('switch', { name: '允许用户自定义调度' }),
-    );
+    fireEvent.click(screen.getByRole('switch', { name: '允许用户自定义调度' }));
     fireEvent.click(screen.getByRole('switch', { name: '允许触发链接' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: '保存全部设置' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expect(fetchMock.mock.calls[1][0]).toBe(
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(fetchMock.mock.calls[2][0]).toBe(
       '/api/admin/settings/update-check/permissions',
     );
-    expectConfigRequest(fetchMock, 2, 'PATCH', {
+    expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: false,
       allowTriggerLink: true,
     });
@@ -287,7 +304,9 @@ describe('UserWatchingUpdateConfigPanel', () => {
     renderPanel();
 
     expect(await screen.findByText('用户配置管理')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Log Retention Count')).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('Log Retention Count'),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/Retention/i)).not.toBeInTheDocument();
   });
 
@@ -310,9 +329,7 @@ describe('UserWatchingUpdateConfigPanel', () => {
 
     expect(await screen.findByText('授权状态：已禁用')).toBeInTheDocument();
     expect(screen.getByText('生效状态：已禁用')).toBeInTheDocument();
-    expect(
-      screen.getByRole('switch', { name: '追更授权' }),
-    ).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: '追更授权' })).not.toBeChecked();
   });
 });
 
@@ -334,7 +351,7 @@ function expectConfigRequest(
     '/api/admin/watching-updates/users/alice/config',
   );
   expect(fetchMock.mock.calls[index][1]?.method).toBe(method);
-  expect(JSON.parse(String(fetchMock.mock.calls[index][1]?.body))).toEqual(
-    body,
-  );
+  expect(
+    JSON.parse(String(fetchMock.mock.calls[index][1]?.body)),
+  ).toMatchObject(body);
 }

@@ -11,23 +11,34 @@ jest.mock('@/lib/scheduler/update-check-job-runner', () => ({
 jest.mock('@/lib/trigger-token-service', () => ({
   triggerTokenService: { verify: jest.fn() },
 }));
+jest.mock('@/lib/trigger-link-access-control-service', () => ({
+  triggerLinkAccessControlService: {
+    authorize: jest.fn(),
+  },
+}));
 jest.mock('@/lib/watching-update-check-log-request', () => ({
   getWatchingUpdateCheckLogRequestContext: jest.fn((_request, userId) => ({
     request: {
       method: 'GET',
       path: '/api/update-check-trigger',
       ...(userId ? { userId } : {}),
-      client: { platform: 'server' },
+      client: {
+        platform: 'server',
+        ip: '203.0.113.1',
+        userAgent: 'jest-agent',
+      },
     },
   })),
 }));
 
 import { updateCheckJobRunner } from '@/lib/scheduler/update-check-job-runner';
+import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { triggerTokenService } from '@/lib/trigger-token-service';
 import { GET } from './route';
 
 const getStatus = updateCheckJobRunner.getStatus as jest.Mock;
 const runInBackground = updateCheckJobRunner.runInBackground as jest.Mock;
+const authorizeAccess = triggerLinkAccessControlService.authorize as jest.Mock;
 const verifyToken = triggerTokenService.verify as jest.Mock;
 
 function request(
@@ -65,6 +76,7 @@ describe('GET /api/update-check-trigger', () => {
       userId: 'alice',
       lastUsedAt: 90,
     });
+    authorizeAccess.mockResolvedValue({ allowed: true });
   });
 
   it('starts the shared JobRunner in the background when idle', async () => {
@@ -90,7 +102,11 @@ describe('GET /api/update-check-trigger', () => {
           method: 'GET',
           path: '/api/update-check-trigger',
           userId: 'alice',
-          client: { platform: 'server' },
+          client: {
+            platform: 'server',
+            ip: '203.0.113.1',
+            userAgent: 'jest-agent',
+          },
           tokenId: 'token-1',
           requestedBy: 'alice',
           trigger: 'external_http',
@@ -127,6 +143,31 @@ describe('GET /api/update-check-trigger', () => {
 
     expect(verifyToken).toHaveBeenCalledWith('query.secret');
     expect(runInBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects access-control violations before triggering', async () => {
+    authorizeAccess.mockResolvedValue({
+      allowed: false,
+      error: 'ip_blocked',
+      status: 429,
+      autoDisabled: true,
+    });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(429);
+    expect(authorizeAccess).toHaveBeenCalledWith({
+      tokenId: 'token-1',
+      userId: 'alice',
+      ip: '203.0.113.1',
+      userAgent: 'jest-agent',
+    });
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'ip_blocked',
+      triggerLinkDisabled: true,
+    });
+    expect(runInBackground).not.toHaveBeenCalled();
   });
 
   it('rejects missing or invalid tokens without triggering', async () => {
