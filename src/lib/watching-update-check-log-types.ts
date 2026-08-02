@@ -44,6 +44,7 @@ export interface WatchingUpdateCheckLogRequest {
    * real users, while trigger/app callers can still be associated with userId.
    */
   requestedBy?: string;
+  tokenId?: string;
   trigger?: string;
   body?: unknown;
   client: WatchingUpdateCheckLogClient;
@@ -87,6 +88,7 @@ export interface WatchingUpdateCheckLogResult {
    */
   result?: unknown;
   trigger?: 'cron' | 'manual-trigger';
+  triggerSource?: string;
   checkedUsers?: string[];
   updatedUsers?: string[];
   failedUsers?: string[];

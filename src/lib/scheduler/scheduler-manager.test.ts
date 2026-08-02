@@ -77,7 +77,11 @@ describe('SchedulerManager', () => {
     now = 2_000;
     jest.advanceTimersByTime(1);
     await flushTimers();
-    expect(jobRunner.run).toHaveBeenCalledWith({ trigger: 'cron' });
+    expect(jobRunner.run).toHaveBeenCalledWith({
+      trigger: 'cron',
+      triggerSource: 'cron_docker',
+      requestedBy: 'docker',
+    });
   });
 
   it('stop clears the timer', async () => {
@@ -233,7 +237,8 @@ describe('SchedulerManager', () => {
         request: expect.objectContaining({
           method: 'SCHEDULED',
           path: 'scheduler://update-checks',
-          trigger: 'cron',
+          requestedBy: 'docker',
+          trigger: 'cron_docker',
         }),
         execution: expect.objectContaining({ stage: 'finished' }),
       }),

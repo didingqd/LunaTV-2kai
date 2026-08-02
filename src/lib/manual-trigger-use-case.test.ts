@@ -50,6 +50,7 @@ describe('ManualTriggerUseCase', () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith({
       trigger: 'manual',
+      triggerSource: 'manual',
       requestedBy: 'alice',
       audit: {
         source: 'trigger',
@@ -167,6 +168,7 @@ describe('ManualTriggerUseCase', () => {
 
     expect(run).toHaveBeenCalledWith({
       trigger: 'manual',
+      triggerSource: 'manual',
       requestedBy: 'alice',
       audit: {
         source: 'trigger',

@@ -134,7 +134,11 @@ export class SchedulerManager {
       if (await this.loadEnabled()) {
         const earliestNextCheckAt = await this.tasks.findEarliestNextCheckAt();
         if (earliestNextCheckAt !== null && earliestNextCheckAt <= this.now()) {
-          await this.jobRunner.run({ trigger: 'cron' });
+          await this.jobRunner.run({
+            trigger: 'cron',
+            triggerSource: 'cron_docker',
+            requestedBy: 'docker',
+          });
         }
       }
     } catch (error) {

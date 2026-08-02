@@ -19,6 +19,7 @@ jest.mock('@/lib/trigger-token-service', () => ({
     setEnabled: jest.fn(),
     setExpiresAt: jest.fn(),
     expireToken: jest.fn(),
+    revealToken: jest.fn(),
     deleteToken: jest.fn(),
   },
 }));
@@ -26,7 +27,7 @@ jest.mock('@/lib/trigger-token-service', () => ({
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { triggerTokenService } from '@/lib/trigger-token-service';
-import { DELETE, GET, PATCH, POST } from './route';
+import { DELETE, GET, PATCH, POST, PUT } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
 const loadConfig = getConfig as jest.Mock;
@@ -37,6 +38,7 @@ const rotateToken = triggerTokenService.rotateToken as jest.Mock;
 const setEnabled = triggerTokenService.setEnabled as jest.Mock;
 const setExpiresAt = triggerTokenService.setExpiresAt as jest.Mock;
 const expireToken = triggerTokenService.expireToken as jest.Mock;
+const revealToken = triggerTokenService.revealToken as jest.Mock;
 const deleteToken = triggerTokenService.deleteToken as jest.Mock;
 
 const status = {
@@ -46,6 +48,9 @@ const status = {
   expiresAt: null,
   hasToken: true,
   expired: false,
+  tokenId: 'token-1',
+  maskedToken: 'toke****cret',
+  canRevealToken: true,
 };
 
 describe('user watching updates trigger link API', () => {
@@ -56,6 +61,7 @@ describe('user watching updates trigger link API', () => {
     getStatus.mockResolvedValue(status);
     createToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     rotateToken.mockResolvedValue({ ...status, plainToken: 'token.new-secret' });
+    revealToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     setEnabled.mockResolvedValue({ ...status, enabled: false });
     setExpiresAt.mockResolvedValue({ ...status, expiresAt: 5000 });
     expireToken.mockResolvedValue({ ...status, expiresAt: 2000, expired: true });
@@ -101,19 +107,37 @@ describe('user watching updates trigger link API', () => {
     expect(response.status).toBe(200);
     expect(getStatus).toHaveBeenCalledWith('alice');
     const body = await response.json();
-    expect(body).toEqual(status);
+    expect(body).toMatchObject({
+      enabled: true,
+      hasToken: true,
+      tokenConfigured: true,
+      maskedToken: 'toke****cret',
+      triggerLink:
+        'http://localhost/api/update-check-trigger?token=toke****cret',
+    });
     expect(JSON.stringify(body)).not.toContain('secret');
     expect(JSON.stringify(body)).not.toContain('hash');
   });
 
-  it('creates a token and returns the plain token once', async () => {
+  it('creates a token without returning the plain token by default', async () => {
     const response = await POST(request('POST', { expiresAt: 5000 }));
 
     expect(response.status).toBe(200);
     expect(createToken).toHaveBeenCalledWith('alice', { expiresAt: 5000 });
     expect(clearCache).toHaveBeenCalled();
+    const body = await response.json();
+    expect(JSON.stringify(body)).not.toContain('token.secret');
+  });
+
+  it('reveals the full trigger link through a dedicated operation', async () => {
+    const response = await PUT(request('PUT', { action: 'reveal' }));
+
+    expect(response.status).toBe(200);
+    expect(revealToken).toHaveBeenCalledWith('alice');
     await expect(response.json()).resolves.toMatchObject({
-      plainToken: 'token.secret',
+      fullToken: 'token.secret',
+      fullTriggerLink:
+        'http://localhost/api/update-check-trigger?token=token.secret',
     });
   });
 
@@ -124,14 +148,13 @@ describe('user watching updates trigger link API', () => {
     expect(createToken).not.toHaveBeenCalled();
   });
 
-  it('rotates a token for the signed-in user', async () => {
+  it('rotates a token for the signed-in user without revealing it', async () => {
     const response = await PATCH(request('PATCH', { action: 'rotate' }));
 
     expect(response.status).toBe(200);
     expect(rotateToken).toHaveBeenCalledWith('alice');
-    await expect(response.json()).resolves.toMatchObject({
-      plainToken: 'token.new-secret',
-    });
+    const body = await response.json();
+    expect(JSON.stringify(body)).not.toContain('token.new-secret');
   });
 
   it('enables and disables a token', async () => {

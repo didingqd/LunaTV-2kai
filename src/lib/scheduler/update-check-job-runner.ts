@@ -26,6 +26,44 @@ import type {
 } from '@/lib/watching-update-check-log-types';
 
 export type UpdateCheckJobTrigger = 'cron' | 'manual' | 'trigger-link';
+export type UpdateCheckJobTriggerSource =
+  | 'cron_vercel'
+  | 'cron_docker'
+  | 'external_http'
+  | 'manual'
+  | 'admin';
+export type UpdateCheckJobStatusValue =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface UpdateCheckJobResultSummary {
+  inspected: number;
+  succeeded: number;
+  failed: number;
+  oldestDueAt: number | null;
+  dataSourceCount: number;
+  updateFoundCount: number;
+  notificationCount: number;
+  skipped: number;
+}
+
+export interface UpdateCheckJobStatusSnapshot {
+  taskId: string | null;
+  status: UpdateCheckJobStatusValue;
+  running: boolean;
+  trigger: UpdateCheckJobTrigger | null;
+  triggerSource: UpdateCheckJobTriggerSource | null;
+  tokenId?: string;
+  userId?: string;
+  requestedBy?: string;
+  startedAt: number | null;
+  finishedAt: number | null;
+  durationMs: number | null;
+  result: UpdateCheckJobResultSummary | null;
+  error?: string;
+}
 
 export interface UpdateCheckJobRunnerAuditOptions {
   source?: WatchingUpdateCheckLogSource;
@@ -36,6 +74,8 @@ export interface UpdateCheckJobRunnerAuditOptions {
 
 export interface UpdateCheckJobRunnerOptions {
   trigger: UpdateCheckJobTrigger;
+  triggerSource?: UpdateCheckJobTriggerSource;
+  tokenId?: string;
   requestedBy?: string;
   limit?: number;
   ignoreSchedule?: boolean;
@@ -74,6 +114,55 @@ interface CompletedAuditTask {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createTaskId(startedAt: number): string {
+  return `${startedAt}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function resolveTriggerSource(
+  options: UpdateCheckJobRunnerOptions,
+): UpdateCheckJobTriggerSource {
+  if (options.triggerSource) return options.triggerSource;
+  if (options.trigger === 'cron') return 'cron_docker';
+  return 'manual';
+}
+
+function summarizeSchedulerResult(
+  result: UpdateCheckSchedulerResult,
+): UpdateCheckJobResultSummary {
+  return {
+    inspected: result.inspected,
+    succeeded: result.succeeded,
+    failed: result.failed,
+    oldestDueAt: result.oldestDueAt,
+    dataSourceCount: result.dataSourceCount,
+    updateFoundCount: result.updateFoundCount,
+    notificationCount: result.notificationCount,
+    skipped: result.skipped,
+  };
+}
+
+function summarizeAuditProgress(
+  auditTasks: CompletedAuditTask[],
+): UpdateCheckJobResultSummary {
+  const completedResults = auditTasks.flatMap((item) =>
+    item.result ? [item.result] : [],
+  );
+  return {
+    inspected: auditTasks.length,
+    succeeded: completedResults.length,
+    failed: Math.max(0, auditTasks.length - completedResults.length),
+    oldestDueAt:
+      auditTasks.length > 0
+        ? Math.min(...auditTasks.map((item) => item.task.nextCheckAt))
+        : null,
+    dataSourceCount: new Set(auditTasks.map((item) => item.task.source)).size,
+    updateFoundCount: completedResults.filter((result) => result.hasUpdate)
+      .length,
+    notificationCount: 0,
+    skipped: 0,
+  };
 }
 
 function auditSourceForTrigger(
@@ -120,7 +209,7 @@ function createDefaultAuditRequest(
     path: defaultAuditPath(source),
     ...(userId ? { userId } : {}),
     ...(options.requestedBy ? { requestedBy: options.requestedBy } : {}),
-    trigger: options.trigger,
+    trigger: resolveTriggerSource(options),
     client: {
       platform: 'server',
       device: 'server',
@@ -174,7 +263,9 @@ function createAuditRequest(
     ...(options.audit.request.requestedBy || !options.requestedBy
       ? {}
       : { requestedBy: options.requestedBy }),
-    ...(options.audit.request.trigger ? {} : { trigger: options.trigger }),
+    ...(options.audit.request.trigger
+      ? {}
+      : { trigger: resolveTriggerSource(options) }),
   };
 }
 
@@ -200,6 +291,7 @@ function createExecutionResult(
   if (options.trigger === 'cron') {
     return {
       trigger: 'cron' as const,
+      triggerSource: resolveTriggerSource(options),
       checkedUsers,
       updatedUsers,
       failedUsers,
@@ -209,6 +301,7 @@ function createExecutionResult(
 
   return {
     trigger: 'manual-trigger' as const,
+    triggerSource: resolveTriggerSource(options),
     ...(options.requestedBy ? { username: options.requestedBy } : {}),
     result: result.schedulerResult,
   };
@@ -216,6 +309,17 @@ function createExecutionResult(
 
 export class UpdateCheckJobRunner {
   private running = false;
+  private status: UpdateCheckJobStatusSnapshot = {
+    taskId: null,
+    status: 'idle',
+    running: false,
+    trigger: null,
+    triggerSource: null,
+    startedAt: null,
+    finishedAt: null,
+    durationMs: null,
+    result: null,
+  };
 
   constructor(
     private readonly scheduler: UpdateCheckSchedulerRunner = updateCheckScheduler,
@@ -225,6 +329,25 @@ export class UpdateCheckJobRunner {
     private readonly config: UpdateCheckConfigReader = systemConfigRepository,
   ) {}
 
+  getStatus(): UpdateCheckJobStatusSnapshot {
+    return { ...this.status };
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  runInBackground(
+    options: UpdateCheckJobRunnerOptions,
+  ): UpdateCheckJobStatusSnapshot {
+    if (!this.running) {
+      void this.run(options).catch((error) => {
+        console.error('Update check background job failed', error);
+      });
+    }
+    return this.getStatus();
+  }
+
   async run(
     options: UpdateCheckJobRunnerOptions,
   ): Promise<UpdateCheckJobRunnerResult> {
@@ -233,6 +356,12 @@ export class UpdateCheckJobRunner {
     const onTaskComplete: UpdateCheckSchedulerOptions['onTaskComplete'] =
       async (value) => {
         auditTasks.push({ task: value.task, result: value.result });
+        if (this.status.status === 'running') {
+          this.status = {
+            ...this.status,
+            result: summarizeAuditProgress(auditTasks),
+          };
+        }
         await options.onTaskComplete?.(value);
       };
 
@@ -269,8 +398,28 @@ export class UpdateCheckJobRunner {
       return result;
     }
 
-    this.running = true;
     const startedAt = this.now();
+    const triggerSource = resolveTriggerSource(options);
+    const taskId = createTaskId(startedAt);
+    this.running = true;
+    this.status = {
+      taskId,
+      status: 'running',
+      running: true,
+      trigger: options.trigger,
+      triggerSource,
+      ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),
+      ...(options.requestedBy === undefined
+        ? {}
+        : { userId: options.requestedBy }),
+      ...(options.requestedBy === undefined
+        ? {}
+        : { requestedBy: options.requestedBy }),
+      startedAt,
+      finishedAt: null,
+      durationMs: null,
+      result: null,
+    };
     auditLogId = await this.recordAuditLog({
       options,
       stage: 'started',
@@ -324,14 +473,38 @@ export class UpdateCheckJobRunner {
       await this.dispatchSchedulerFailure(options, message, finishedAt);
     }
 
-    await this.recordAuditLog({
-      options,
-      stage: 'finished',
-      result,
-      auditTasks,
-      auditLogId,
-    });
-    this.running = false;
+    try {
+      await this.recordAuditLog({
+        options,
+        stage: 'finished',
+        result,
+        auditTasks,
+        auditLogId,
+      });
+    } finally {
+      this.status = {
+        taskId,
+        status: result.success ? 'completed' : 'failed',
+        running: false,
+        trigger: options.trigger,
+        triggerSource,
+        ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),
+        ...(options.requestedBy === undefined
+          ? {}
+          : { userId: options.requestedBy }),
+        ...(options.requestedBy === undefined
+          ? {}
+          : { requestedBy: options.requestedBy }),
+        startedAt: result.startedAt,
+        finishedAt: result.finishedAt,
+        durationMs: result.durationMs,
+        result: result.schedulerResult
+          ? summarizeSchedulerResult(result.schedulerResult)
+          : null,
+        ...(result.error ? { error: result.error } : {}),
+      };
+      this.running = false;
+    }
     return result;
   }
 

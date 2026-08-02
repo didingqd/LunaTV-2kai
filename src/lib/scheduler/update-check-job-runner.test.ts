@@ -165,7 +165,7 @@ describe('UpdateCheckJobRunner', () => {
           method: 'SCHEDULED',
           path: 'scheduler://update-checks',
           requestedBy: 'docker',
-          trigger: 'cron',
+          trigger: 'cron_docker',
         }),
         execution: expect.objectContaining({
           stage: 'started',
@@ -203,6 +203,7 @@ describe('UpdateCheckJobRunner', () => {
     );
     expect(auditLogger.record.mock.calls[1]?.[0].result).toMatchObject({
       trigger: 'cron',
+      triggerSource: 'cron_docker',
       checkedUsers: ['alice'],
       updatedUsers: ['alice'],
       failedUsers: [],
@@ -332,5 +333,73 @@ describe('UpdateCheckJobRunner', () => {
     expect(first.success).toBe(false);
     expect(second.success).toBe(true);
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('exposes the active and completed runtime status', async () => {
+    let finish!: (value: UpdateCheckSchedulerResult) => void;
+    const pending = new Promise<UpdateCheckSchedulerResult>((resolve) => {
+      finish = resolve;
+    });
+    const run = jest.fn(() => pending);
+    const runner = noAuditRunner(run, clock(5_000, 5_050));
+
+    const promise = runner.run({
+      trigger: 'cron',
+      triggerSource: 'external_http',
+      requestedBy: 'external_http',
+    });
+    const running = runner.getStatus();
+
+    expect(running).toMatchObject({
+      status: 'running',
+      running: true,
+      trigger: 'cron',
+      triggerSource: 'external_http',
+      requestedBy: 'external_http',
+      startedAt: 5_000,
+      finishedAt: null,
+      result: null,
+    });
+    expect(running.taskId).toEqual(expect.any(String));
+
+    finish(schedulerResult);
+    await promise;
+
+    expect(runner.getStatus()).toMatchObject({
+      taskId: running.taskId,
+      status: 'completed',
+      running: false,
+      startedAt: 5_000,
+      finishedAt: 5_050,
+      durationMs: 50,
+      result: schedulerResult,
+    });
+  });
+
+  it('starts a background run without waiting for completion', async () => {
+    let finish!: (value: UpdateCheckSchedulerResult) => void;
+    const pending = new Promise<UpdateCheckSchedulerResult>((resolve) => {
+      finish = resolve;
+    });
+    const run = jest.fn(() => pending);
+    const runner = noAuditRunner(run, clock(6_000, 6_050));
+
+    const status = runner.runInBackground({
+      trigger: 'cron',
+      triggerSource: 'external_http',
+    });
+
+    expect(status).toMatchObject({
+      status: 'running',
+      running: true,
+      triggerSource: 'external_http',
+      startedAt: 6_000,
+    });
+    await Promise.resolve();
+    expect(run).toHaveBeenCalledTimes(1);
+
+    finish(schedulerResult);
+    await Promise.resolve();
+    await Promise.resolve();
   });
 });

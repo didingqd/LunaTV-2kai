@@ -80,6 +80,57 @@ describe('NotificationCenterPage', () => {
     expect(await screen.findByText('暂无通知')).toBeInTheDocument();
   });
 
+  it('renders watching update details with consistent section and episode styles', async () => {
+    setFetch(
+      jest.fn().mockResolvedValue(
+        jsonResponse(
+          listResponse([
+            notification({
+              type: 'watching.update_found',
+              title: '更新提醒',
+              content:
+                '更新提醒\n\n🆕 新更新（1）\n\n测试番剧 A\n12 → 13 集（+1）\n\n✅ 已更新（2）\n\n测试番剧 B\n5 → 6 集（+1）\n\n测试番剧 C\n18 → 20 集（+2）',
+              payload: {
+                newUpdates: [
+                  {
+                    followId: 'a',
+                    title: '测试番剧 A',
+                    fromEpisode: 12,
+                    toEpisode: 13,
+                  },
+                ],
+                updated: [
+                  {
+                    followId: 'b',
+                    title: '测试番剧 B',
+                    fromEpisode: 5,
+                    toEpisode: 6,
+                  },
+                  {
+                    followId: 'c',
+                    title: '测试番剧 C',
+                    fromEpisode: 18,
+                    toEpisode: 20,
+                  },
+                ],
+                displayTime: '2026-08-02 12:30:01',
+              },
+            }),
+          ]),
+        ),
+      ),
+    );
+
+    render(<NotificationCenterPage />);
+
+    expect(await screen.findByText('新更新（1）')).toBeInTheDocument();
+    expect(screen.getByText('已更新（2）')).toBeInTheDocument();
+    expect(screen.getByText('12 → 13 集（+1）')).toBeInTheDocument();
+    expect(screen.getByText('5 → 6 集（+1）')).toBeInTheDocument();
+    expect(screen.getByText('18 → 20 集（+2）')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-02 12:30:01')).toBeInTheDocument();
+  });
+
   it('marks a notification read when selected', async () => {
     const updated = notification({
       read: true,

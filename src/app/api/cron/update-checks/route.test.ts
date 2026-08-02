@@ -84,6 +84,7 @@ describe('GET /api/cron/update-checks', () => {
     expect(runJob).toHaveBeenCalledTimes(1);
     expect(runJob).toHaveBeenCalledWith({
       trigger: 'cron',
+      triggerSource: 'cron_vercel',
       requestedBy: 'vercel',
       audit: {
         source: 'cron',
@@ -97,6 +98,7 @@ describe('GET /api/cron/update-checks', () => {
     const response = await GET(request('wrong'));
 
     expect(response.status).toBe(401);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
     expect(runJob).not.toHaveBeenCalled();
   });
@@ -108,6 +110,7 @@ describe('GET /api/cron/update-checks', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(body).toMatchObject({
       success: true,
       inspected: 3,

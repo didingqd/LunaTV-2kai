@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
   try {
     const jobResult = await schedulerManager.runNow({
       trigger: 'manual',
+      triggerSource: 'admin',
       requestedBy: operator,
       ignoreSchedule: true,
       preserveNextCheckAt: true,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
         request: {
           ...logRequest,
           requestedBy: operator,
-          trigger: 'manual',
+          trigger: 'admin',
         },
       },
     });

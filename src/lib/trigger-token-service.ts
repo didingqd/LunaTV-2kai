@@ -18,6 +18,9 @@ export interface TriggerLinkStatus {
   expiresAt: number | null;
   hasToken: boolean;
   expired: boolean;
+  tokenId: string | null;
+  maskedToken: string | null;
+  canRevealToken: boolean;
 }
 
 export interface TriggerLinkTokenResult extends TriggerLinkStatus {
@@ -54,12 +57,19 @@ function toPlainToken(tokenId: string, secret: string) {
   return `${tokenId}.${secret}`;
 }
 
-function parsePlainToken(token: string): { tokenId: string; secret: string } {
+function parseDottedPlainToken(
+  token: string,
+): { tokenId: string; secret: string } | null {
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new Error('TRIGGER_TOKEN_INVALID');
+    return null;
   }
   return { tokenId: parts[0], secret: parts[1] };
+}
+
+export function maskTriggerToken(token: string): string {
+  if (token.length <= 8) return `${token.slice(0, 2)}****${token.slice(-2)}`;
+  return `${token.slice(0, 4)}****${token.slice(-4)}`;
 }
 
 function safeHashEquals(left: string, right: string): boolean {
@@ -92,6 +102,9 @@ function statusFromRecord(
     expiresAt,
     hasToken,
     expired: typeof expiresAt === 'number' && expiresAt <= now,
+    tokenId: record?.tokenId ?? metadata?.tokenId ?? null,
+    maskedToken: record?.plainToken ? maskTriggerToken(record.plainToken) : null,
+    canRevealToken: Boolean(record?.plainToken),
   };
 }
 
@@ -114,8 +127,17 @@ export class TriggerTokenService {
   }
 
   async verify(token: string): Promise<TriggerTokenVerifyResult> {
-    const { tokenId, secret } = parsePlainToken(token);
-    const record = await this.tokenRepository.getToken(tokenId);
+    const parsed = parseDottedPlainToken(token);
+    let record: TriggerTokenRecord | null = null;
+    if (parsed) {
+      record = await this.tokenRepository.getToken(parsed.tokenId);
+    }
+    if (!record) {
+      const lookupHash = hashTriggerTokenSecret(token);
+      const tokenId =
+        await this.tokenRepository.getTokenIdForLookupHash(lookupHash);
+      record = tokenId ? await this.tokenRepository.getToken(tokenId) : null;
+    }
     if (!record) throw new Error('TRIGGER_TOKEN_INVALID');
     if (!record.enabled) throw new Error('TRIGGER_TOKEN_DISABLED');
     const now = this.clock.now();
@@ -123,9 +145,19 @@ export class TriggerTokenService {
       throw new Error('TRIGGER_TOKEN_EXPIRED');
     }
 
-    const expectedHash = hashTriggerTokenSecret(secret);
-    if (!safeHashEquals(record.secretHash, expectedHash)) {
-      throw new Error('TRIGGER_TOKEN_INVALID');
+    if (parsed && record.tokenId === parsed.tokenId) {
+      const expectedHash = hashTriggerTokenSecret(parsed.secret);
+      if (!safeHashEquals(record.secretHash, expectedHash)) {
+        throw new Error('TRIGGER_TOKEN_INVALID');
+      }
+    } else {
+      const expectedLookupHash = hashTriggerTokenSecret(token);
+      if (
+        !record.lookupHash ||
+        !safeHashEquals(record.lookupHash, expectedLookupHash)
+      ) {
+        throw new Error('TRIGGER_TOKEN_INVALID');
+      }
     }
 
     await this.tokenRepository.updateToken(record.tokenId, {
@@ -145,6 +177,8 @@ export class TriggerTokenService {
       tokenId,
       userId: username,
       secretHash: hashTriggerTokenSecret(secret),
+      lookupHash: hashTriggerTokenSecret(toPlainToken(tokenId, secret)),
+      plainToken: toPlainToken(tokenId, secret),
       enabled: true,
       createdAt: now,
       rotatedAt: now,
@@ -169,19 +203,73 @@ export class TriggerTokenService {
     };
   }
 
+  async setToken(
+    username: string,
+    token: string,
+    options: { enabled?: boolean; expiresAt?: number | null } = {},
+  ): Promise<TriggerLinkTokenResult> {
+    const trimmed = token.trim();
+    if (!trimmed) throw new Error('TRIGGER_TOKEN_INVALID');
+
+    const now = this.clock.now();
+    const parsed = parseDottedPlainToken(trimmed);
+    const tokenId = parsed ? parsed.tokenId : await this.createUniqueTokenId();
+    const secret = parsed ? parsed.secret : trimmed;
+    const record: TriggerTokenRecord = {
+      tokenId,
+      userId: username,
+      secretHash: hashTriggerTokenSecret(secret),
+      lookupHash: hashTriggerTokenSecret(trimmed),
+      plainToken: trimmed,
+      enabled: options.enabled ?? true,
+      createdAt: now,
+      rotatedAt: now,
+      expiresAt: options.expiresAt ?? null,
+      lastUsedAt: null,
+    };
+
+    const current = await this.configRepository.getUserWatchingUpdateConfig(
+      username,
+    );
+    const currentTokenId = current?.triggerLink?.tokenId;
+    if (currentTokenId && currentTokenId !== tokenId) {
+      await this.tokenRepository.deleteToken(currentTokenId);
+    }
+
+    await this.tokenRepository.createToken(record);
+    await this.saveMetadata(username, current, record);
+
+    return {
+      ...statusFromRecord(record, recordToMetadata(record), now),
+      plainToken: trimmed,
+    };
+  }
+
   async rotateToken(username: string): Promise<TriggerLinkTokenResult> {
     const { record, userConfig } = await this.getCurrentRecord(username);
     const now = this.clock.now();
     const secret = createSecret();
+    const plainToken = toPlainToken(record.tokenId, secret);
     const updated = await this.tokenRepository.updateToken(record.tokenId, {
       secretHash: hashTriggerTokenSecret(secret),
+      lookupHash: hashTriggerTokenSecret(plainToken),
+      plainToken,
       enabled: true,
       rotatedAt: now,
     });
     await this.saveMetadata(username, userConfig, updated);
     return {
       ...statusFromRecord(updated, recordToMetadata(updated), now),
-      plainToken: toPlainToken(updated.tokenId, secret),
+      plainToken,
+    };
+  }
+
+  async revealToken(username: string): Promise<TriggerLinkTokenResult> {
+    const { record } = await this.getCurrentRecord(username);
+    if (!record.plainToken) throw new Error('TRIGGER_TOKEN_SECRET_UNAVAILABLE');
+    return {
+      ...statusFromRecord(record, recordToMetadata(record), this.clock.now()),
+      plainToken: record.plainToken,
     };
   }
 
@@ -229,6 +317,9 @@ export class TriggerTokenService {
       expiresAt: null,
       hasToken: false,
       expired: false,
+      tokenId: null,
+      maskedToken: null,
+      canRevealToken: false,
     };
   }
 

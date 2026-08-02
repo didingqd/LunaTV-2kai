@@ -31,7 +31,7 @@ describe('WeChatWorkNotificationProvider', () => {
     ];
     const body = JSON.parse(String(requestInit.body));
     expect(body.markdown.content).toBe(
-      '#  更新提醒\n\n## <font color="info"> 新更新（1）</font>\n\n• 测试番剧 A\n  <font color="warning">12 → 13 集（+1）</font>\n\n## <font color="comment">✅ 已更新（2）</font>\n\n• 测试番剧 B\n  5 → 6 集（+1）\n\n• 测试番剧 C\n  18 → 20 集（+2）\n\n<font color="comment"> 2026-08-02 12:30:01</font>',
+      '#  更新提醒\n\n## <font color="info">🆕 新更新（1）</font>\n\n• 测试番剧 A\n  <font color="warning">12 → 13 集（+1）</font>\n\n## <font color="comment">✅ 已更新（2）</font>\n\n• 测试番剧 B\n  <font color="warning">5 → 6 集（+1）</font>\n\n• 测试番剧 C\n  <font color="warning">18 → 20 集（+2）</font>\n\n<font color="comment"> 2026-08-02 12:30:01</font>',
     );
     expect(body.markdown.content).not.toContain('测试通知');
   });

@@ -77,6 +77,7 @@ export class ManualTriggerUseCase {
     return {
       jobResult: await this.jobRunner.run({
         trigger: 'manual',
+        triggerSource: 'manual',
         requestedBy: user.username,
         audit: {
           source: 'trigger',

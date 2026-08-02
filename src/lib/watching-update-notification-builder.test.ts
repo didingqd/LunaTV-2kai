@@ -26,7 +26,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
       ),
     ).toEqual({
       title: '更新提醒',
-      content: '更新提醒\n\n新更新（1）\n\n海贼王\n12 → 14 集（+2）',
+      content: '更新提醒\n\n🆕 新更新（1）\n\n海贼王\n12 → 14 集（+2）',
       displayTime: '2026-08-01 18:30:00',
     });
   });
@@ -56,7 +56,8 @@ describe('WatchingUpdateNotificationBuilder', () => {
 
     expect(content).toEqual({
       title: '更新提醒',
-      content: '更新提醒\n\n新更新（2）\n\nA\n10 → 15 集（+5）\n\nB\n20 → 22 集（+2）',
+      content:
+        '更新提醒\n\n🆕 新更新（2）\n\nA\n10 → 15 集（+5）\n\nB\n20 → 22 集（+2）',
       displayTime: '2026-08-01 18:30:00',
     });
   });
@@ -80,7 +81,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
       ),
     ).toEqual({
       title: '更新提醒',
-      content: '更新提醒\n\n已更新（1）\n\n死神\n5 → 8 集（+3）',
+      content: '更新提醒\n\n✅ 已更新（1）\n\n死神\n5 → 8 集（+3）',
       displayTime: '2026-08-01 18:30:00',
     });
   });
@@ -160,7 +161,7 @@ describe('WatchingUpdateNotificationBuilder', () => {
         displayTime: '2026-08-01 18:30:00',
       },
     });
-    expect(message.content).toContain('新更新（1）');
+    expect(message.content).toContain('🆕 新更新（1）');
     expect(message.content).not.toContain('检查时间');
     expect(message.content).not.toContain('时间：');
     expect(message.content).not.toContain('2026-08-01');

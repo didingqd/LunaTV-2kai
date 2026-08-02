@@ -46,8 +46,14 @@ type TriggerLinkStatusResponse = {
   rotatedAt: number | null;
   expiresAt: number | null;
   hasToken: boolean;
+  tokenConfigured?: boolean;
   expired: boolean;
-  plainToken?: string;
+  tokenId?: string | null;
+  maskedToken?: string | null;
+  canRevealToken?: boolean;
+  triggerLink?: string | null;
+  fullToken?: string;
+  fullTriggerLink?: string | null;
 };
 
 function configResponse(
@@ -91,6 +97,10 @@ function triggerStatus(
     expiresAt: null,
     hasToken: false,
     expired: false,
+    tokenId: null,
+    maskedToken: null,
+    canRevealToken: false,
+    triggerLink: null,
     ...overrides,
   };
 }
@@ -369,6 +379,9 @@ describe('WatchingUpdateSettingsPage', () => {
           triggerStatus({
             enabled: true,
             hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
             createdAt: Date.UTC(2026, 0, 1),
             rotatedAt: Date.UTC(2026, 0, 2),
           }),
@@ -378,24 +391,38 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    expect(await screen.findByText('Token 状态')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '轮换 Token' })).toBeEnabled();
+    expect(await screen.findByText('链接状态')).toBeInTheDocument();
+    expect(screen.getByText('toke****cret')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '查看触发链接' }),
+    ).toBeEnabled();
     expectTriggerRequest(fetchMock, 1);
   });
 
-  it('creates a trigger token and shows the plain token once', async () => {
+  it('reveals the full trigger link on demand', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
-      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
       .mockResolvedValueOnce(
         jsonResponse(
           triggerStatus({
             enabled: true,
             hasToken: true,
-            createdAt: 1000,
-            rotatedAt: 1000,
-            plainToken: 'token.secret',
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            fullToken: 'token.secret',
+            fullTriggerLink:
+              'http://localhost/api/update-check-trigger?token=token.secret',
           }),
         ),
       );
@@ -403,94 +430,84 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '创建 Token' }));
-
-    expect(
-      await screen.findByDisplayValue(
-        'curl -X POST http://localhost/api/watching-updates/trigger -H "Authorization: Bearer token.secret"',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: '复制触发命令' }),
-    ).toBeInTheDocument();
-    expectTriggerRequest(fetchMock, 2, 'POST');
-  });
-
-  it('rotates a trigger token and shows the new plain token', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
-      .mockResolvedValueOnce(
-        jsonResponse(triggerStatus({ enabled: true, hasToken: true })),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(
-          triggerStatus({
-            enabled: true,
-            hasToken: true,
-            plainToken: 'token.new-secret',
-          }),
-        ),
-      );
-    setFetch(fetchMock);
-
-    render(<WatchingUpdateSettingsPage />);
-
-    fireEvent.click(await screen.findByRole('button', { name: '轮换 Token' }));
-
-    expect(
-      await screen.findByDisplayValue(
-        'curl -X POST http://localhost/api/watching-updates/trigger -H "Authorization: Bearer token.new-secret"',
-      ),
-    ).toBeInTheDocument();
-    expectTriggerRequest(fetchMock, 2, 'PATCH', { action: 'rotate' });
-  });
-
-  it('enables and disables a trigger token', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
-      .mockResolvedValueOnce(
-        jsonResponse(triggerStatus({ enabled: true, hasToken: true })),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(triggerStatus({ enabled: false, hasToken: true })),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(triggerStatus({ enabled: true, hasToken: true })),
-      );
-    setFetch(fetchMock);
-
-    render(<WatchingUpdateSettingsPage />);
-
-    fireEvent.click(await screen.findByRole('button', { name: '禁用' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: '启用' })).toBeEnabled(),
+    fireEvent.click(
+      await screen.findByRole('button', { name: '查看触发链接' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: '启用' }));
+
+    expect(
+      await screen.findByDisplayValue(
+        'http://localhost/api/update-check-trigger?token=token.secret',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '复制链接' }),
+    ).toBeInTheDocument();
+    expectTriggerRequest(fetchMock, 2, 'PUT', { action: 'reveal' });
+  });
+
+  it('tests the trigger link through the real trigger endpoint', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            fullToken: 'token.secret',
+            fullTriggerLink:
+              'http://localhost/api/update-check-trigger?token=token.secret',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          accepted: true,
+          status: 'running',
+          running: true,
+          taskId: 'task-1',
+        }),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '测试连接' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    expectTriggerRequest(fetchMock, 2, 'PATCH', { enabled: false });
-    expectTriggerRequest(fetchMock, 3, 'PATCH', { enabled: true });
+    expectTriggerRequest(fetchMock, 2, 'PUT', { action: 'reveal' });
+    expect(fetchMock.mock.calls[3][0]).toBe(
+      'http://localhost/api/update-check-trigger?token=token.secret',
+    );
+    expect(await screen.findByText('请求成功')).toBeInTheDocument();
+    expect(screen.getByText('当前检测状态：running')).toBeInTheDocument();
+    expect(screen.getByText('是否启动任务：是')).toBeInTheDocument();
   });
 
-  it('deletes a trigger token', async () => {
+  it('shows when the token is not configured', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
-      .mockResolvedValueOnce(
-        jsonResponse(triggerStatus({ enabled: true, hasToken: true })),
-      )
       .mockResolvedValueOnce(jsonResponse(triggerStatus()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expectTriggerRequest(fetchMock, 2, 'DELETE');
-    expect(await screen.findByText('未创建')).toBeInTheDocument();
+    expect(
+      await screen.findByText('管理员尚未配置触发链接 Token。'),
+    ).toBeInTheDocument();
   });
 });

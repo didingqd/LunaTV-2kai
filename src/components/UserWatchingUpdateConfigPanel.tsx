@@ -2,7 +2,11 @@
 
 import {
   CheckCircle,
+  Eye,
+  EyeOff,
+  KeyRound,
   LoaderCircle,
+  RefreshCw,
   Save,
   ShieldCheck,
   SlidersHorizontal,
@@ -45,6 +49,28 @@ interface UserWatchingUpdateConfigResponse {
   };
 }
 
+interface AdminTriggerLinkResponse {
+  username: string;
+  permission: {
+    allowTriggerLink: boolean;
+  };
+  triggerLink: {
+    enabled: boolean;
+    createdAt: number | null;
+    rotatedAt: number | null;
+    expiresAt: number | null;
+    hasToken: boolean;
+    tokenConfigured: boolean;
+    expired: boolean;
+    tokenId: string | null;
+    maskedToken: string | null;
+    canRevealToken: boolean;
+    triggerLink: string | null;
+    fullToken?: string;
+    fullTriggerLink?: string | null;
+  };
+}
+
 interface UserWatchingUpdateConfigPanelProps {
   username: string;
   userRole: UserRole;
@@ -84,6 +110,19 @@ async function readResponse(response: Response) {
   return data as UserWatchingUpdateConfigResponse;
 }
 
+async function readTriggerLinkResponse(response: Response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || '触发链接 Token 请求失败');
+  }
+  return data as AdminTriggerLinkResponse;
+}
+
+function formatTimestamp(value: number | null | undefined) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
 export default function UserWatchingUpdateConfigPanel({
   username,
   userRole,
@@ -107,6 +146,14 @@ export default function UserWatchingUpdateConfigPanel({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [triggerLink, setTriggerLink] =
+    useState<AdminTriggerLinkResponse['triggerLink'] | null>(null);
+  const [triggerLoading, setTriggerLoading] = useState(false);
+  const [triggerSaving, setTriggerSaving] = useState<
+    'enabled' | 'reveal' | 'manual' | 'generate' | null
+  >(null);
+  const [manualToken, setManualToken] = useState('');
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const requestSequence = useRef(0);
 
   const applyConfig = useCallback(
@@ -131,6 +178,28 @@ export default function UserWatchingUpdateConfigPanel({
     [],
   );
 
+  const loadTriggerLink = useCallback(async () => {
+    setTriggerLoading(true);
+    try {
+      const response = await fetch(triggerLinkUrl(username), {
+        cache: 'no-store',
+      });
+      const data = await readTriggerLinkResponse(response);
+      setTriggerLink(data.triggerLink);
+      setRevealedToken(null);
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : '触发链接 Token 加载失败',
+      });
+    } finally {
+      setTriggerLoading(false);
+    }
+  }, [username]);
+
   const loadConfig = useCallback(
     async (resetDrafts: boolean) => {
       const requestId = ++requestSequence.current;
@@ -142,6 +211,7 @@ export default function UserWatchingUpdateConfigPanel({
         const data = await readResponse(response);
         if (requestId === requestSequence.current) {
           applyConfig(data, resetDrafts);
+          void loadTriggerLink();
         }
       } catch (error) {
         if (requestId === requestSequence.current) {
@@ -157,7 +227,7 @@ export default function UserWatchingUpdateConfigPanel({
         if (requestId === requestSequence.current) setLoading(false);
       }
     },
-    [applyConfig, username],
+    [applyConfig, loadTriggerLink, username],
   );
 
   useEffect(() => {
@@ -282,6 +352,73 @@ export default function UserWatchingUpdateConfigPanel({
     }
   };
 
+  const updateTriggerLink = async (
+    action: 'enabled' | 'manual' | 'generate',
+    body: Record<string, unknown>,
+  ) => {
+    setTriggerSaving(action);
+    setMessage(null);
+    try {
+      const response = await fetch(triggerLinkUrl(username), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await readTriggerLinkResponse(response);
+      setTriggerLink(data.triggerLink);
+      setRevealedToken(null);
+      if (action === 'manual') setManualToken('');
+      setMessage({ type: 'success', text: '触发链接 Token 已更新' });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : '触发链接 Token 更新失败',
+      });
+    } finally {
+      setTriggerSaving(null);
+    }
+  };
+
+  const revealTriggerToken = async () => {
+    setTriggerSaving('reveal');
+    setMessage(null);
+    try {
+      const response = await fetch(triggerLinkUrl(username), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reveal' }),
+      });
+      const data = await readTriggerLinkResponse(response);
+      setTriggerLink(data.triggerLink);
+      setRevealedToken(data.triggerLink.fullToken ?? null);
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : '触发链接 Token 查看失败',
+      });
+    } finally {
+      setTriggerSaving(null);
+    }
+  };
+
+  const saveManualToken = async () => {
+    const token = manualToken.trim();
+    if (!token) {
+      setMessage({ type: 'error', text: '请输入新的 Token' });
+      return;
+    }
+    await updateTriggerLink('manual', {
+      token,
+      enabled: triggerLink?.enabled ?? true,
+    });
+  };
+
   if (loading) {
     return (
       <div className='flex items-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400'>
@@ -345,6 +482,125 @@ export default function UserWatchingUpdateConfigPanel({
             disabled={saving}
             onChange={() => setAllowTriggerLink((current) => !current)}
           />
+        </div>
+      </section>
+
+      <section className='space-y-4 border-b border-gray-200 pb-5 dark:border-gray-700'>
+        <SectionHeading icon='key' title='触发链接 Token' />
+        <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+          <TokenStatusItem
+            label='启用状态'
+            value={
+              triggerLoading
+                ? '加载中'
+                : triggerLink?.enabled
+                  ? '已启用'
+                  : '已关闭'
+            }
+          />
+          <TokenStatusItem
+            label='当前 Token 状态'
+            value={
+              triggerLink?.hasToken
+                ? triggerLink.expired
+                  ? '已过期'
+                  : '已配置'
+                : '未配置'
+            }
+          />
+          <TokenStatusItem
+            label='脱敏 Token'
+            value={triggerLink?.maskedToken ?? '-'}
+            mono
+          />
+          <TokenStatusItem
+            label='最后修改'
+            value={formatTimestamp(triggerLink?.rotatedAt)}
+          />
+        </div>
+
+        <div className='flex flex-wrap gap-2'>
+          <button
+            type='button'
+            disabled={
+              triggerLoading ||
+              triggerSaving !== null ||
+              triggerLink?.hasToken !== true
+            }
+            onClick={() =>
+              void updateTriggerLink('enabled', {
+                enabled: !(triggerLink?.enabled ?? false),
+              })
+            }
+            className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+          >
+            {triggerLink?.enabled ? '关闭触发链接' : '启用触发链接'}
+          </button>
+          <button
+            type='button'
+            disabled={
+              triggerLoading ||
+              triggerSaving !== null ||
+              triggerLink?.hasToken !== true
+            }
+            onClick={() => void revealTriggerToken()}
+            className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+          >
+            {revealedToken ? (
+              <EyeOff className='h-4 w-4' />
+            ) : (
+              <Eye className='h-4 w-4' />
+            )}
+            查看 Token
+          </button>
+          <button
+            type='button'
+            disabled={triggerLoading || triggerSaving !== null}
+            onClick={() => void updateTriggerLink('generate', { action: 'generate' })}
+            className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+          >
+            <RefreshCw className='h-4 w-4' />
+            重新生成
+          </button>
+        </div>
+
+        {revealedToken && (
+          <div className='rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30'>
+            <div className='text-xs font-medium text-amber-800 dark:text-amber-200'>
+              完整 Token
+            </div>
+            <div className='mt-2 break-all rounded-md border border-amber-200 bg-white px-3 py-2 font-mono text-sm text-gray-900 dark:border-amber-900 dark:bg-gray-950 dark:text-gray-100'>
+              {revealedToken}
+            </div>
+          </div>
+        )}
+
+        <div className='grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end'>
+          <label className='block'>
+            <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
+              手动输入新 Token
+            </span>
+            <input
+              value={manualToken}
+              disabled={triggerLoading || triggerSaving !== null}
+              onChange={(event) => setManualToken(event.target.value)}
+              placeholder='输入后保存，旧 Token 将立即失效'
+              className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+            />
+          </label>
+          <button
+            type='button'
+            disabled={
+              triggerLoading ||
+              triggerSaving !== null ||
+              manualToken.trim().length === 0
+            }
+            onClick={() => void saveManualToken()}
+            className='inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
+          >
+            <Save className='h-4 w-4' />
+            修改 Token
+          </button>
         </div>
       </section>
 
@@ -472,6 +728,10 @@ function configUrl(username: string) {
   return `/api/admin/watching-updates/users/${encodeURIComponent(username)}/config`;
 }
 
+function triggerLinkUrl(username: string) {
+  return `/api/admin/watching-updates/users/${encodeURIComponent(username)}/trigger-link`;
+}
+
 function StatusMessage({
   type,
   text,
@@ -501,14 +761,38 @@ function SectionHeading({
   icon,
   title,
 }: {
-  icon: 'shield' | 'sliders';
+  icon: 'shield' | 'sliders' | 'key';
   title: string;
 }) {
-  const Icon = icon === 'shield' ? ShieldCheck : SlidersHorizontal;
+  const Icon =
+    icon === 'shield' ? ShieldCheck : icon === 'key' ? KeyRound : SlidersHorizontal;
   return (
     <div className='flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100'>
       <Icon className='h-4 w-4 text-blue-600 dark:text-blue-400' />
       {title}
+    </div>
+  );
+}
+
+function TokenStatusItem({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className='rounded-lg border border-gray-200 p-3 dark:border-gray-700'>
+      <div className='text-xs text-gray-500 dark:text-gray-400'>{label}</div>
+      <div
+        className={`mt-1 break-all text-sm font-medium text-gray-900 dark:text-gray-100 ${
+          mono ? 'font-mono' : ''
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }

@@ -51,21 +51,11 @@ function toWatchingUpdateMarkdownContent(
 
   sections.forEach((section, sectionIndex) => {
     if (sectionIndex > 0) lines.push('');
-    lines.push(
-      section.kind === 'new'
-        ? `## <font color="info"> ${section.heading}</font>`
-        : `## <font color="comment">✅ ${section.heading}</font>`,
-      '',
-    );
+    lines.push(formatWatchingUpdateSectionHeading(section), '');
 
     section.items.forEach((item, itemIndex) => {
       if (itemIndex > 0) lines.push('');
-      lines.push(
-        `• ${item.title}`,
-        section.kind === 'new'
-          ? `  <font color="warning">${item.episodeLine}</font>`
-          : `  ${item.episodeLine}`,
-      );
+      lines.push(...formatWatchingUpdateItem(item));
     });
   });
 
@@ -131,13 +121,34 @@ function getWatchingUpdateSectionKind(
   heading: string | undefined,
 ): ParsedWatchingUpdateSection['kind'] | null {
   if (!heading) return null;
-  if (/^新更新（\d+）$/.test(heading)) return 'new';
-  if (/^已更新（\d+）$/.test(heading)) return 'updated';
+  const normalized = stripWatchingUpdateSectionIcon(heading);
+  if (/^新更新（\d+）$/.test(normalized)) return 'new';
+  if (/^已更新（\d+）$/.test(normalized)) return 'updated';
   return null;
 }
 
 function isEpisodeLine(line: string): boolean {
   return /^\d+ → \d+ 集（\+\d+）$/.test(line);
+}
+
+function formatWatchingUpdateSectionHeading(
+  section: ParsedWatchingUpdateSection,
+): string {
+  const color = section.kind === 'new' ? 'info' : 'comment';
+  const icon = section.kind === 'new' ? '🆕' : '✅';
+  const heading = stripWatchingUpdateSectionIcon(section.heading);
+  return `## <font color="${color}">${icon} ${heading}</font>`;
+}
+
+function formatWatchingUpdateItem(item: ParsedWatchingUpdateItem): string[] {
+  return [
+    `• ${item.title}`,
+    `  <font color="warning">${item.episodeLine}</font>`,
+  ];
+}
+
+function stripWatchingUpdateSectionIcon(heading: string): string {
+  return heading.replace(/^(?:🆕|✅)\s*/, '');
 }
 
 export class WeChatWorkNotificationChannel implements NotificationChannel {

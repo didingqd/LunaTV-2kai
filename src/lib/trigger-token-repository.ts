@@ -4,6 +4,8 @@ export interface TriggerTokenRecord {
   tokenId: string;
   userId: string;
   secretHash: string;
+  lookupHash?: string;
+  plainToken?: string;
   enabled: boolean;
   createdAt: number;
   rotatedAt: number;
@@ -21,6 +23,7 @@ export interface TriggerTokenRepositoryContract {
   createToken(record: TriggerTokenRecord): Promise<void>;
   getToken(tokenId: string): Promise<TriggerTokenRecord | null>;
   getTokenIdForUser(userId: string): Promise<string | null>;
+  getTokenIdForLookupHash(lookupHash: string): Promise<string | null>;
   updateToken(
     tokenId: string,
     patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
@@ -31,6 +34,7 @@ export interface TriggerTokenRepositoryContract {
 
 const TOKEN_KEY_PREFIX = 'watching-update:trigger-token:v1:';
 const USER_TOKEN_KEY_PREFIX = 'watching-update:trigger-token:v1:user:';
+const LOOKUP_HASH_KEY_PREFIX = 'watching-update:trigger-token:v1:lookup:';
 
 function tokenKey(tokenId: string) {
   return `${TOKEN_KEY_PREFIX}${tokenId}`;
@@ -38,6 +42,10 @@ function tokenKey(tokenId: string) {
 
 function userTokenKey(userId: string) {
   return `${USER_TOKEN_KEY_PREFIX}${userId}`;
+}
+
+function lookupHashKey(lookupHash: string) {
+  return `${LOOKUP_HASH_KEY_PREFIX}${lookupHash}`;
 }
 
 function copyRecord(record: TriggerTokenRecord): TriggerTokenRecord {
@@ -51,6 +59,8 @@ function isTokenRecord(value: unknown): value is TriggerTokenRecord {
     typeof record.tokenId === 'string' &&
     typeof record.userId === 'string' &&
     typeof record.secretHash === 'string' &&
+    (record.lookupHash === undefined || typeof record.lookupHash === 'string') &&
+    (record.plainToken === undefined || typeof record.plainToken === 'string') &&
     typeof record.enabled === 'boolean' &&
     typeof record.createdAt === 'number' &&
     typeof record.rotatedAt === 'number' &&
@@ -68,10 +78,20 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
     await this.enqueueWrite(async () => {
       const existingTokenId = await this.getTokenIdForUser(record.userId);
       if (existingTokenId && existingTokenId !== record.tokenId) {
+        const existing = await this.getToken(existingTokenId);
+        if (existing?.lookupHash) {
+          await this.store.deleteCache(lookupHashKey(existing.lookupHash));
+        }
         await this.store.deleteCache(tokenKey(existingTokenId));
       }
       await this.store.setCache(tokenKey(record.tokenId), copyRecord(record));
       await this.store.setCache(userTokenKey(record.userId), record.tokenId);
+      if (record.lookupHash) {
+        await this.store.setCache(
+          lookupHashKey(record.lookupHash),
+          record.tokenId,
+        );
+      }
     });
   }
 
@@ -85,6 +105,11 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
     return typeof value === 'string' ? value : null;
   }
 
+  async getTokenIdForLookupHash(lookupHash: string): Promise<string | null> {
+    const value = await this.store.getCache(lookupHashKey(lookupHash));
+    return typeof value === 'string' ? value : null;
+  }
+
   async updateToken(
     tokenId: string,
     patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
@@ -93,8 +118,17 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
       const current = await this.getToken(tokenId);
       if (!current) throw new Error('TRIGGER_TOKEN_NOT_FOUND');
       const updated = { ...current, ...patch };
+      if (current.lookupHash && current.lookupHash !== updated.lookupHash) {
+        await this.store.deleteCache(lookupHashKey(current.lookupHash));
+      }
       await this.store.setCache(tokenKey(tokenId), copyRecord(updated));
       await this.store.setCache(userTokenKey(updated.userId), updated.tokenId);
+      if (updated.lookupHash) {
+        await this.store.setCache(
+          lookupHashKey(updated.lookupHash),
+          updated.tokenId,
+        );
+      }
       return updated;
     });
   }
@@ -103,6 +137,9 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
     await this.enqueueWrite(async () => {
       const current = await this.getToken(tokenId);
       await this.store.deleteCache(tokenKey(tokenId));
+      if (current?.lookupHash) {
+        await this.store.deleteCache(lookupHashKey(current.lookupHash));
+      }
       if (current) await this.store.deleteCache(userTokenKey(current.userId));
     });
   }
@@ -110,7 +147,11 @@ export class TriggerTokenRepository implements TriggerTokenRepositoryContract {
   async deleteTokenForUser(userId: string): Promise<void> {
     await this.enqueueWrite(async () => {
       const tokenId = await this.getTokenIdForUser(userId);
+      const current = tokenId ? await this.getToken(tokenId) : null;
       if (tokenId) await this.store.deleteCache(tokenKey(tokenId));
+      if (current?.lookupHash) {
+        await this.store.deleteCache(lookupHashKey(current.lookupHash));
+      }
       await this.store.deleteCache(userTokenKey(userId));
     });
   }

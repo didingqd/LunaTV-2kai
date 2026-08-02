@@ -31,10 +31,51 @@ const patchSchema = z
     { message: 'Missing trigger link update action' },
   );
 
+const revealSchema = z
+  .object({
+    action: z.literal('reveal'),
+  })
+  .strict();
+
 const noStoreHeaders = { 'Cache-Control': 'private, no-store' };
 
 function jsonNoStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: noStoreHeaders });
+}
+
+function triggerUrlFromToken(request: NextRequest, token: string | null) {
+  if (!token) return null;
+  const url = new URL('/api/update-check-trigger', request.url);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+function serializeTriggerLink(
+  request: NextRequest,
+  status: Awaited<ReturnType<typeof triggerTokenService.getStatus>>,
+  plainToken?: string,
+) {
+  const tokenForUrl = plainToken ?? status.maskedToken;
+  return {
+    enabled: status.enabled,
+    createdAt: status.createdAt,
+    rotatedAt: status.rotatedAt,
+    expiresAt: status.expiresAt,
+    hasToken: status.hasToken,
+    tokenConfigured: status.hasToken,
+    expired: status.expired,
+    tokenId: status.tokenId,
+    maskedToken: status.maskedToken,
+    canRevealToken: status.canRevealToken,
+    triggerLink: triggerUrlFromToken(request, tokenForUrl),
+    ...(plainToken
+      ? {
+          plainToken,
+          fullToken: plainToken,
+          fullTriggerLink: triggerUrlFromToken(request, plainToken),
+        }
+      : {}),
+  };
 }
 
 function errorResponse(error: string, status: number) {
@@ -71,6 +112,12 @@ function mapServiceError(error: unknown, operation: string) {
     if (error.message === 'USER_NOT_FOUND') {
       return errorResponse('User not found', 404);
     }
+    if (error.message === 'TRIGGER_TOKEN_SECRET_UNAVAILABLE') {
+      return errorResponse(
+        'Trigger token secret is not available; please regenerate it',
+        409,
+      );
+    }
   }
 
   console.error(`Failed to ${operation} trigger link token`, error);
@@ -93,7 +140,8 @@ export async function GET(request: NextRequest) {
     const access = await requireTriggerLinkPermission(request);
     if ('response' in access) return access.response;
 
-    return jsonNoStore(await triggerTokenService.getStatus(access.username));
+    const status = await triggerTokenService.getStatus(access.username);
+    return jsonNoStore(serializeTriggerLink(request, status));
   } catch (error) {
     return mapServiceError(error, 'read');
   }
@@ -111,7 +159,7 @@ export async function POST(request: NextRequest) {
       expiresAt: parsed.data.expiresAt,
     });
     clearConfigCache();
-    return jsonNoStore(result);
+    return jsonNoStore(serializeTriggerLink(request, result));
   } catch (error) {
     return mapServiceError(error, 'create');
   }
@@ -143,9 +191,24 @@ export async function PATCH(request: NextRequest) {
     }
 
     clearConfigCache();
-    return jsonNoStore(result);
+    return jsonNoStore(serializeTriggerLink(request, result));
   } catch (error) {
     return mapServiceError(error, 'update');
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const access = await requireTriggerLinkPermission(request);
+    if ('response' in access) return access.response;
+
+    const parsed = revealSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return errorResponse('Invalid trigger link request', 400);
+
+    const result = await triggerTokenService.revealToken(access.username);
+    return jsonNoStore(serializeTriggerLink(request, result, result.plainToken));
+  } catch (error) {
+    return mapServiceError(error, 'reveal');
   }
 }
 
@@ -162,7 +225,7 @@ export async function DELETE(request: NextRequest) {
 
     const result = await triggerTokenService.deleteToken(access.username);
     clearConfigCache();
-    return jsonNoStore(result);
+    return jsonNoStore(serializeTriggerLink(request, result));
   } catch (error) {
     if (error instanceof SyntaxError) {
       return errorResponse('Invalid trigger link request', 400);

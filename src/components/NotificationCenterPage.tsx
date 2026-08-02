@@ -8,6 +8,7 @@ import {
   Inbox,
   LoaderCircle,
   RefreshCw,
+  Sparkles,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -18,6 +19,8 @@ import type {
   InboxNotification,
   NotificationLevel,
 } from '@/lib/notification/notification-types';
+import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '@/lib/watching-update-notification-events';
+import type { WatchingUpdateChange } from '@/lib/watching-update-notification-types';
 
 interface NotificationListResponse {
   notifications: InboxNotification[];
@@ -470,9 +473,7 @@ function NotificationDetail({
         </div>
       </div>
       <div className='space-y-5 px-5 py-5'>
-        <p className='whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-200'>
-          {notification.content}
-        </p>
+        <NotificationContent notification={notification} />
         {notification.payload &&
           Object.keys(notification.payload).length > 0 && (
             <div className='rounded-md bg-gray-50 p-3 dark:bg-gray-950'>
@@ -487,4 +488,142 @@ function NotificationDetail({
       </div>
     </article>
   );
+}
+
+function NotificationContent({
+  notification,
+}: {
+  notification: InboxNotification;
+}) {
+  const watchingUpdate = getWatchingUpdateContent(notification);
+  if (watchingUpdate) {
+    return (
+      <WatchingUpdateNotificationContent
+        newUpdates={watchingUpdate.newUpdates}
+        updated={watchingUpdate.updated}
+        displayTime={watchingUpdate.displayTime}
+      />
+    );
+  }
+
+  return (
+    <p className='whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-200'>
+      {notification.content}
+    </p>
+  );
+}
+
+function WatchingUpdateNotificationContent({
+  newUpdates,
+  updated,
+  displayTime,
+}: {
+  newUpdates: WatchingUpdateChange[];
+  updated: WatchingUpdateChange[];
+  displayTime?: string;
+}) {
+  return (
+    <div className='space-y-5 text-sm text-gray-800 dark:text-gray-200'>
+      {newUpdates.length > 0 && (
+        <WatchingUpdateSection kind='new' items={newUpdates} />
+      )}
+      {updated.length > 0 && (
+        <WatchingUpdateSection kind='updated' items={updated} />
+      )}
+      {displayTime && (
+        <p className='text-xs text-gray-500 dark:text-gray-400'>
+          {displayTime}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function WatchingUpdateSection({
+  kind,
+  items,
+}: {
+  kind: 'new' | 'updated';
+  items: WatchingUpdateChange[];
+}) {
+  const Icon = kind === 'new' ? Sparkles : CheckCircle2;
+  const title = kind === 'new' ? '新更新' : '已更新';
+  const tone =
+    kind === 'new'
+      ? 'text-sky-700 dark:text-sky-300'
+      : 'text-emerald-700 dark:text-emerald-300';
+
+  return (
+    <section className='space-y-3'>
+      <h3 className={`flex items-center gap-2 font-semibold ${tone}`}>
+        <Icon className='h-4 w-4 shrink-0' />
+        <span>
+          {title}（{items.length}）
+        </span>
+      </h3>
+      <div className='space-y-3'>
+        {items.map((item) => (
+          <WatchingUpdateItem key={item.followId} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WatchingUpdateItem({ item }: { item: WatchingUpdateChange }) {
+  return (
+    <div className='pl-1'>
+      <p className='flex gap-2 text-gray-900 dark:text-gray-100'>
+        <span className='text-gray-500 dark:text-gray-400'>•</span>
+        <span>{item.title}</span>
+      </p>
+      <p className='ml-4 mt-1 font-medium text-amber-600 dark:text-amber-300'>
+        {formatEpisodeChange(item)}
+      </p>
+    </div>
+  );
+}
+
+function getWatchingUpdateContent(notification: InboxNotification): {
+  newUpdates: WatchingUpdateChange[];
+  updated: WatchingUpdateChange[];
+  displayTime?: string;
+} | null {
+  if (notification.type !== WATCHING_UPDATE_FOUND_EVENT_TYPE) return null;
+  const payload = notification.payload;
+  if (!payload) return null;
+
+  const newUpdates = toWatchingUpdateChanges(payload.newUpdates);
+  const updated = toWatchingUpdateChanges(payload.updated);
+  if (newUpdates.length === 0 && updated.length === 0) return null;
+
+  return {
+    newUpdates,
+    updated,
+    displayTime:
+      typeof payload.displayTime === 'string' ? payload.displayTime : undefined,
+  };
+}
+
+function toWatchingUpdateChanges(value: unknown): WatchingUpdateChange[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isWatchingUpdateChange);
+}
+
+function isWatchingUpdateChange(value: unknown): value is WatchingUpdateChange {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<WatchingUpdateChange>;
+  return (
+    typeof item.followId === 'string' &&
+    typeof item.title === 'string' &&
+    typeof item.fromEpisode === 'number' &&
+    Number.isFinite(item.fromEpisode) &&
+    typeof item.toEpisode === 'number' &&
+    Number.isFinite(item.toEpisode)
+  );
+}
+
+function formatEpisodeChange(item: WatchingUpdateChange): string {
+  const delta = Math.max(0, item.toEpisode - item.fromEpisode);
+  return `${item.fromEpisode} → ${item.toEpisode} 集（+${delta}）`;
 }

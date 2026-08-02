@@ -5,13 +5,14 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  Eye,
   KeyRound,
   LoaderCircle,
+  PlayCircle,
   RefreshCw,
   Save,
   ShieldCheck,
   SlidersHorizontal,
-  Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -26,7 +27,7 @@ import {
 
 type ConfigSource = 'user' | 'system' | 'default';
 type ConfigField = 'cronExpression' | 'timezone';
-type TriggerAction = 'create' | 'rotate' | 'enable' | 'disable' | 'delete';
+type TriggerAction = 'reveal' | 'test';
 
 interface WatchingUpdateUserConfigResponse {
   permission: {
@@ -56,8 +57,25 @@ interface TriggerLinkStatusResponse {
   rotatedAt: number | null;
   expiresAt: number | null;
   hasToken: boolean;
+  tokenConfigured?: boolean;
   expired: boolean;
-  plainToken?: string;
+  tokenId?: string | null;
+  maskedToken?: string | null;
+  canRevealToken?: boolean;
+  triggerLink?: string | null;
+  fullToken?: string;
+  fullTriggerLink?: string | null;
+}
+
+interface TriggerTestResult {
+  ok: boolean;
+  statusCode: number;
+  success: boolean;
+  accepted?: boolean;
+  status?: string;
+  running?: boolean;
+  taskId?: string | null;
+  error?: string;
 }
 
 const USER_CONFIG_ENDPOINT = '/api/user/watching-updates/config';
@@ -126,14 +144,6 @@ function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
   return status.enabled ? '已启用' : '已禁用';
 }
 
-function buildTriggerCommand(token: string) {
-  const origin =
-    typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : '';
-  return `curl -X POST ${origin}/api/watching-updates/trigger -H "Authorization: Bearer ${token}"`;
-}
-
 function getSettingsUsername() {
   return getAuthInfoFromBrowserCookie()?.username?.trim() || null;
 }
@@ -157,7 +167,9 @@ export default function WatchingUpdateSettingsPage({
   const [triggerSaving, setTriggerSaving] = useState<TriggerAction | null>(
     null,
   );
-  const [plainToken, setPlainToken] = useState<string | null>(null);
+  const [fullTriggerLink, setFullTriggerLink] = useState<string | null>(null);
+  const [triggerTestResult, setTriggerTestResult] =
+    useState<TriggerTestResult | null>(null);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -172,7 +184,8 @@ export default function WatchingUpdateSettingsPage({
       });
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data);
-      setPlainToken(null);
+      setFullTriggerLink(null);
+      setTriggerTestResult(null);
     } catch (error) {
       setMessage({
         type: 'error',
@@ -208,7 +221,8 @@ export default function WatchingUpdateSettingsPage({
           await loadTriggerLink();
         } else {
           setTriggerLink(null);
-          setPlainToken(null);
+          setFullTriggerLink(null);
+          setTriggerTestResult(null);
         }
       }
     } catch (error) {
@@ -298,40 +312,74 @@ export default function WatchingUpdateSettingsPage({
     }
   };
 
-  const sendTriggerLinkRequest = async (
-    action: TriggerAction,
-    method: 'POST' | 'PATCH' | 'DELETE',
-    body?: Record<string, unknown>,
-  ) => {
-    setTriggerSaving(action);
+  const revealTriggerLink = async () => {
+    setTriggerSaving('reveal');
     setMessage(null);
     try {
       const response = await fetch(TRIGGER_LINK_ENDPOINT, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reveal' }),
       });
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data);
-      setPlainToken(data.plainToken ?? null);
-      setMessage({ type: 'success', text: '触发链接设置已更新' });
+      const link = data.fullTriggerLink ?? null;
+      setFullTriggerLink(link);
+      setTriggerTestResult(null);
+      setMessage({ type: 'success', text: '触发链接已显示' });
+      return link;
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : '触发链接设置失败',
+        text: error instanceof Error ? error.message : '触发链接查看失败',
       });
+      return null;
     } finally {
       setTriggerSaving(null);
     }
   };
 
-  const copyPlainToken = async () => {
-    if (!plainToken) return;
+  const copyTriggerLink = async () => {
+    if (!fullTriggerLink) return;
     try {
-      await navigator.clipboard.writeText(buildTriggerCommand(plainToken));
-      setMessage({ type: 'success', text: '触发命令已复制' });
+      await navigator.clipboard.writeText(fullTriggerLink);
+      setMessage({ type: 'success', text: '触发链接已复制' });
     } catch {
-      setMessage({ type: 'error', text: '复制失败，请手动复制触发命令' });
+      setMessage({ type: 'error', text: '复制失败，请手动复制触发链接' });
+    }
+  };
+
+  const testTriggerLink = async () => {
+    setTriggerSaving('test');
+    setMessage(null);
+    setTriggerTestResult(null);
+    try {
+      const link = fullTriggerLink ?? (await revealTriggerLink());
+      if (!link) return;
+
+      const response = await fetch(link, { cache: 'no-store' });
+      const data = (await response.json().catch(() => ({}))) as Partial<
+        TriggerTestResult
+      >;
+      setTriggerTestResult({
+        ok: response.ok,
+        statusCode: response.status,
+        success: data.success === true,
+        accepted: data.accepted,
+        status: data.status,
+        running: data.running,
+        taskId: data.taskId,
+        error: data.error,
+      });
+    } catch (error) {
+      setTriggerTestResult({
+        ok: false,
+        statusCode: 0,
+        success: false,
+        error: error instanceof Error ? error.message : '服务异常',
+      });
+    } finally {
+      setTriggerSaving(null);
     }
   };
 
@@ -458,7 +506,7 @@ export default function WatchingUpdateSettingsPage({
               <div className='mb-4 flex items-center gap-2'>
                 <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
                 <h2 className='text-lg font-semibold tracking-normal'>
-                  触发链接
+                  更新检测触发链接
                 </h2>
               </div>
 
@@ -470,7 +518,7 @@ export default function WatchingUpdateSettingsPage({
                 <div className='space-y-4'>
                   <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
                     <StatusItem
-                      label='Token 状态'
+                      label='链接状态'
                       value={
                         triggerLoading
                           ? '加载中'
@@ -478,12 +526,16 @@ export default function WatchingUpdateSettingsPage({
                       }
                     />
                     <StatusItem
-                      label='创建时间'
-                      value={formatTimestamp(triggerLink?.createdAt ?? null)}
+                      label='启用状态'
+                      value={triggerLink?.enabled ? '已启用' : '已关闭'}
                     />
                     <StatusItem
-                      label='轮换时间'
-                      value={formatTimestamp(triggerLink?.rotatedAt ?? null)}
+                      label='Token 配置'
+                      value={
+                        triggerLink?.hasToken
+                          ? (triggerLink.maskedToken ?? '已配置')
+                          : '未配置'
+                      }
                     />
                     <StatusItem
                       label='过期时间'
@@ -491,108 +543,104 @@ export default function WatchingUpdateSettingsPage({
                     />
                   </div>
 
-                  {plainToken && (
+                  {triggerLink?.hasToken ? (
                     <div className='rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950'>
                       <label
-                        htmlFor='watching-update-trigger-token'
+                        htmlFor='watching-update-trigger-link'
                         className='mb-2 block text-sm font-medium text-sky-900 dark:text-sky-100'
                       >
-                        本次生成的触发链接
+                        更新检测触发链接
                       </label>
                       <div className='flex flex-col gap-2'>
                         <textarea
-                          id='watching-update-trigger-token'
+                          id='watching-update-trigger-link'
                           readOnly
-                          value={buildTriggerCommand(plainToken)}
+                          value={
+                            fullTriggerLink ??
+                            triggerLink.triggerLink ??
+                            'Token 未配置'
+                          }
                           rows={3}
                           className='min-w-0 resize-none rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
                         />
-                        <button
-                          type='button'
-                          onClick={copyPlainToken}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900 sm:self-start'
-                        >
-                          <Copy className='h-4 w-4' />
-                          复制触发命令
-                        </button>
+                        <div className='flex flex-wrap gap-2'>
+                          <button
+                            type='button'
+                            disabled={triggerControlsDisabled}
+                            onClick={() => void revealTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          >
+                            <Eye className='h-4 w-4' />
+                            查看触发链接
+                          </button>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !fullTriggerLink
+                            }
+                            onClick={() => void copyTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          >
+                            <Copy className='h-4 w-4' />
+                            复制链接
+                          </button>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !triggerLink.enabled
+                            }
+                            onClick={() => void testTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
+                          >
+                            {triggerSaving === 'test' ? (
+                              <LoaderCircle className='h-4 w-4 animate-spin' />
+                            ) : (
+                              <PlayCircle className='h-4 w-4' />
+                            )}
+                            测试连接
+                          </button>
+                        </div>
                       </div>
+                    </div>
+                  ) : (
+                    <div className='rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
+                      管理员尚未配置触发链接 Token。
                     </div>
                   )}
 
-                  <div className='flex flex-wrap gap-2'>
-                    <button
-                      type='button'
-                      disabled={
-                        triggerControlsDisabled ||
-                        triggerLink?.hasToken === true
-                      }
-                      onClick={() => sendTriggerLinkRequest('create', 'POST')}
-                      className='inline-flex min-h-9 items-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
+                  {triggerTestResult && (
+                    <div
+                      role='status'
+                      className={`rounded-md border px-3 py-2 text-sm ${
+                        triggerTestResult.ok && triggerTestResult.success
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
+                      }`}
                     >
-                      <KeyRound className='h-4 w-4' />
-                      创建 Token
-                    </button>
-                    <button
-                      type='button'
-                      disabled={
-                        triggerControlsDisabled ||
-                        triggerLink?.hasToken !== true
-                      }
-                      onClick={() =>
-                        sendTriggerLinkRequest('rotate', 'PATCH', {
-                          action: 'rotate',
-                        })
-                      }
-                      className='inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800'
-                    >
-                      <RefreshCw className='h-4 w-4' />
-                      轮换 Token
-                    </button>
-                    <button
-                      type='button'
-                      disabled={
-                        triggerControlsDisabled ||
-                        triggerLink?.hasToken !== true ||
-                        triggerLink.enabled
-                      }
-                      onClick={() =>
-                        sendTriggerLinkRequest('enable', 'PATCH', {
-                          enabled: true,
-                        })
-                      }
-                      className='inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800'
-                    >
-                      启用
-                    </button>
-                    <button
-                      type='button'
-                      disabled={
-                        triggerControlsDisabled ||
-                        triggerLink?.hasToken !== true ||
-                        !triggerLink.enabled
-                      }
-                      onClick={() =>
-                        sendTriggerLinkRequest('disable', 'PATCH', {
-                          enabled: false,
-                        })
-                      }
-                      className='inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-slate-300 dark:hover:bg-gray-800'
-                    >
-                      禁用
-                    </button>
-                    <button
-                      type='button'
-                      disabled={
-                        triggerControlsDisabled ||
-                        triggerLink?.hasToken !== true
-                      }
-                      onClick={() => sendTriggerLinkRequest('delete', 'DELETE')}
-                      className='inline-flex min-h-9 items-center gap-2 rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950'
-                    >
-                      <Trash2 className='h-4 w-4' />
-                      删除
-                    </button>
-                  </div>
+                      <div className='font-semibold'>
+                        {triggerTestResult.ok && triggerTestResult.success
+                          ? '请求成功'
+                          : '请求失败'}
+                      </div>
+                      <div className='mt-2 space-y-1 text-xs'>
+                        <div>HTTP 状态：{triggerTestResult.statusCode}</div>
+                        <div>
+                          当前检测状态：{triggerTestResult.status ?? '-'}
+                        </div>
+                        <div>
+                          是否启动任务：
+                          {triggerTestResult.accepted === undefined
+                            ? '-'
+                            : triggerTestResult.accepted
+                              ? '是'
+                              : '否'}
+                        </div>
+                        {triggerTestResult.error && (
+                          <div>错误原因：{triggerTestResult.error}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </section>

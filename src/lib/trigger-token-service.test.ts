@@ -33,6 +33,13 @@ class MemoryTokenRepository implements TriggerTokenRepositoryContract {
     return this.userIndex.get(userId) ?? null;
   }
 
+  async getTokenIdForLookupHash(lookupHash: string): Promise<string | null> {
+    for (const [tokenId, record] of this.tokens) {
+      if (record.lookupHash === lookupHash) return tokenId;
+    }
+    return null;
+  }
+
   async updateToken(
     tokenId: string,
     patch: Partial<Omit<TriggerTokenRecord, 'tokenId' | 'userId' | 'createdAt'>>,
@@ -105,7 +112,7 @@ function splitPlainToken(plainToken: string) {
 }
 
 describe('TriggerTokenService', () => {
-  it('creates a token, stores only a hash, and saves triggerLink metadata', async () => {
+  it('creates a token, stores hashes, and saves triggerLink metadata', async () => {
     const { service, tokenRepository, configRepository } = createService();
 
     const result = await service.createToken('alice', { expiresAt: 5000 });
@@ -124,6 +131,8 @@ describe('TriggerTokenService', () => {
       tokenId,
       userId: 'alice',
       secretHash: hashTriggerTokenSecret(secret),
+      lookupHash: hashTriggerTokenSecret(result.plainToken),
+      plainToken: result.plainToken,
       enabled: true,
     });
     expect(stored?.secretHash).not.toBe(secret);
@@ -150,6 +159,9 @@ describe('TriggerTokenService', () => {
       expiresAt: null,
       hasToken: true,
       expired: false,
+      tokenId: expect.any(String),
+      maskedToken: expect.stringContaining('****'),
+      canRevealToken: true,
     });
     expect(status).not.toHaveProperty('plainToken');
   });
@@ -284,6 +296,32 @@ describe('TriggerTokenService', () => {
       expiresAt: null,
       hasToken: false,
       expired: false,
+      tokenId: null,
+      maskedToken: null,
+      canRevealToken: false,
     });
+  });
+
+  it('reveals the persisted plain token through a dedicated operation', async () => {
+    const { service } = createService();
+    const created = await service.createToken('alice');
+
+    await expect(service.revealToken('alice')).resolves.toMatchObject({
+      plainToken: created.plainToken,
+      maskedToken: expect.stringContaining('****'),
+    });
+  });
+
+  it('sets a manual token and verifies the exact custom value', async () => {
+    const { service } = createService();
+
+    await service.setToken('alice', 'custom-token');
+
+    await expect(service.verify('custom-token')).resolves.toMatchObject({
+      userId: 'alice',
+    });
+    await expect(service.verify('wrong-token')).rejects.toThrow(
+      'TRIGGER_TOKEN_INVALID',
+    );
   });
 });

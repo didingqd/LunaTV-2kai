@@ -71,6 +71,7 @@ describe('POST /api/admin/watching-updates/run-now', () => {
     expect(response.status).toBe(200);
     expect(runNow).toHaveBeenCalledWith({
       trigger: 'manual',
+      triggerSource: 'admin',
       requestedBy: 'alice',
       ignoreSchedule: true,
       preserveNextCheckAt: true,
@@ -82,7 +83,7 @@ describe('POST /api/admin/watching-updates/run-now', () => {
           path: '/api/admin/watching-updates/run-now',
           client: { platform: 'Windows' },
           requestedBy: 'alice',
-          trigger: 'manual',
+          trigger: 'admin',
         },
       },
     });

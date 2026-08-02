@@ -213,16 +213,8 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
     const sections = ['更新提醒'];
     const newUpdates = sortNewUpdatesForDisplay(analysis.newUpdates);
 
-    if (newUpdates.length > 0) {
-      sections.push('', `新更新（${newUpdates.length}）`, '');
-      this.appendEpisodeChanges(sections, newUpdates);
-    }
-
-    if (analysis.updated.length > 0) {
-      if (sections.length > 1) sections.push('', '----------------');
-      sections.push('', `已更新（${analysis.updated.length}）`, '');
-      this.appendEpisodeChanges(sections, analysis.updated);
-    }
+    this.appendUpdateSection(sections, 'new', newUpdates);
+    this.appendUpdateSection(sections, 'updated', analysis.updated);
 
     return {
       title: '更新提醒',
@@ -243,6 +235,31 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
       );
     });
   }
+
+  private appendUpdateSection(
+    sections: string[],
+    kind: WatchingUpdateSectionKind,
+    items: Array<{ title: string; fromEpisode: number; toEpisode: number }>,
+  ): void {
+    if (items.length === 0) return;
+    sections.push(
+      '',
+      formatWatchingUpdateSectionHeading(kind, items.length),
+      '',
+    );
+    this.appendEpisodeChanges(sections, items);
+  }
+}
+
+type WatchingUpdateSectionKind = 'new' | 'updated';
+
+function formatWatchingUpdateSectionHeading(
+  kind: WatchingUpdateSectionKind,
+  count: number,
+): string {
+  return `${kind === 'new' ? '🆕' : '✅'} ${
+    kind === 'new' ? '新更新' : '已更新'
+  }（${count}）`;
 }
 
 function episodeDelta(item: {
@@ -252,11 +269,13 @@ function episodeDelta(item: {
   return Math.max(0, item.toEpisode - item.fromEpisode);
 }
 
-function sortNewUpdatesForDisplay<T extends {
-  title: string;
-  fromEpisode: number;
-  toEpisode: number;
-}>(items: T[]): T[] {
+function sortNewUpdatesForDisplay<
+  T extends {
+    title: string;
+    fromEpisode: number;
+    toEpisode: number;
+  },
+>(items: T[]): T[] {
   return [...items].sort(
     (left, right) =>
       episodeDelta(right) - episodeDelta(left) ||
