@@ -93,6 +93,7 @@ function triggerStatus(
 ): TriggerLinkStatusResponse {
   return {
     enabled: false,
+    effectiveEnabled: overrides.effectiveEnabled ?? overrides.enabled ?? false,
     createdAt: null,
     rotatedAt: null,
     expiresAt: null,
@@ -155,8 +156,13 @@ function expectNoStandaloneToken(tokens: string[] = []) {
   }
 }
 
-function expectTriggerLinkAreaHidden() {
-  expect(screen.queryByText('更新检测触发链接')).not.toBeInTheDocument();
+function expectTriggerLinkActionsHidden() {
+  expect(
+    screen.getByRole('heading', { name: '更新检测触发链接' }),
+  ).toBeInTheDocument();
+  expect(screen.getByText('链接状态')).toBeInTheDocument();
+  expect(screen.getByText('生效状态')).toBeInTheDocument();
+  expect(screen.queryByLabelText('更新检测触发链接')).not.toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: '查看触发链接' }),
   ).not.toBeInTheDocument();
@@ -173,6 +179,10 @@ function expectTriggerLinkAreaHidden() {
     screen.queryByRole('button', { name: '生成 Token' }),
   ).not.toBeInTheDocument();
   expect(screen.queryByText('Token 配置')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '启用触发链接' }) ??
+      screen.queryByRole('button', { name: '关闭触发链接' }),
+  ).toBeDisabled();
 }
 
 function triggerAllowedConfig(overrides: Partial<ConfigResponse> = {}) {
@@ -389,7 +399,7 @@ describe('WatchingUpdateSettingsPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('hides the trigger link area when no token exists', async () => {
+  it('keeps the trigger link setting and hides link actions when no token exists', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -399,7 +409,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 
   it('loads trigger link status when allowed', async () => {
@@ -435,7 +445,7 @@ describe('WatchingUpdateSettingsPage', () => {
     expectTriggerRequest(fetchMock, 1);
   });
 
-  it('hides the trigger link area when the user switch is closed', async () => {
+  it('keeps the trigger link setting and hides link actions when the user switch is closed', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -458,10 +468,10 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 
-  it('hides the trigger link area when the admin switch is closed', async () => {
+  it('keeps the trigger link setting and hides link actions when the admin switch is closed', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -484,7 +494,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 
   it('does not render token generation when the trigger link is ineffective', async () => {
@@ -497,7 +507,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 
   it('regenerates the current user trigger token', async () => {
@@ -542,7 +552,7 @@ describe('WatchingUpdateSettingsPage', () => {
     expectTriggerRequest(fetchMock, 2, 'POST', { action: 'generate' });
   });
 
-  it('does not render user enable controls when the trigger link is ineffective', async () => {
+  it('keeps the user switch state disabled when the trigger link is ineffective', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -562,7 +572,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 
   it('reveals the full trigger link on demand', async () => {
@@ -714,7 +724,7 @@ describe('WatchingUpdateSettingsPage', () => {
     expectNoStandaloneToken(['token.secret']);
   });
 
-  it('hides the trigger link area when the token is not configured', async () => {
+  it('keeps the trigger link setting and hides link actions when the token is not configured', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -724,6 +734,6 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expectTriggerLinkAreaHidden();
+    expectTriggerLinkActionsHidden();
   });
 });

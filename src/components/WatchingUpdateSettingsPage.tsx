@@ -147,7 +147,7 @@ function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
 }
 
 function isTriggerEffectiveEnabled(status: TriggerLinkStatusResponse | null) {
-  return status?.effectiveEnabled ?? status?.enabled ?? false;
+  return status?.effectiveEnabled === true;
 }
 
 function canExposeTriggerLink(status: TriggerLinkStatusResponse | null) {
@@ -635,160 +635,162 @@ export default function WatchingUpdateSettingsPage({
               </div>
             </section>
 
-            {triggerLinkEffective && (
-              <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
-                <div className='mb-4 flex items-center gap-2'>
-                  <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
-                  <h2 className='text-lg font-semibold tracking-normal'>
-                    更新检测触发链接
-                  </h2>
-                </div>
+            <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
+              <div className='mb-4 flex items-center gap-2'>
+                <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
+                <h2 className='text-lg font-semibold tracking-normal'>
+                  更新检测触发链接
+                </h2>
+              </div>
 
-                <div className='space-y-4'>
-                  <div className='rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950'>
-                    <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-                      <StatusItem
-                        label='链接状态'
-                        value={getTriggerStatusLabel(triggerLink)}
-                      />
-                      <StatusItem
-                        label='生效状态'
-                        value={triggerLinkEffective ? '已启用' : '已关闭'}
-                      />
-                      <StatusItem
-                        label='最后生成'
-                        value={formatTimestamp(triggerLink?.rotatedAt ?? null)}
-                      />
-                      <StatusItem
-                        label='过期时间'
-                        value={formatTimestamp(triggerLink?.expiresAt ?? null)}
-                      />
-                    </div>
-                    <label
-                      htmlFor='watching-update-trigger-link'
-                      className='mb-2 block text-sm font-medium text-sky-900 dark:text-sky-100'
+              <div className='space-y-4'>
+                <div className='rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950'>
+                  <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+                    <StatusItem
+                      label='链接状态'
+                      value={getTriggerStatusLabel(triggerLink)}
+                    />
+                    <StatusItem
+                      label='生效状态'
+                      value={triggerLinkEffective ? '已启用' : '已关闭'}
+                    />
+                    <StatusItem
+                      label='最后生成'
+                      value={formatTimestamp(triggerLink?.rotatedAt ?? null)}
+                    />
+                    <StatusItem
+                      label='过期时间'
+                      value={formatTimestamp(triggerLink?.expiresAt ?? null)}
+                    />
+                  </div>
+                  <div className='mb-4 flex flex-wrap gap-2'>
+                    <button
+                      type='button'
+                      disabled={
+                        triggerControlsDisabled || !userCanToggleTriggerLink
+                      }
+                      onClick={() => void updateTriggerEnabled()}
+                      className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
                     >
-                      更新检测触发链接
-                    </label>
-                    <div className='flex flex-col gap-2'>
-                      <textarea
-                        id='watching-update-trigger-link'
-                        readOnly
-                        value={displayedTriggerLink ?? '链接暂不可用'}
-                        rows={3}
-                        className='min-w-0 resize-none rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
-                      />
-                      <div className='flex flex-wrap gap-2'>
-                        <button
-                          type='button'
-                          disabled={
-                            triggerControlsDisabled || !triggerLinkEffective
-                          }
-                          onClick={() => void revealTriggerLink()}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
-                        >
-                          <Eye className='h-4 w-4' />
-                          查看触发链接
-                        </button>
-                        <button
-                          type='button'
-                          disabled={
-                            triggerControlsDisabled || !triggerLinkEffective
-                          }
-                          onClick={() => void copyTriggerLink()}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
-                        >
-                          <Copy className='h-4 w-4' />
-                          复制链接
-                        </button>
-                        <button
-                          type='button'
-                          disabled={
-                            triggerControlsDisabled || !userCanToggleTriggerLink
-                          }
-                          onClick={() => void updateTriggerEnabled()}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
-                        >
-                          {triggerSaving === 'enabled' ? (
-                            <LoaderCircle className='h-4 w-4 animate-spin' />
-                          ) : (
-                            <KeyRound className='h-4 w-4' />
-                          )}
-                          {(triggerLink.userTriggerEnabled ??
-                          triggerLink.enabled)
-                            ? '关闭触发链接'
-                            : '启用触发链接'}
-                        </button>
-                        <button
-                          type='button'
-                          disabled={
-                            triggerControlsDisabled || !triggerLinkEffective
-                          }
-                          onClick={() => void testTriggerLink()}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
-                        >
-                          {triggerSaving === 'test' ? (
-                            <LoaderCircle className='h-4 w-4 animate-spin' />
-                          ) : (
-                            <PlayCircle className='h-4 w-4' />
-                          )}
-                          测试链接
-                        </button>
-                        <button
-                          type='button'
-                          disabled={
-                            triggerControlsDisabled || !triggerLinkEffective
-                          }
-                          onClick={() => void generateTriggerToken()}
-                          className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
-                        >
-                          {triggerSaving === 'generate' ? (
-                            <LoaderCircle className='h-4 w-4 animate-spin' />
-                          ) : (
-                            <RefreshCw className='h-4 w-4' />
-                          )}
-                          重新生成
-                        </button>
-                      </div>
-                    </div>
+                      {triggerSaving === 'enabled' ? (
+                        <LoaderCircle className='h-4 w-4 animate-spin' />
+                      ) : (
+                        <KeyRound className='h-4 w-4' />
+                      )}
+                      {(triggerLink?.userTriggerEnabled ?? triggerLink?.enabled)
+                        ? '关闭触发链接'
+                        : '启用触发链接'}
+                    </button>
                   </div>
 
-                  {triggerTestResult && (
-                    <div
-                      role='status'
-                      className={`rounded-md border px-3 py-2 text-sm ${
-                        triggerTestResult.ok && triggerTestResult.success
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
-                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
-                      }`}
-                    >
-                      <div className='font-semibold'>
-                        {triggerTestResult.ok && triggerTestResult.success
-                          ? '请求成功'
-                          : '请求失败'}
-                      </div>
-                      <div className='mt-2 space-y-1 text-xs'>
-                        <div>HTTP 状态：{triggerTestResult.statusCode}</div>
-                        <div>
-                          当前检测状态：{triggerTestResult.status ?? '-'}
+                  {triggerLinkEffective && (
+                    <>
+                      <label
+                        htmlFor='watching-update-trigger-link'
+                        className='mb-2 block text-sm font-medium text-sky-900 dark:text-sky-100'
+                      >
+                        更新检测触发链接
+                      </label>
+                      <div className='flex flex-col gap-2'>
+                        <textarea
+                          id='watching-update-trigger-link'
+                          readOnly
+                          value={displayedTriggerLink ?? '链接暂不可用'}
+                          rows={3}
+                          className='min-w-0 resize-none rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
+                        />
+                        <div className='flex flex-wrap gap-2'>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !triggerLinkEffective
+                            }
+                            onClick={() => void revealTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          >
+                            <Eye className='h-4 w-4' />
+                            查看触发链接
+                          </button>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !triggerLinkEffective
+                            }
+                            onClick={() => void copyTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          >
+                            <Copy className='h-4 w-4' />
+                            复制链接
+                          </button>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !triggerLinkEffective
+                            }
+                            onClick={() => void testTriggerLink()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 dark:disabled:bg-gray-700 dark:disabled:text-slate-400'
+                          >
+                            {triggerSaving === 'test' ? (
+                              <LoaderCircle className='h-4 w-4 animate-spin' />
+                            ) : (
+                              <PlayCircle className='h-4 w-4' />
+                            )}
+                            测试链接
+                          </button>
+                          <button
+                            type='button'
+                            disabled={
+                              triggerControlsDisabled || !triggerLinkEffective
+                            }
+                            onClick={() => void generateTriggerToken()}
+                            className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
+                          >
+                            {triggerSaving === 'generate' ? (
+                              <LoaderCircle className='h-4 w-4 animate-spin' />
+                            ) : (
+                              <RefreshCw className='h-4 w-4' />
+                            )}
+                            重新生成
+                          </button>
                         </div>
-                        <div>
-                          是否启动任务：
-                          {triggerTestResult.accepted === undefined
-                            ? '-'
-                            : triggerTestResult.accepted
-                              ? '是'
-                              : '否'}
-                        </div>
-                        {triggerTestResult.error && (
-                          <div>错误原因：{triggerTestResult.error}</div>
-                        )}
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
-              </section>
-            )}
+
+                {triggerLinkEffective && triggerTestResult && (
+                  <div
+                    role='status'
+                    className={`rounded-md border px-3 py-2 text-sm ${
+                      triggerTestResult.ok && triggerTestResult.success
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
+                    }`}
+                  >
+                    <div className='font-semibold'>
+                      {triggerTestResult.ok && triggerTestResult.success
+                        ? '请求成功'
+                        : '请求失败'}
+                    </div>
+                    <div className='mt-2 space-y-1 text-xs'>
+                      <div>HTTP 状态：{triggerTestResult.statusCode}</div>
+                      <div>当前检测状态：{triggerTestResult.status ?? '-'}</div>
+                      <div>
+                        是否启动任务：
+                        {triggerTestResult.accepted === undefined
+                          ? '-'
+                          : triggerTestResult.accepted
+                            ? '是'
+                            : '否'}
+                      </div>
+                      {triggerTestResult.error && (
+                        <div>错误原因：{triggerTestResult.error}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
