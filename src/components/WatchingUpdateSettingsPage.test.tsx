@@ -22,7 +22,6 @@ type ConfigResponse = {
   permission: {
     enabled: boolean;
     allowCustomSchedule: boolean;
-    allowTriggerLink: boolean;
   };
   userConfig: {
     cronExpression?: string;
@@ -66,7 +65,6 @@ function configResponse(
     permission: {
       enabled: true,
       allowCustomSchedule: true,
-      allowTriggerLink: false,
     },
     userConfig: null,
     effectiveConfig: {
@@ -155,7 +153,6 @@ function triggerAllowedConfig(overrides: Partial<ConfigResponse> = {}) {
     permission: {
       enabled: true,
       allowCustomSchedule: true,
-      allowTriggerLink: true,
     },
     ...overrides,
   });
@@ -326,7 +323,6 @@ describe('WatchingUpdateSettingsPage', () => {
             permission: {
               enabled: true,
               allowCustomSchedule: false,
-              allowTriggerLink: false,
             },
           }),
         ),
@@ -376,8 +372,9 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     expect(
-      await screen.findByText('管理员尚未配置触发链接 Token。'),
+      await screen.findByText('尚未生成触发链接 Token。'),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成 Token' })).toBeEnabled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -405,10 +402,12 @@ describe('WatchingUpdateSettingsPage', () => {
     expect(await screen.findByText('链接状态')).toBeInTheDocument();
     expect(screen.getByText('toke****cret')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '复制链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '测试链接' })).toBeEnabled();
     expectTriggerRequest(fetchMock, 1);
   });
 
-  it('shows token controls but keeps the trigger ineffective when the user switch is closed', async () => {
+  it('keeps token lifecycle controls available when the user switch is closed', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -430,14 +429,19 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    expect(await screen.findByText('toke****cret')).toBeInTheDocument();
+    expect(
+      await screen.findByText('我的开关已关闭，当前链接不可访问。'),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('用户已关闭').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('更新检测触发链接').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '复制链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '测试链接' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '启用触发链接' })).toBeEnabled();
   });
 
-  it('shows token controls but does not allow effective use when the admin switch is closed', async () => {
+  it('keeps token lifecycle controls available when the admin switch is closed', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -459,13 +463,93 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    expect(await screen.findByText('toke****cret')).toBeInTheDocument();
+    expect(
+      await screen.findByText('管理员已关闭触发权限，当前链接不可访问。'),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('管理员已关闭').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('更新检测触发链接').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '复制链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '测试链接' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
     expect(
       screen.queryByRole('button', { name: '启用触发链接' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('generates a user-owned trigger token', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            userTriggerEnabled: true,
+            adminTriggerEnabled: true,
+            effectiveEnabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            fullToken: 'token.secret',
+            fullTriggerLink:
+              'http://localhost/api/update-check-trigger?token=token.secret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '生成 Token' }));
+
+    expect(
+      await screen.findByDisplayValue(
+        'http://localhost/api/update-check-trigger?token=token.secret',
+      ),
+    ).toBeInTheDocument();
+    expectTriggerRequest(fetchMock, 2, 'POST', { action: 'generate' });
+  });
+
+  it('regenerates the current user trigger token', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            hasToken: true,
+            maskedToken: 'old****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=old****cret',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            hasToken: true,
+            maskedToken: 'new****cret',
+            fullToken: 'new.secret',
+            fullTriggerLink:
+              'http://localhost/api/update-check-trigger?token=new.secret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '重新生成' }));
+
+    expect(
+      await screen.findByDisplayValue(
+        'http://localhost/api/update-check-trigger?token=new.secret',
+      ),
+    ).toBeInTheDocument();
+    expectTriggerRequest(fetchMock, 2, 'POST', { action: 'generate' });
   });
 
   it('shows token and trigger controls after the user re-enables the link', async () => {
@@ -556,7 +640,55 @@ describe('WatchingUpdateSettingsPage', () => {
     expectTriggerRequest(fetchMock, 2, 'PUT', { action: 'reveal' });
   });
 
-  it('tests the trigger link through the real trigger endpoint', async () => {
+  it('copies the trigger link without requiring a prior reveal or test', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            effectiveEnabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://0.0.0.0:3000/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            effectiveEnabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            fullToken: 'token.secret',
+            fullTriggerLink:
+              'http://0.0.0.0:3000/api/update-check-trigger?token=token.secret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '复制链接' }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/api/update-check-trigger?token=token.secret`,
+      ),
+    );
+    expectTriggerRequest(fetchMock, 2, 'PUT', { action: 'reveal' });
+  });
+
+  it('tests the trigger link through the current site trigger endpoint', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
@@ -567,7 +699,7 @@ describe('WatchingUpdateSettingsPage', () => {
             hasToken: true,
             maskedToken: 'toke****cret',
             triggerLink:
-              'http://localhost/api/update-check-trigger?token=toke****cret',
+              'http://0.0.0.0:3000/api/update-check-trigger?token=toke****cret',
           }),
         ),
       )
@@ -579,7 +711,7 @@ describe('WatchingUpdateSettingsPage', () => {
             maskedToken: 'toke****cret',
             fullToken: 'token.secret',
             fullTriggerLink:
-              'http://localhost/api/update-check-trigger?token=token.secret',
+              'http://0.0.0.0:3000/api/update-check-trigger?token=token.secret',
           }),
         ),
       )
@@ -596,12 +728,12 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '测试连接' }));
+    fireEvent.click(await screen.findByRole('button', { name: '测试链接' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expectTriggerRequest(fetchMock, 2, 'PUT', { action: 'reveal' });
     expect(fetchMock.mock.calls[3][0]).toBe(
-      'http://localhost/api/update-check-trigger?token=token.secret',
+      `${window.location.origin}/api/update-check-trigger?token=token.secret`,
     );
     expect(await screen.findByText('请求成功')).toBeInTheDocument();
     expect(screen.getByText('当前检测状态：running')).toBeInTheDocument();
@@ -618,7 +750,7 @@ describe('WatchingUpdateSettingsPage', () => {
     render(<WatchingUpdateSettingsPage />);
 
     expect(
-      await screen.findByText('管理员尚未配置触发链接 Token。'),
+      await screen.findByText('尚未生成触发链接 Token。'),
     ).toBeInTheDocument();
   });
 });

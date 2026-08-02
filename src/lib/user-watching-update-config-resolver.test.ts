@@ -35,7 +35,6 @@ describe('resolveUserWatchingUpdateConfig', () => {
       },
       permissions: {
         allowCustomSchedule: true,
-        allowTriggerLink: false,
       },
     });
   });
@@ -101,7 +100,6 @@ describe('resolveUserWatchingUpdateConfig', () => {
       timezone: 'Europe/Berlin',
       permissions: {
         allowCustomSchedule: true,
-        allowTriggerLink: false,
       },
     });
   });
@@ -115,19 +113,16 @@ describe('resolveUserWatchingUpdateConfig', () => {
 
     expect(result.permissions).toEqual({
       allowCustomSchedule: true,
-      allowTriggerLink: false,
     });
   });
 
-  it('reports explicit custom schedule and trigger link permissions', () => {
+  it('reports explicit custom schedule permissions', () => {
     const result = resolve(undefined, {
       allowCustomSchedule: false,
-      allowTriggerLink: true,
     });
 
     expect(result.permissions).toEqual({
       allowCustomSchedule: false,
-      allowTriggerLink: true,
     });
   });
 

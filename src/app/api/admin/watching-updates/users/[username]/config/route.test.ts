@@ -74,7 +74,6 @@ function adminConfig(): AdminConfig {
           role: 'user',
           updateCheckBackendEnabled: true,
           allowCustomSchedule: false,
-          allowTriggerLink: true,
           updateCheckPermissionUpdatedAt: 1000,
           updateCheckPermissionOperator: 'owner',
         },
@@ -121,7 +120,6 @@ describe('user watching update config Management API', () => {
       permission: {
         enabled: true,
         allowCustomSchedule: false,
-        allowTriggerLink: true,
       },
       userConfig: {
         cronExpression: '0 * * * *',
@@ -173,7 +171,6 @@ describe('user watching update config Management API', () => {
       permission: {
         enabled: false,
         allowCustomSchedule: true,
-        allowTriggerLink: false,
       },
       userConfig: null,
       effective: {
@@ -242,12 +239,11 @@ describe('user watching update config Management API', () => {
     expect(loadConfig).not.toHaveBeenCalled();
   });
 
-  it('saves ability permissions without reconciling schedules', async () => {
+  it('saves custom schedule permission without reconciling schedules', async () => {
     getUserConfigOverride.mockResolvedValue(null);
 
     const response = await patchUserConfig('alice', {
       allowCustomSchedule: true,
-      allowTriggerLink: false,
     });
 
     expect(response.status).toBe(200);
@@ -258,7 +254,6 @@ describe('user watching update config Management API', () => {
     );
     expect(alice).toMatchObject({
       allowCustomSchedule: true,
-      allowTriggerLink: false,
       updateCheckPermissionUpdatedAt: expect.any(Number),
       updateCheckPermissionOperator: 'owner',
     });

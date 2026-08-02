@@ -98,7 +98,6 @@ describe('user watching update config API', () => {
       permission: {
         enabled: true,
         allowCustomSchedule: true,
-        allowTriggerLink: false,
       },
       userConfig: {
         cronExpression: '0 * * * *',
@@ -270,7 +269,6 @@ function adminConfig(
           role: 'user',
           updateCheckBackendEnabled: true,
           allowCustomSchedule: true,
-          allowTriggerLink: false,
           ...alice,
         },
         {

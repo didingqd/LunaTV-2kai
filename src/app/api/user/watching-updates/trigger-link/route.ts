@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import type { AdminConfig } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
 import { buildUpdateCheckTriggerUrl } from '@/lib/site-url';
@@ -9,7 +8,11 @@ import { triggerTokenService } from '@/lib/trigger-token-service';
 
 export const runtime = 'nodejs';
 
-type UserConfigEntry = AdminConfig['UserConfig']['Users'][number];
+const postSchema = z
+  .object({
+    action: z.literal('generate').optional(),
+  })
+  .strict();
 
 const patchSchema = z
   .object({
@@ -95,10 +98,6 @@ async function authorizeCurrentUser(request: NextRequest) {
   return { username, user };
 }
 
-function canUseTriggerLinkFeature(user: UserConfigEntry) {
-  return user.allowTriggerLink === true;
-}
-
 function mapServiceError(error: unknown, operation: string) {
   if (error instanceof Error) {
     if (error.message === 'TRIGGER_TOKEN_NOT_FOUND') {
@@ -113,6 +112,9 @@ function mapServiceError(error: unknown, operation: string) {
         409,
       );
     }
+    if (error.message === 'TRIGGER_TOKEN_ID_COLLISION') {
+      return errorResponse('Trigger token id already exists', 409);
+    }
   }
 
   console.error(`Failed to ${operation} trigger link token`, error);
@@ -123,9 +125,6 @@ export async function GET(request: NextRequest) {
   try {
     const access = await authorizeCurrentUser(request);
     if ('response' in access) return access.response;
-    if (!canUseTriggerLinkFeature(access.user)) {
-      return errorResponse('Trigger links are not allowed', 403);
-    }
 
     const status = await triggerTokenService.getStatus(access.username);
     return jsonNoStore(serializeTriggerLink(request, status));
@@ -135,21 +134,28 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await authorizeCurrentUser(request);
-  if ('response' in access) return access.response;
-  if (!canUseTriggerLinkFeature(access.user)) {
-    return errorResponse('Trigger links are not allowed', 403);
+  try {
+    const access = await authorizeCurrentUser(request);
+    if ('response' in access) return access.response;
+
+    const parsed = postSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success)
+      return errorResponse('Invalid trigger link request', 400);
+
+    const result = await triggerTokenService.createToken(access.username);
+    clearConfigCache();
+    return jsonNoStore(
+      serializeTriggerLink(request, result, result.plainToken),
+    );
+  } catch (error) {
+    return mapServiceError(error, 'generate');
   }
-  return errorResponse('Only administrators can create trigger tokens', 403);
 }
 
 export async function PATCH(request: NextRequest) {
   try {
     const access = await authorizeCurrentUser(request);
     if ('response' in access) return access.response;
-    if (!canUseTriggerLinkFeature(access.user)) {
-      return errorResponse('Trigger links are not allowed', 403);
-    }
 
     const parsed = patchSchema.safeParse(
       await request.json().catch(() => null),
@@ -173,9 +179,6 @@ export async function PUT(request: NextRequest) {
   try {
     const access = await authorizeCurrentUser(request);
     if ('response' in access) return access.response;
-    if (!canUseTriggerLinkFeature(access.user)) {
-      return errorResponse('Trigger links are not allowed', 403);
-    }
 
     const parsed = revealSchema.safeParse(
       await request.json().catch(() => null),
@@ -200,8 +203,5 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const access = await authorizeCurrentUser(request);
   if ('response' in access) return access.response;
-  if (!canUseTriggerLinkFeature(access.user)) {
-    return errorResponse('Trigger links are not allowed', 403);
-  }
   return errorResponse('Only administrators can delete trigger tokens', 403);
 }

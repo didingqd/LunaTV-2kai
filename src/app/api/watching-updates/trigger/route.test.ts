@@ -84,7 +84,9 @@ describe('watching updates external trigger API', () => {
   });
 
   it('executes a manual trigger with Authorization Bearer token', async () => {
-    const response = await POST(request({ authorization: 'Bearer token.secret' }));
+    const response = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(response.status).toBe(200);
     expect(verify).toHaveBeenCalledWith('token.secret');
@@ -180,21 +182,27 @@ describe('watching updates external trigger API', () => {
 
   it('returns 401 for disabled and expired tokens', async () => {
     verify.mockRejectedValueOnce(new Error('TRIGGER_TOKEN_DISABLED'));
-    const disabled = await POST(request({ authorization: 'Bearer token.secret' }));
+    const disabled = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
     verify.mockRejectedValueOnce(new Error('TRIGGER_TOKEN_EXPIRED'));
-    const expired = await POST(request({ authorization: 'Bearer token.secret' }));
+    const expired = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(disabled.status).toBe(401);
     expect(expired.status).toBe(401);
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when trigger permissions are insufficient', async () => {
+  it('returns 403 when the trigger token metadata is disabled', async () => {
     execute.mockRejectedValueOnce(
-      new ManualTriggerUseCaseError('TRIGGER_LINK_NOT_ALLOWED'),
+      new ManualTriggerUseCaseError('TRIGGER_LINK_DISABLED'),
     );
 
-    const response = await POST(request({ authorization: 'Bearer token.secret' }));
+    const response = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(response.status).toBe(403);
     expect(recordLog).toHaveBeenCalledWith(
@@ -204,7 +212,7 @@ describe('watching updates external trigger API', () => {
         request: expect.objectContaining({ userId: 'alice' }),
         execution: expect.objectContaining({
           success: false,
-          error: 'TRIGGER_LINK_NOT_ALLOWED',
+          error: 'TRIGGER_LINK_DISABLED',
         }),
       }),
       { userIds: ['alice'] },
@@ -230,9 +238,13 @@ describe('watching updates external trigger API', () => {
   });
 
   it('returns 404 when the token user no longer exists', async () => {
-    execute.mockRejectedValueOnce(new ManualTriggerUseCaseError('USER_NOT_FOUND'));
+    execute.mockRejectedValueOnce(
+      new ManualTriggerUseCaseError('USER_NOT_FOUND'),
+    );
 
-    const response = await POST(request({ authorization: 'Bearer token.secret' }));
+    const response = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(response.status).toBe(404);
   });
@@ -248,7 +260,9 @@ describe('watching updates external trigger API', () => {
       },
     });
 
-    const response = await POST(request({ authorization: 'Bearer token.secret' }));
+    const response = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -283,7 +297,9 @@ describe('watching updates external trigger API', () => {
       },
     });
 
-    const response = await POST(request({ authorization: 'Bearer token.secret' }));
+    const response = await POST(
+      request({ authorization: 'Bearer token.secret' }),
+    );
 
     expect(response.status).toBe(500);
   });

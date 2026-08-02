@@ -15,20 +15,14 @@ type RouteContext = {
   params: Promise<{ username: string }>;
 };
 
-type AdminUser = AdminConfig['UserConfig']['Users'][number];
-
 const patchSchema = z
   .object({
     action: z.enum(['generate']).optional(),
     enabled: z.boolean().optional(),
-    token: z.string().trim().min(1).max(512).optional(),
   })
   .strict()
   .refine(
-    (value) =>
-      value.action !== undefined ||
-      value.enabled !== undefined ||
-      value.token !== undefined,
+    (value) => value.action !== undefined || value.enabled !== undefined,
     { message: 'Missing trigger link update action' },
   );
 
@@ -103,12 +97,6 @@ async function authorizeTarget(request: NextRequest, context: RouteContext) {
   return { config, operator, user, username };
 }
 
-function buildPermission(user: AdminUser) {
-  return {
-    allowTriggerLink: user.allowTriggerLink === true,
-  };
-}
-
 function mapServiceError(error: unknown, operation: string) {
   if (error instanceof Error) {
     if (error.message === 'TRIGGER_TOKEN_NOT_FOUND') {
@@ -140,7 +128,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const status = await triggerTokenService.getStatus(access.username);
     return jsonNoStore({
       username: access.username,
-      permission: buildPermission(access.user),
       triggerLink: serializeTriggerLink(request, status),
     });
   } catch (error) {
@@ -160,15 +147,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return errorResponse('Invalid trigger link request', 400);
 
     let status;
-    if (parsed.data.token !== undefined) {
-      status = await triggerTokenService.setToken(
-        access.username,
-        parsed.data.token,
-        {
-          adminTriggerEnabled: parsed.data.enabled,
-        },
-      );
-    } else if (parsed.data.action === 'generate') {
+    if (parsed.data.action === 'generate') {
       status = await triggerTokenService.createToken(access.username);
       if (parsed.data.enabled === false) {
         status = await triggerTokenService.setAdminEnabled(
@@ -189,7 +168,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     clearConfigCache();
     return jsonNoStore({
       username: access.username,
-      permission: buildPermission(access.user),
       triggerLink: serializeTriggerLink(request, status),
       audit: {
         operator: access.operator,
@@ -216,7 +194,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const result = await triggerTokenService.revealToken(access.username);
     return jsonNoStore({
       username: access.username,
-      permission: buildPermission(access.user),
       triggerLink: serializeTriggerLink(request, result, result.plainToken),
     });
   } catch (error) {

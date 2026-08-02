@@ -48,14 +48,14 @@ function originFromHostHeader(request: SiteUrlRequest): string | null {
 
 export function getSiteUrl(request?: SiteUrlRequest): string | null {
   if (request) {
-    const requestOrigin = normalizeOrigin(request.url);
-    if (requestOrigin) return requestOrigin;
-
     const forwardedOrigin = originFromForwardedHeaders(request);
     if (forwardedOrigin) return forwardedOrigin;
 
     const hostOrigin = originFromHostHeader(request);
     if (hostOrigin) return hostOrigin;
+
+    const requestOrigin = normalizeOrigin(request.url);
+    if (requestOrigin) return requestOrigin;
   }
 
   const configuredOrigin = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_URL);

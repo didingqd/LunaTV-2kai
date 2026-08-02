@@ -6,16 +6,23 @@ import {
   type UpdateCheckJobStatusSnapshot,
   type UpdateCheckJobTriggerSource,
 } from '@/lib/scheduler/update-check-job-runner';
+import { getSiteUrl } from '@/lib/site-url';
+import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import {
   triggerTokenService,
   type TriggerTokenVerifyResult,
 } from '@/lib/trigger-token-service';
-import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
 
 export const runtime = 'nodejs';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
+
+type DisplayUpdateItem = {
+  title: string;
+  fromEpisode: number;
+  toEpisode: number;
+};
 
 function noStoreJson(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
@@ -134,6 +141,13 @@ function episodeDelta(item: {
 
 function statusRefreshUrl(request: NextRequest): string {
   const url = new URL(request.url);
+  const siteUrl = getSiteUrl(request);
+  if (siteUrl) {
+    const origin = new URL(siteUrl);
+    url.protocol = origin.protocol;
+    url.hostname = origin.hostname;
+    url.port = origin.port;
+  }
   url.searchParams.set('status', '1');
   return url.toString();
 }
@@ -143,24 +157,60 @@ function resolveDisplayResult(
   userId: string,
 ): UpdateCheckJobDisplayResult | null {
   const results = snapshot.displayResults ?? [];
+  const userResults = results.filter((item) => item.userId === userId);
+  const snapshotUserResults = results.filter(
+    (item) => item.userId === snapshot.userId,
+  );
   return (
-    results.find((item) => item.userId === userId) ??
-    results.find((item) => item.userId === snapshot.userId) ??
+    userResults.find(hasDisplayUpdates) ??
+    snapshotUserResults.find(hasDisplayUpdates) ??
+    userResults[0] ??
+    snapshotUserResults[0] ??
     null
   );
 }
 
-function renderUpdateItems(
-  items: UpdateCheckJobDisplayResult['newUpdates'],
-): string {
+function hasDisplayUpdates(result: UpdateCheckJobDisplayResult): boolean {
+  return result.newUpdates.length > 0 || result.updated.length > 0;
+}
+
+function fallbackNewUpdatesFromResult(
+  snapshot: UpdateCheckJobStatusSnapshot,
+): DisplayUpdateItem[] {
+  if (!Array.isArray(snapshot.result?.updates)) return [];
+  return snapshot.result.updates.map((item) => ({
+    title: item.title,
+    fromEpisode: item.oldEpisode,
+    toEpisode: item.newEpisode,
+  }));
+}
+
+function resolveDisplaySections(
+  snapshot: UpdateCheckJobStatusSnapshot,
+  userId: string,
+) {
+  const displayResult = resolveDisplayResult(snapshot, userId);
+  const displayNewUpdates = displayResult?.newUpdates ?? [];
+  const newUpdates =
+    displayNewUpdates.length > 0
+      ? displayNewUpdates
+      : fallbackNewUpdatesFromResult(snapshot);
+
+  return {
+    displayResult,
+    newUpdates,
+    updated: displayResult?.updated ?? [],
+  };
+}
+
+function renderUpdateItems(items: DisplayUpdateItem[]): string {
   return items
     .map(
       (item) => `
         <li class="update-item">
           <div class="title"><span class="bullet">•</span>${htmlEscape(item.title)}</div>
           <div class="episodes">
-            ${htmlEscape(item.fromEpisode)} → ${htmlEscape(item.toEpisode)} 集
-            <span class="delta">+${episodeDelta(item)}</span>
+            ${htmlEscape(item.fromEpisode)} → ${htmlEscape(item.toEpisode)} 集（+${episodeDelta(item)}）
           </div>
         </li>`,
     )
@@ -176,9 +226,12 @@ function renderResultsPage(input: {
   const { request, snapshot, accepted, userId } = input;
   const refreshUrl = statusRefreshUrl(request);
   const running = snapshot.running || snapshot.status === 'running';
-  const displayResult = resolveDisplayResult(snapshot, userId);
-  const hasNewUpdates = (displayResult?.newUpdates.length ?? 0) > 0;
-  const hasUpdated = (displayResult?.updated.length ?? 0) > 0;
+  const { displayResult, newUpdates, updated } = resolveDisplaySections(
+    snapshot,
+    userId,
+  );
+  const hasNewUpdates = newUpdates.length > 0;
+  const hasUpdated = updated.length > 0;
   const hasAnyUpdates = hasNewUpdates || hasUpdated;
   const displayTime =
     displayResult?.displayTime ??
@@ -295,8 +348,8 @@ function renderResultsPage(input: {
              <p class="muted">页面会自动刷新。</p>`
           : `${
               hasAnyUpdates
-                ? `${hasNewUpdates ? `<section class="new"><h2 class="section-title">🆕 新更新（${displayResult!.newUpdates.length}）</h2><ul>${renderUpdateItems(displayResult!.newUpdates)}</ul></section>` : ''}
-                   ${hasUpdated ? `<section class="updated"><h2 class="section-title">✅ 已更新（${displayResult!.updated.length}）</h2><ul>${renderUpdateItems(displayResult!.updated)}</ul></section>` : ''}`
+                ? `${hasNewUpdates ? `<section class="new"><h2 class="section-title">🆕 新更新（${newUpdates.length}）</h2><ul>${renderUpdateItems(newUpdates)}</ul></section>` : ''}
+                   ${hasUpdated ? `<section class="updated"><h2 class="section-title">✅ 已更新（${updated.length}）</h2><ul>${renderUpdateItems(updated)}</ul></section>` : ''}`
                 : '<div class="empty">暂无更新</div>'
             }
             <div class="time">检测时间：${htmlEscape(displayTime || '-')}</div>`

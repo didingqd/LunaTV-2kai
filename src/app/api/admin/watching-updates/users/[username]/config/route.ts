@@ -27,7 +27,6 @@ const patchSchema = z
     cronExpression: z.string().optional(),
     timezone: z.string().optional(),
     allowCustomSchedule: z.boolean().optional(),
-    allowTriggerLink: z.boolean().optional(),
     triggerLinkAccessControl: z
       .object({
         enabled: z.boolean().optional(),
@@ -118,12 +117,10 @@ function buildConfigResponse(
 ) {
   const permissionEnabled = user.updateCheckBackendEnabled === true;
   const allowCustomSchedule = user.allowCustomSchedule !== false;
-  const allowTriggerLink = user.allowTriggerLink === true;
   const resolved = resolveUserWatchingUpdateConfig({
     username,
     userUpdateCheckBackendEnabled: permissionEnabled,
     allowCustomSchedule,
-    allowTriggerLink,
     systemConfig: config.SystemConfig,
     userConfig,
   });
@@ -134,7 +131,6 @@ function buildConfigResponse(
     permission: {
       enabled: permissionEnabled,
       allowCustomSchedule,
-      allowTriggerLink,
     },
     userConfig: userConfig
       ? {
@@ -163,20 +159,13 @@ function buildConfigResponse(
 async function updateUserAbilityPermissions(
   username: string,
   operator: string,
-  patch: Pick<
-    z.infer<typeof patchSchema>,
-    'allowCustomSchedule' | 'allowTriggerLink'
-  >,
+  patch: Pick<z.infer<typeof patchSchema>, 'allowCustomSchedule'>,
 ) {
   const hasAllowCustomSchedule = Object.prototype.hasOwnProperty.call(
     patch,
     'allowCustomSchedule',
   );
-  const hasAllowTriggerLink = Object.prototype.hasOwnProperty.call(
-    patch,
-    'allowTriggerLink',
-  );
-  if (!hasAllowCustomSchedule && !hasAllowTriggerLink) return false;
+  if (!hasAllowCustomSchedule) return false;
 
   const config = await getConfig();
   const user = config.UserConfig.Users.find(
@@ -186,9 +175,6 @@ async function updateUserAbilityPermissions(
 
   if (hasAllowCustomSchedule) {
     user.allowCustomSchedule = patch.allowCustomSchedule;
-  }
-  if (hasAllowTriggerLink) {
-    user.allowTriggerLink = patch.allowTriggerLink;
   }
   user.updateCheckPermissionUpdatedAt = Date.now();
   user.updateCheckPermissionOperator = operator;

@@ -60,6 +60,35 @@ describe('site url helpers', () => {
     ).toBe('https://example.com/api/update-check-trigger?token=token.secret');
   });
 
+  it('prefers forwarded host and proto over the server request URL', () => {
+    setNodeEnv('production');
+
+    expect(
+      buildUpdateCheckTriggerUrl(
+        request('http://internal:3000/admin', {
+          'x-forwarded-host': 'a.com',
+          'x-forwarded-proto': 'https',
+        }),
+        'token.secret',
+      ),
+    ).toBe('https://a.com/api/update-check-trigger?token=token.secret');
+  });
+
+  it('prefers the host header over a local request URL', () => {
+    setNodeEnv('development');
+
+    expect(
+      buildUpdateCheckTriggerUrl(
+        request('http://localhost:3000/admin', {
+          host: '192.168.1.20:3000',
+        }),
+        'token.secret',
+      ),
+    ).toBe(
+      'http://192.168.1.20:3000/api/update-check-trigger?token=token.secret',
+    );
+  });
+
   it('falls back to NEXT_PUBLIC_SITE_URL when request and forwarded origins are unusable', () => {
     setNodeEnv('production');
     process.env.NEXT_PUBLIC_SITE_URL = 'https://configured.example';

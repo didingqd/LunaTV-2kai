@@ -46,7 +46,6 @@ function getPermission(username: string, user: UserConfigEntry) {
   return {
     enabled: owner || user.updateCheckBackendEnabled === true,
     allowCustomSchedule: user.allowCustomSchedule !== false,
-    allowTriggerLink: user.allowTriggerLink === true,
   };
 }
 
@@ -70,7 +69,6 @@ function buildConfigResponse(
     username,
     userUpdateCheckBackendEnabled: permission.enabled,
     allowCustomSchedule: permission.allowCustomSchedule,
-    allowTriggerLink: permission.allowTriggerLink,
     systemConfig: config.SystemConfig,
     userConfig,
   });

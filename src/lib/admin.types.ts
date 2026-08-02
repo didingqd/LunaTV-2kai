@@ -113,7 +113,6 @@ export interface AdminConfig {
       watchCompletionThreshold?: number; // 用户级播放完成判定阈值，默认 80，非法值按读取侧回退
       updateCheckBackendEnabled?: boolean; // 是否授权后端追更计算
       allowCustomSchedule?: boolean;
-      allowTriggerLink?: boolean;
       updateCheckPermissionCreatedAt?: number;
       updateCheckPermissionUpdatedAt?: number;
       updateCheckPermissionOperator?: string;

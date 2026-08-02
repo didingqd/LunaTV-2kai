@@ -118,20 +118,6 @@ describe('ManualTriggerUseCase', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('rejects when trigger links are not allowed', async () => {
-    const run = jest.fn();
-    const useCase = new ManualTriggerUseCase(
-      async () =>
-        adminConfig([user({ username: 'alice', allowTriggerLink: false })]),
-      { run },
-    );
-
-    await expect(useCase.execute('alice')).rejects.toMatchObject({
-      code: 'TRIGGER_LINK_NOT_ALLOWED',
-    } satisfies Partial<ManualTriggerUseCaseError>);
-    expect(run).not.toHaveBeenCalled();
-  });
-
   it('rejects when trigger link metadata is disabled', async () => {
     const run = jest.fn();
     const useCase = new ManualTriggerUseCase(
@@ -225,7 +211,6 @@ function user(
     role: 'user',
     updateCheckBackendEnabled: true,
     allowCustomSchedule: true,
-    allowTriggerLink: true,
     watchingUpdateConfig: {
       triggerLink: { enabled: true, tokenId: 'token-1' },
     },

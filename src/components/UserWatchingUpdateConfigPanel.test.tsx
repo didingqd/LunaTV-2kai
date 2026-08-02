@@ -8,7 +8,6 @@ function configResponse({
   permission = {
     enabled: true,
     allowCustomSchedule: true,
-    allowTriggerLink: false,
   },
   userConfig = null,
   cronExpression = '*/30 * * * *',
@@ -21,7 +20,6 @@ function configResponse({
   permission?: {
     enabled: boolean;
     allowCustomSchedule: boolean;
-    allowTriggerLink: boolean;
   };
   userConfig?: {
     cronExpression?: string;
@@ -261,14 +259,12 @@ describe('UserWatchingUpdateConfigPanel', () => {
       permission: {
         enabled: true,
         allowCustomSchedule: true,
-        allowTriggerLink: false,
       },
     });
     const saved = configResponse({
       permission: {
         enabled: true,
         allowCustomSchedule: false,
-        allowTriggerLink: true,
       },
     });
     const fetchMock = jest
@@ -293,15 +289,12 @@ describe('UserWatchingUpdateConfigPanel', () => {
     });
   });
 
-  it('renders trigger link permission and admin token controls', async () => {
+  it('renders admin token controls without the deprecated trigger link permission', async () => {
     setFetch(jest.fn().mockResolvedValue(jsonResponse(configResponse())));
 
     renderPanel();
 
     expect(await screen.findByText('能力限制')).toBeInTheDocument();
-    expect(
-      screen.getByRole('switch', { name: '允许触发链接' }),
-    ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: '启用触发链接' }),
     ).toBeInTheDocument();
@@ -327,7 +320,6 @@ describe('UserWatchingUpdateConfigPanel', () => {
             permission: {
               enabled: false,
               allowCustomSchedule: true,
-              allowTriggerLink: false,
             },
           }),
         ),

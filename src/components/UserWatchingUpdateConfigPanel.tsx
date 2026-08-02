@@ -48,7 +48,6 @@ interface UserWatchingUpdateConfigResponse {
   permission: {
     enabled: boolean;
     allowCustomSchedule: boolean;
-    allowTriggerLink: boolean;
   };
   userConfig: {
     cronExpression?: string;
@@ -72,9 +71,6 @@ interface UserWatchingUpdateConfigResponse {
 
 interface AdminTriggerLinkResponse {
   username: string;
-  permission: {
-    allowTriggerLink: boolean;
-  };
   triggerLink: {
     enabled: boolean;
     userTriggerEnabled?: boolean;
@@ -186,7 +182,6 @@ export default function UserWatchingUpdateConfigPanel({
   );
   const [permissionEnabled, setPermissionEnabled] = useState(false);
   const [allowCustomSchedule, setAllowCustomSchedule] = useState(true);
-  const [allowTriggerLink, setAllowTriggerLink] = useState(false);
   const [cronMode, setCronMode] = useState<ConfigMode>('inherit');
   const [cronExpression, setCronExpression] = useState('*/30 * * * *');
   const [timezoneMode, setTimezoneMode] = useState<ConfigMode>('inherit');
@@ -206,9 +201,8 @@ export default function UserWatchingUpdateConfigPanel({
   >(null);
   const [triggerLoading, setTriggerLoading] = useState(false);
   const [triggerSaving, setTriggerSaving] = useState<
-    'enabled' | 'reveal' | 'manual' | 'generate' | null
+    'enabled' | 'reveal' | 'generate' | null
   >(null);
-  const [manualToken, setManualToken] = useState('');
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const requestSequence = useRef(0);
 
@@ -217,7 +211,6 @@ export default function UserWatchingUpdateConfigPanel({
       setConfig(next);
       setPermissionEnabled(next.permission.enabled);
       setAllowCustomSchedule(next.permission.allowCustomSchedule);
-      setAllowTriggerLink(next.permission.allowTriggerLink);
       if (!resetDrafts) return;
 
       setCronMode(
@@ -350,7 +343,6 @@ export default function UserWatchingUpdateConfigPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           allowCustomSchedule,
-          allowTriggerLink,
           triggerLinkAccessControl: accessControl,
           ...(cronMode === 'custom' ? { cronExpression } : {}),
           ...(timezoneMode === 'custom' ? { timezone } : {}),
@@ -404,7 +396,7 @@ export default function UserWatchingUpdateConfigPanel({
   };
 
   const updateTriggerLink = async (
-    action: 'enabled' | 'manual' | 'generate',
+    action: 'enabled' | 'generate',
     body: Record<string, unknown>,
   ) => {
     setTriggerSaving(action);
@@ -418,7 +410,6 @@ export default function UserWatchingUpdateConfigPanel({
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data.triggerLink);
       setRevealedToken(null);
-      if (action === 'manual') setManualToken('');
       setMessage({ type: 'success', text: '触发链接 Token 已更新' });
     } catch (error) {
       setMessage({
@@ -452,18 +443,6 @@ export default function UserWatchingUpdateConfigPanel({
     } finally {
       setTriggerSaving(null);
     }
-  };
-
-  const saveManualToken = async () => {
-    const token = manualToken.trim();
-    if (!token) {
-      setMessage({ type: 'error', text: '请输入新的 Token' });
-      return;
-    }
-    await updateTriggerLink('manual', {
-      token,
-      enabled: triggerLink?.adminTriggerEnabled ?? triggerLink?.enabled ?? true,
-    });
   };
 
   const updateAccessControl = (
@@ -537,13 +516,6 @@ export default function UserWatchingUpdateConfigPanel({
             checked={allowCustomSchedule}
             disabled={saving}
             onChange={() => setAllowCustomSchedule((current) => !current)}
-          />
-          <SwitchRow
-            label='允许触发链接'
-            description='控制用户端是否显示和使用自己的触发链接。'
-            checked={allowTriggerLink}
-            disabled={saving}
-            onChange={() => setAllowTriggerLink((current) => !current)}
           />
         </div>
       </section>
@@ -660,7 +632,7 @@ export default function UserWatchingUpdateConfigPanel({
             className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
           >
             <RefreshCw className='h-4 w-4' />
-            重新生成
+            {triggerLink?.hasToken ? '重新生成' : '生成 Token'}
           </button>
         </div>
 
@@ -674,34 +646,6 @@ export default function UserWatchingUpdateConfigPanel({
             </div>
           </div>
         )}
-
-        <div className='grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end'>
-          <label className='block'>
-            <span className='mb-1 block text-xs text-gray-600 dark:text-gray-400'>
-              手动输入新 Token
-            </span>
-            <input
-              value={manualToken}
-              disabled={triggerLoading || triggerSaving !== null}
-              onChange={(event) => setManualToken(event.target.value)}
-              placeholder='输入后保存，旧 Token 将立即失效'
-              className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-            />
-          </label>
-          <button
-            type='button'
-            disabled={
-              triggerLoading ||
-              triggerSaving !== null ||
-              manualToken.trim().length === 0
-            }
-            onClick={() => void saveManualToken()}
-            className='inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60'
-          >
-            <Save className='h-4 w-4' />
-            修改 Token
-          </button>
-        </div>
       </section>
 
       <section className='space-y-4 border-b border-gray-200 pb-5 dark:border-gray-700'>

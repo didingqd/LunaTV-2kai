@@ -100,15 +100,6 @@ describe('user watching updates trigger link API', () => {
     expect(loadConfig).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when trigger links are not allowed', async () => {
-    loadConfig.mockResolvedValue(adminConfig({ allowTriggerLink: false }));
-
-    const response = await POST(request('POST'));
-
-    expect(response.status).toBe(403);
-    expect(createToken).not.toHaveBeenCalled();
-  });
-
   it('returns 404 when the signed-in user does not exist', async () => {
     loadConfig.mockResolvedValue(adminConfig(undefined, []));
 
@@ -172,10 +163,23 @@ describe('user watching updates trigger link API', () => {
     });
   });
 
-  it('rejects user token creation', async () => {
+  it('generates a random token for the current user', async () => {
+    const response = await POST(request('POST', { action: 'generate' }));
+
+    expect(response.status).toBe(200);
+    expect(createToken).toHaveBeenCalledWith('alice');
+    expect(clearCache).toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      fullToken: 'token.secret',
+      fullTriggerLink:
+        'http://localhost/api/update-check-trigger?token=token.secret',
+    });
+  });
+
+  it('rejects user-specified token generation options', async () => {
     const response = await POST(request('POST', { expiresAt: 5000 }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(400);
     expect(createToken).not.toHaveBeenCalled();
     expect(clearCache).not.toHaveBeenCalled();
   });
@@ -211,10 +215,17 @@ describe('user watching updates trigger link API', () => {
     });
   });
 
-  it('rejects username in create requests', async () => {
+  it('rejects username in generate requests', async () => {
     const response = await POST(request('POST', { username: 'bob' }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(400);
+    expect(createToken).not.toHaveBeenCalled();
+  });
+
+  it('rejects manual token content in generate requests', async () => {
+    const response = await POST(request('POST', { token: 'custom-token' }));
+
+    expect(response.status).toBe(400);
     expect(createToken).not.toHaveBeenCalled();
   });
 
@@ -287,7 +298,6 @@ function adminConfig(
           role: 'user',
           updateCheckBackendEnabled: true,
           allowCustomSchedule: true,
-          allowTriggerLink: true,
           ...alice,
         },
       ],

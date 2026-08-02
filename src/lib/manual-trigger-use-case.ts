@@ -11,7 +11,6 @@ import type { WatchingUpdateCheckLogRequest } from './watching-update-check-log-
 export type ManualTriggerUseCaseErrorCode =
   | 'USER_NOT_FOUND'
   | 'WATCHING_UPDATE_NOT_ALLOWED'
-  | 'TRIGGER_LINK_NOT_ALLOWED'
   | 'TRIGGER_LINK_DISABLED'
   | 'SCHEDULER_DISABLED';
 
@@ -59,16 +58,12 @@ export class ManualTriggerUseCase {
       username: user.username,
       userUpdateCheckBackendEnabled: user.updateCheckBackendEnabled === true,
       allowCustomSchedule: user.allowCustomSchedule,
-      allowTriggerLink: user.allowTriggerLink,
       systemConfig: config.SystemConfig,
       userConfig: user.watchingUpdateConfig,
     });
 
     if (!effective.enabled) {
       throw new ManualTriggerUseCaseError('WATCHING_UPDATE_NOT_ALLOWED');
-    }
-    if (!effective.permissions.allowTriggerLink) {
-      throw new ManualTriggerUseCaseError('TRIGGER_LINK_NOT_ALLOWED');
     }
     if (user.watchingUpdateConfig?.triggerLink?.enabled !== true) {
       throw new ManualTriggerUseCaseError('TRIGGER_LINK_DISABLED');

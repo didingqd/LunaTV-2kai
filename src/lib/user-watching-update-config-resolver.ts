@@ -16,7 +16,6 @@ export interface ResolveUserWatchingUpdateConfigInput {
   username: string;
   userUpdateCheckBackendEnabled?: boolean;
   allowCustomSchedule?: boolean;
-  allowTriggerLink?: boolean;
   systemConfig?: Partial<SystemConfig> | null;
   userConfig?: UserWatchingUpdateConfig | null;
 }
@@ -31,7 +30,6 @@ export interface EffectiveWatchingUpdateConfig {
   };
   permissions: {
     allowCustomSchedule: boolean;
-    allowTriggerLink: boolean;
   };
 }
 
@@ -107,7 +105,6 @@ export function resolveUserWatchingUpdateConfig(
     },
     permissions: {
       allowCustomSchedule: input.allowCustomSchedule !== false,
-      allowTriggerLink: input.allowTriggerLink === true,
     },
   };
 }

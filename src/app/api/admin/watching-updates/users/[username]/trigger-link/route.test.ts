@@ -19,7 +19,6 @@ jest.mock('@/lib/trigger-token-service', () => ({
     getStatus: jest.fn(),
     setEnabled: jest.fn(),
     setAdminEnabled: jest.fn(),
-    setToken: jest.fn(),
     createToken: jest.fn(),
     revealToken: jest.fn(),
   },
@@ -44,7 +43,6 @@ const clearCache = clearConfigCache as jest.Mock;
 const getStatus = triggerTokenService.getStatus as jest.Mock;
 const setEnabled = triggerTokenService.setEnabled as jest.Mock;
 const setAdminEnabled = triggerTokenService.setAdminEnabled as jest.Mock;
-const setToken = triggerTokenService.setToken as jest.Mock;
 const createToken = triggerTokenService.createToken as jest.Mock;
 const revealToken = triggerTokenService.revealToken as jest.Mock;
 const clearUserState =
@@ -79,7 +77,6 @@ describe('admin watching updates trigger link API', () => {
       adminTriggerEnabled: false,
       effectiveEnabled: false,
     });
-    setToken.mockResolvedValue({ ...status, plainToken: 'manual-secret' });
     createToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     revealToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
   });
@@ -92,7 +89,6 @@ describe('admin watching updates trigger link API', () => {
     const body = await response.json();
     expect(body).toMatchObject({
       username: 'alice',
-      permission: { allowTriggerLink: true },
       triggerLink: {
         maskedToken: 'toke****cret',
         triggerLink:
@@ -149,18 +145,14 @@ describe('admin watching updates trigger link API', () => {
     expect(clearUserState).toHaveBeenCalledWith('alice');
   });
 
-  it('sets a manual token without returning the plain token by default', async () => {
+  it('rejects manual token content', async () => {
     const response = await PATCH(
       request('alice', 'PATCH', { token: 'manual-secret' }),
       context('alice'),
     );
 
-    expect(response.status).toBe(200);
-    expect(setToken).toHaveBeenCalledWith('alice', 'manual-secret', {
-      adminTriggerEnabled: undefined,
-    });
-    const body = await response.json();
-    expect(JSON.stringify(body)).not.toContain('manual-secret');
+    expect(response.status).toBe(400);
+    expect(createToken).not.toHaveBeenCalled();
   });
 
   it('generates a new token using the existing generation logic', async () => {
@@ -206,7 +198,7 @@ function adminConfig(): AdminConfig {
       Users: [
         { username: 'owner', role: 'owner' },
         { username: 'admin-a', role: 'admin' },
-        { username: 'alice', role: 'user', allowTriggerLink: true },
+        { username: 'alice', role: 'user' },
       ],
     },
   } as AdminConfig;

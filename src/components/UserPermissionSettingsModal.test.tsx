@@ -122,17 +122,11 @@ describe('UserPermissionSettingsModal', () => {
     const fetchMock = global.fetch as jest.Mock;
     const onRefresh = jest.fn().mockResolvedValue(undefined);
     fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: false })),
-      )
+      .mockResolvedValueOnce(jsonResponse(watchingUpdateConfigResponse()))
       .mockResolvedValueOnce(jsonResponse(triggerLinkResponse()))
       .mockResolvedValueOnce(jsonResponse({ success: true }))
-      .mockResolvedValueOnce(
-        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: true })),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(watchingUpdateConfigResponse({ allowTriggerLink: true })),
-      )
+      .mockResolvedValueOnce(jsonResponse(watchingUpdateConfigResponse()))
+      .mockResolvedValueOnce(jsonResponse(watchingUpdateConfigResponse()))
       .mockResolvedValueOnce(jsonResponse(triggerLinkResponse()));
 
     render(
@@ -148,7 +142,7 @@ describe('UserPermissionSettingsModal', () => {
 
     fireEvent.click(await screen.findByRole('tab', { name: '追更系统控制' }));
     fireEvent.click(
-      await screen.findByRole('switch', { name: '允许触发链接' }),
+      await screen.findByRole('switch', { name: '允许用户自定义调度' }),
     );
     fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
@@ -157,7 +151,6 @@ describe('UserPermissionSettingsModal', () => {
     expect(
       screen.getByRole('tabpanel', { name: '追更系统控制' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: '允许触发链接' })).toBeChecked();
   });
 });
 
@@ -168,17 +161,12 @@ function jsonResponse(data: unknown) {
   } as Response;
 }
 
-function watchingUpdateConfigResponse({
-  allowTriggerLink,
-}: {
-  allowTriggerLink: boolean;
-}) {
+function watchingUpdateConfigResponse() {
   return {
     username: user.username,
     permission: {
       enabled: true,
       allowCustomSchedule: true,
-      allowTriggerLink,
     },
     userConfig: null,
     effective: {
@@ -215,9 +203,6 @@ function watchingUpdateConfigResponse({
 function triggerLinkResponse() {
   return {
     username: user.username,
-    permission: {
-      allowTriggerLink: true,
-    },
     triggerLink: {
       enabled: true,
       disabledReason: null,
