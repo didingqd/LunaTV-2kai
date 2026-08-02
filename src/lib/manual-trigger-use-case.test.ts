@@ -49,9 +49,12 @@ describe('ManualTriggerUseCase', () => {
     });
     expect(run).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith({
+      mode: 'user',
       trigger: 'manual',
       triggerSource: 'manual',
+      userId: 'alice',
       requestedBy: 'alice',
+      preserveNextCheckAt: true,
       audit: {
         source: 'trigger',
         operation: 'manual-trigger',
@@ -167,9 +170,12 @@ describe('ManualTriggerUseCase', () => {
     await useCase.execute('alice', { auditRequest });
 
     expect(run).toHaveBeenCalledWith({
+      mode: 'user',
       trigger: 'manual',
       triggerSource: 'manual',
+      userId: 'alice',
       requestedBy: 'alice',
+      preserveNextCheckAt: true,
       audit: {
         source: 'trigger',
         operation: 'manual-trigger',

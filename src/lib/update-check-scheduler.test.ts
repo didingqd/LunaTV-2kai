@@ -182,6 +182,52 @@ describe('UpdateCheckScheduler', () => {
     expect(result).toMatchObject({ inspected: 1, succeeded: 1, failed: 0 });
   });
 
+  it('can run all tasks for one user immediately without reading due tasks', async () => {
+    const aliceTask = createTask({ id: 'task-alice' });
+    const bobTask = createTask({
+      id: 'task-bob',
+      userId: 'bob',
+      followId: 'follow-bob',
+    });
+    const listDue = jest.fn();
+    const listTasksByUser = jest.fn(async (userId: string) =>
+      userId === 'alice' ? [aliceTask] : [bobTask],
+    );
+    const tasks = {
+      get: async (id: string) =>
+        [aliceTask, bobTask].find((task) => task.id === id) ?? null,
+      save: async () => undefined,
+      listDue,
+      listTasksByUser,
+      listAllUsersWithTasks: async () => ['alice', 'bob'],
+      batchUpdateNextCheckAt: async () => 0,
+      delete: async () => undefined,
+      deleteForUser: async () => undefined,
+    } as SchedulerTasks;
+    const checked: UpdateCheckTask[] = [];
+
+    const result = await createScheduler(
+      tasks,
+      {
+        checkTask: async (value) => {
+          checked.push(value);
+          return updateResult({ hasUpdate: true });
+        },
+      },
+      { permissions: ['alice', 'bob'] },
+    ).runUser('alice', { now: runAt });
+
+    expect(listDue).not.toHaveBeenCalled();
+    expect(listTasksByUser).toHaveBeenCalledWith('alice');
+    expect(checked).toEqual([aliceTask]);
+    expect(result).toMatchObject({
+      inspected: 1,
+      succeeded: 1,
+      failed: 0,
+      updateFoundCount: 1,
+    });
+  });
+
   it('does not read due tasks when backend calculation is disabled', async () => {
     const listDue = jest.fn();
     const checkTask = jest.fn();
@@ -590,10 +636,14 @@ describe('UpdateCheckScheduler', () => {
       },
     });
 
-    await createScheduler(tasks, successfulService(tasks, runAt, updatedResult), {
-      notifications: { dispatchPayload: dispatch },
-      notificationState,
-    }).run({ now: runAt });
+    await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updatedResult),
+      {
+        notifications: { dispatchPayload: dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(await notificationState.get('alice')).toMatchObject({

@@ -6,7 +6,10 @@ export interface TriggerTokenRecord {
   secretHash: string;
   lookupHash?: string;
   plainToken?: string;
+  /** @deprecated Use effective enabled state derived from user/admin switches. */
   enabled: boolean;
+  userTriggerEnabled?: boolean;
+  adminTriggerEnabled?: boolean;
   disabledReason?: string;
   disabledAt?: number;
   disabledSource?: 'admin' | 'system' | 'user';
@@ -69,6 +72,10 @@ function isTokenRecord(value: unknown): value is TriggerTokenRecord {
     (record.plainToken === undefined ||
       typeof record.plainToken === 'string') &&
     typeof record.enabled === 'boolean' &&
+    (record.userTriggerEnabled === undefined ||
+      typeof record.userTriggerEnabled === 'boolean') &&
+    (record.adminTriggerEnabled === undefined ||
+      typeof record.adminTriggerEnabled === 'boolean') &&
     (record.disabledReason === undefined ||
       typeof record.disabledReason === 'string') &&
     (record.disabledAt === undefined ||

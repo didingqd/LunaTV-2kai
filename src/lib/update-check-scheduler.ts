@@ -28,6 +28,7 @@ import {
   createWatchingUpdateFailedPayload,
   createWatchingUpdateFoundPayload,
   registerWatchingUpdateNotificationBuilder,
+  type WatchingUpdateNotificationPayloadData,
 } from './watching-update-notification-builder';
 
 type SchedulerTaskRepository = UpdateCheckTaskRepository &
@@ -54,6 +55,10 @@ export interface UpdateCheckSchedulerOptions {
   onTaskComplete?: (value: {
     task: UpdateCheckTask;
     result: UpdateResult | null;
+  }) => void | Promise<void>;
+  onNotificationData?: (value: {
+    userId: string;
+    data: WatchingUpdateNotificationPayloadData;
   }) => void | Promise<void>;
 }
 
@@ -115,6 +120,48 @@ export class UpdateCheckScheduler {
     const candidateTasks = options.ignoreSchedule
       ? await this.listAllTasks()
       : await this.tasks.listDue(now, limit);
+    return this.runCandidateTasks(candidateTasks, options, now, settings);
+  }
+
+  async runUser(
+    userId: string,
+    options: UpdateCheckSchedulerOptions = {},
+  ): Promise<UpdateCheckSchedulerResult> {
+    const now = options.now ?? Date.now();
+    const settings = await this.config.getUpdateCheckConfig();
+    if (!settings.updateCheckBackendEnabled) {
+      return {
+        inspected: 0,
+        succeeded: 0,
+        failed: 0,
+        oldestDueAt: null,
+        dataSourceCount: 0,
+        updateFoundCount: 0,
+        notificationCount: 0,
+        skipped: 0,
+      };
+    }
+
+    const candidateTasks = await this.tasks.listTasksByUser(userId);
+    return this.runCandidateTasks(
+      candidateTasks,
+      {
+        ...options,
+        preserveNextCheckAt: options.preserveNextCheckAt ?? true,
+      },
+      now,
+      settings,
+      userId,
+    );
+  }
+
+  private async runCandidateTasks(
+    candidateTasks: UpdateCheckTask[],
+    options: UpdateCheckSchedulerOptions,
+    now: number,
+    settings: SystemConfig,
+    targetUserId?: string,
+  ): Promise<UpdateCheckSchedulerResult> {
     const [enabledUserIds, adminConfig] = await Promise.all([
       this.permissions.listUpdateCheckEnabledUserIds(),
       this.loadAdminConfig(),
@@ -129,6 +176,7 @@ export class UpdateCheckScheduler {
     const users = new Set<string>();
     const followCounts = new Map<string, number>();
     for (const task of candidateTasks) {
+      if (targetUserId && task.userId !== targetUserId) continue;
       if (!authorizedUsers.has(task.userId)) continue;
       const user = usersById.get(task.userId);
       const schedule = resolveUserWatchingUpdateSchedule({
@@ -196,6 +244,7 @@ export class UpdateCheckScheduler {
       Array.from({ length: Math.min(5, selectedTasks.length) }, worker),
     );
     await this.dispatchUpdateNotifications(
+      options,
       completedTasks,
       settings,
       usersById,
@@ -310,6 +359,7 @@ export class UpdateCheckScheduler {
   }
 
   private async dispatchUpdateNotifications(
+    options: UpdateCheckSchedulerOptions,
     completedTasks: CompletedTask[],
     settings: SystemConfig,
     usersById: Map<string, AdminConfig['UserConfig']['Users'][number]>,
@@ -338,6 +388,29 @@ export class UpdateCheckScheduler {
         checkedAt,
         allCurrentResults.flatMap(toNotificationCandidate),
       );
+      if (Number.isFinite(checkedAt)) {
+        const timezone = this.resolveNotificationTimezone(
+          userId,
+          settings,
+          usersById,
+          authorizedUsers,
+          ownerId,
+          checkedAt,
+        );
+        const displayTime = formatNotificationTime(checkedAt, timezone);
+        await this.notifyDisplayData(options, {
+          userId,
+          data: {
+            title: '更新提醒',
+            newUpdates: [],
+            updated: [],
+            checkedAt,
+            timezone,
+            displayTime,
+          },
+        });
+      }
+
       if (analysis.newUpdates.length === 0) {
         await this.notificationState.save(userId, analysis.nextState);
         continue;
@@ -433,6 +506,18 @@ export class UpdateCheckScheduler {
 
   private dispatchNotificationPayload(payload: NotificationPayload) {
     return this.notifications.dispatchPayload(payload);
+  }
+
+  private async notifyDisplayData(
+    options: UpdateCheckSchedulerOptions,
+    value: { userId: string; data: WatchingUpdateNotificationPayloadData },
+  ): Promise<void> {
+    if (!options.onNotificationData) return;
+    try {
+      await options.onNotificationData(value);
+    } catch (error) {
+      console.error('Update check notification data callback failed', error);
+    }
   }
 
   private buildFailureNotificationPayload(

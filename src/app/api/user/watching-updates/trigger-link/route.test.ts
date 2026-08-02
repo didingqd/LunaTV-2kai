@@ -17,6 +17,7 @@ jest.mock('@/lib/trigger-token-service', () => ({
     createToken: jest.fn(),
     rotateToken: jest.fn(),
     setEnabled: jest.fn(),
+    setUserEnabled: jest.fn(),
     setExpiresAt: jest.fn(),
     expireToken: jest.fn(),
     revealToken: jest.fn(),
@@ -36,6 +37,7 @@ const getStatus = triggerTokenService.getStatus as jest.Mock;
 const createToken = triggerTokenService.createToken as jest.Mock;
 const rotateToken = triggerTokenService.rotateToken as jest.Mock;
 const setEnabled = triggerTokenService.setEnabled as jest.Mock;
+const setUserEnabled = triggerTokenService.setUserEnabled as jest.Mock;
 const setExpiresAt = triggerTokenService.setExpiresAt as jest.Mock;
 const expireToken = triggerTokenService.expireToken as jest.Mock;
 const revealToken = triggerTokenService.revealToken as jest.Mock;
@@ -43,6 +45,12 @@ const deleteToken = triggerTokenService.deleteToken as jest.Mock;
 
 const status = {
   enabled: true,
+  userTriggerEnabled: true,
+  adminTriggerEnabled: true,
+  effectiveEnabled: true,
+  disabledReason: null,
+  disabledAt: null,
+  disabledSource: null,
   createdAt: 1000,
   rotatedAt: 1000,
   expiresAt: null,
@@ -66,6 +74,7 @@ describe('user watching updates trigger link API', () => {
     });
     revealToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     setEnabled.mockResolvedValue({ ...status, enabled: false });
+    setUserEnabled.mockResolvedValue({ ...status, enabled: false });
     setExpiresAt.mockResolvedValue({ ...status, expiresAt: 5000 });
     expireToken.mockResolvedValue({
       ...status,
@@ -126,14 +135,49 @@ describe('user watching updates trigger link API', () => {
     expect(JSON.stringify(body)).not.toContain('hash');
   });
 
-  it('creates a token without returning the plain token by default', async () => {
-    const response = await POST(request('POST', { expiresAt: 5000 }));
+  it('keeps the current user token visible when the effective status is disabled', async () => {
+    getStatus.mockResolvedValue({
+      ...status,
+      enabled: false,
+      userTriggerEnabled: false,
+      effectiveEnabled: false,
+    });
+
+    const response = await GET(request('GET'));
 
     expect(response.status).toBe(200);
-    expect(createToken).toHaveBeenCalledWith('alice', { expiresAt: 5000 });
-    expect(clearCache).toHaveBeenCalled();
-    const body = await response.json();
-    expect(JSON.stringify(body)).not.toContain('token.secret');
+    await expect(response.json()).resolves.toMatchObject({
+      enabled: false,
+      userTriggerEnabled: false,
+      effectiveEnabled: false,
+      hasToken: true,
+      maskedToken: 'toke****cret',
+      triggerLink:
+        'http://localhost/api/update-check-trigger?token=toke****cret',
+      canRevealToken: true,
+    });
+  });
+
+  it('uses forwarded origin when the request URL is an internal bind address', async () => {
+    const response = await GET(
+      request('GET', undefined, {
+        'x-forwarded-host': 'example.com',
+        'x-forwarded-proto': 'https',
+      }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      triggerLink:
+        'https://example.com/api/update-check-trigger?token=toke****cret',
+    });
+  });
+
+  it('rejects user token creation', async () => {
+    const response = await POST(request('POST', { expiresAt: 5000 }));
+
+    expect(response.status).toBe(403);
+    expect(createToken).not.toHaveBeenCalled();
+    expect(clearCache).not.toHaveBeenCalled();
   });
 
   it('reveals the full trigger link through a dedicated operation', async () => {
@@ -148,30 +192,47 @@ describe('user watching updates trigger link API', () => {
     });
   });
 
+  it('reveals the current user token even when the effective status is disabled', async () => {
+    getStatus.mockResolvedValue({
+      ...status,
+      enabled: false,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
+    });
+
+    const response = await PUT(request('PUT', { action: 'reveal' }));
+
+    expect(response.status).toBe(200);
+    expect(revealToken).toHaveBeenCalledWith('alice');
+    await expect(response.json()).resolves.toMatchObject({
+      fullToken: 'token.secret',
+      fullTriggerLink:
+        'http://localhost/api/update-check-trigger?token=token.secret',
+    });
+  });
+
   it('rejects username in create requests', async () => {
     const response = await POST(request('POST', { username: 'bob' }));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(createToken).not.toHaveBeenCalled();
   });
 
-  it('rotates a token for the signed-in user without revealing it', async () => {
+  it('rejects user token rotation', async () => {
     const response = await PATCH(request('PATCH', { action: 'rotate' }));
 
-    expect(response.status).toBe(200);
-    expect(rotateToken).toHaveBeenCalledWith('alice');
-    const body = await response.json();
-    expect(JSON.stringify(body)).not.toContain('token.new-secret');
+    expect(response.status).toBe(400);
+    expect(rotateToken).not.toHaveBeenCalled();
   });
 
   it('enables and disables a token', async () => {
     const response = await PATCH(request('PATCH', { enabled: false }));
 
     expect(response.status).toBe(200);
-    expect(setEnabled).toHaveBeenCalledWith('alice', false);
+    expect(setUserEnabled).toHaveBeenCalledWith('alice', false);
   });
 
-  it('prevents users from re-enabling a system-disabled token', async () => {
+  it('delegates user re-enable requests to the token service', async () => {
     getStatus.mockResolvedValue({
       ...status,
       enabled: false,
@@ -182,18 +243,18 @@ describe('user watching updates trigger link API', () => {
 
     const response = await PATCH(request('PATCH', { enabled: true }));
 
-    expect(response.status).toBe(403);
-    expect(setEnabled).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(setUserEnabled).toHaveBeenCalledWith('alice', true);
   });
 
-  it('sets and expires a token', async () => {
+  it('rejects user expiration updates', async () => {
     const setResponse = await PATCH(request('PATCH', { expiresAt: 5000 }));
     const expireResponse = await PATCH(request('PATCH', { action: 'expire' }));
 
-    expect(setResponse.status).toBe(200);
-    expect(expireResponse.status).toBe(200);
-    expect(setExpiresAt).toHaveBeenCalledWith('alice', 5000);
-    expect(expireToken).toHaveBeenCalledWith('alice');
+    expect(setResponse.status).toBe(400);
+    expect(expireResponse.status).toBe(400);
+    expect(setExpiresAt).not.toHaveBeenCalled();
+    expect(expireToken).not.toHaveBeenCalled();
   });
 
   it('rejects username in patch requests', async () => {
@@ -202,15 +263,15 @@ describe('user watching updates trigger link API', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(setEnabled).not.toHaveBeenCalled();
+    expect(setUserEnabled).not.toHaveBeenCalled();
   });
 
-  it('deletes the token for the signed-in user', async () => {
+  it('rejects user token deletion', async () => {
     const response = await DELETE(request('DELETE'));
 
-    expect(response.status).toBe(200);
-    expect(deleteToken).toHaveBeenCalledWith('alice');
-    expect(clearCache).toHaveBeenCalled();
+    expect(response.status).toBe(403);
+    expect(deleteToken).not.toHaveBeenCalled();
+    expect(clearCache).not.toHaveBeenCalled();
   });
 });
 
@@ -234,13 +295,19 @@ function adminConfig(
   } as AdminConfig;
 }
 
-function request(method: string, body?: unknown) {
+function request(
+  method: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+) {
   return new NextRequest(
-    'http://localhost/api/user/watching-updates/trigger-link',
+    `http://${headers['x-forwarded-host'] ? '0.0.0.0:3000' : 'localhost'}/api/user/watching-updates/trigger-link`,
     {
       method,
-      headers:
-        body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: {
+        ...headers,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     },
   );

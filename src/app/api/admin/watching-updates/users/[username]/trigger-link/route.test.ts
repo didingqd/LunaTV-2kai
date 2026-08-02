@@ -18,6 +18,7 @@ jest.mock('@/lib/trigger-token-service', () => ({
   triggerTokenService: {
     getStatus: jest.fn(),
     setEnabled: jest.fn(),
+    setAdminEnabled: jest.fn(),
     setToken: jest.fn(),
     createToken: jest.fn(),
     revealToken: jest.fn(),
@@ -42,6 +43,7 @@ const loadConfig = getConfig as jest.Mock;
 const clearCache = clearConfigCache as jest.Mock;
 const getStatus = triggerTokenService.getStatus as jest.Mock;
 const setEnabled = triggerTokenService.setEnabled as jest.Mock;
+const setAdminEnabled = triggerTokenService.setAdminEnabled as jest.Mock;
 const setToken = triggerTokenService.setToken as jest.Mock;
 const createToken = triggerTokenService.createToken as jest.Mock;
 const revealToken = triggerTokenService.revealToken as jest.Mock;
@@ -50,6 +52,9 @@ const clearUserState =
 
 const status = {
   enabled: true,
+  userTriggerEnabled: true,
+  adminTriggerEnabled: true,
+  effectiveEnabled: true,
   createdAt: 1000,
   rotatedAt: 1000,
   expiresAt: null,
@@ -68,6 +73,12 @@ describe('admin watching updates trigger link API', () => {
     loadConfig.mockResolvedValue(adminConfig());
     getStatus.mockResolvedValue(status);
     setEnabled.mockResolvedValue({ ...status, enabled: false });
+    setAdminEnabled.mockResolvedValue({
+      ...status,
+      enabled: false,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
+    });
     setToken.mockResolvedValue({ ...status, plainToken: 'manual-secret' });
     createToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
     revealToken.mockResolvedValue({ ...status, plainToken: 'token.secret' });
@@ -91,6 +102,23 @@ describe('admin watching updates trigger link API', () => {
     expect(JSON.stringify(body)).not.toContain('token.secret');
   });
 
+  it('uses forwarded origin when the request URL is an internal bind address', async () => {
+    const response = await GET(
+      request('alice', 'GET', undefined, {
+        'x-forwarded-host': 'example.com',
+        'x-forwarded-proto': 'https',
+      }),
+      context('alice'),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      triggerLink: {
+        triggerLink:
+          'https://example.com/api/update-check-trigger?token=toke****cret',
+      },
+    });
+  });
+
   it('updates enabled state immediately through the token service', async () => {
     const response = await PATCH(
       request('alice', 'PATCH', { enabled: false }),
@@ -98,12 +126,18 @@ describe('admin watching updates trigger link API', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(setEnabled).toHaveBeenCalledWith('alice', false);
+    expect(setAdminEnabled).toHaveBeenCalledWith('alice', false);
+    expect(setEnabled).not.toHaveBeenCalled();
     expect(clearCache).toHaveBeenCalled();
   });
 
   it('clears violation state when an admin re-enables a trigger link', async () => {
-    setEnabled.mockResolvedValue({ ...status, enabled: true });
+    setAdminEnabled.mockResolvedValue({
+      ...status,
+      enabled: true,
+      adminTriggerEnabled: true,
+      effectiveEnabled: true,
+    });
 
     const response = await PATCH(
       request('alice', 'PATCH', { enabled: true }),
@@ -111,7 +145,7 @@ describe('admin watching updates trigger link API', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(setEnabled).toHaveBeenCalledWith('alice', true);
+    expect(setAdminEnabled).toHaveBeenCalledWith('alice', true);
     expect(clearUserState).toHaveBeenCalledWith('alice');
   });
 
@@ -123,7 +157,7 @@ describe('admin watching updates trigger link API', () => {
 
     expect(response.status).toBe(200);
     expect(setToken).toHaveBeenCalledWith('alice', 'manual-secret', {
-      enabled: undefined,
+      adminTriggerEnabled: undefined,
     });
     const body = await response.json();
     expect(JSON.stringify(body)).not.toContain('manual-secret');
@@ -156,13 +190,13 @@ describe('admin watching updates trigger link API', () => {
     });
   });
 
-  it('forbids an admin from managing another admin token', async () => {
+  it('allows an admin to manage another admin trigger token', async () => {
     getRole.mockResolvedValue('admin');
 
     const response = await GET(request('admin-a', 'GET'), context('admin-a'));
 
-    expect(response.status).toBe(403);
-    expect(getStatus).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(getStatus).toHaveBeenCalledWith('admin-a');
   });
 });
 
@@ -182,13 +216,20 @@ function context(username: string) {
   return { params: Promise.resolve({ username }) };
 }
 
-function request(username: string, method: string, body?: unknown) {
+function request(
+  username: string,
+  method: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+) {
   return new NextRequest(
-    `http://localhost/api/admin/watching-updates/users/${encodeURIComponent(username)}/trigger-link`,
+    `http://${headers['x-forwarded-host'] ? '0.0.0.0:3000' : 'localhost'}/api/admin/watching-updates/users/${encodeURIComponent(username)}/trigger-link`,
     {
       method,
-      headers:
-        body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers: {
+        ...headers,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     },
   );

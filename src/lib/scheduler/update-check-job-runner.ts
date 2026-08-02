@@ -12,8 +12,10 @@ import {
   type UpdateCheckConfigReader,
 } from '@/lib/system-config-repository';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
+import type { WatchingUpdateNotificationPayloadData } from '@/lib/watching-update-notification-builder';
 import {
   createWatchingUpdateCheckLogResult,
+  toWatchingUpdateCheckLogUpdates,
   watchingUpdateCheckLogService,
   type WatchingUpdateCheckLogService,
 } from '@/lib/watching-update-check-log-service';
@@ -23,6 +25,7 @@ import type {
   WatchingUpdateCheckLogOperation,
   WatchingUpdateCheckLogRequest,
   WatchingUpdateCheckLogSource,
+  WatchingUpdateCheckLogUpdate,
 } from '@/lib/watching-update-check-log-types';
 
 export type UpdateCheckJobTrigger = 'cron' | 'manual' | 'trigger-link';
@@ -45,8 +48,13 @@ export interface UpdateCheckJobResultSummary {
   oldestDueAt: number | null;
   dataSourceCount: number;
   updateFoundCount: number;
+  updates: WatchingUpdateCheckLogUpdate[];
   notificationCount: number;
   skipped: number;
+}
+
+export interface UpdateCheckJobDisplayResult extends WatchingUpdateNotificationPayloadData {
+  userId: string;
 }
 
 export interface UpdateCheckJobStatusSnapshot {
@@ -62,6 +70,7 @@ export interface UpdateCheckJobStatusSnapshot {
   finishedAt: number | null;
   durationMs: number | null;
   result: UpdateCheckJobResultSummary | null;
+  displayResults?: UpdateCheckJobDisplayResult[];
   error?: string;
 }
 
@@ -73,8 +82,10 @@ export interface UpdateCheckJobRunnerAuditOptions {
 }
 
 export interface UpdateCheckJobRunnerOptions {
+  mode?: 'scheduled' | 'user';
   trigger: UpdateCheckJobTrigger;
   triggerSource?: UpdateCheckJobTriggerSource;
+  userId?: string;
   tokenId?: string;
   requestedBy?: string;
   limit?: number;
@@ -99,9 +110,13 @@ export interface UpdateCheckJobRunnerResult {
   success: boolean;
   error?: string;
   schedulerResult: UpdateCheckSchedulerResult | null;
+  displayResults?: UpdateCheckJobDisplayResult[];
 }
 
 type UpdateCheckSchedulerRunner = Pick<UpdateCheckScheduler, 'run'>;
+type UpdateCheckUserRunner = {
+  runUser?: UpdateCheckScheduler['runUser'];
+};
 type UpdateCheckAuditLogger = Pick<WatchingUpdateCheckLogService, 'record'>;
 type NotificationPayloadDispatcher = {
   dispatchPayload: typeof notificationDispatcher.dispatchPayload;
@@ -130,7 +145,11 @@ function resolveTriggerSource(
 
 function summarizeSchedulerResult(
   result: UpdateCheckSchedulerResult,
+  auditTasks: CompletedAuditTask[] = [],
 ): UpdateCheckJobResultSummary {
+  const completedResults = auditTasks.flatMap((item) =>
+    item.result ? [item.result] : [],
+  );
   return {
     inspected: result.inspected,
     succeeded: result.succeeded,
@@ -138,6 +157,7 @@ function summarizeSchedulerResult(
     oldestDueAt: result.oldestDueAt,
     dataSourceCount: result.dataSourceCount,
     updateFoundCount: result.updateFoundCount,
+    updates: toWatchingUpdateCheckLogUpdates(completedResults),
     notificationCount: result.notificationCount,
     skipped: result.skipped,
   };
@@ -160,6 +180,7 @@ function summarizeAuditProgress(
     dataSourceCount: new Set(auditTasks.map((item) => item.task.source)).size,
     updateFoundCount: completedResults.filter((result) => result.hasUpdate)
       .length,
+    updates: toWatchingUpdateCheckLogUpdates(completedResults),
     notificationCount: 0,
     skipped: 0,
   };
@@ -203,7 +224,8 @@ function createDefaultAuditRequest(
   options: UpdateCheckJobRunnerOptions,
   source: WatchingUpdateCheckLogSource,
 ): WatchingUpdateCheckLogRequest {
-  const userId = source === 'cron' ? undefined : options.requestedBy;
+  const userId =
+    source === 'cron' ? undefined : (options.userId ?? options.requestedBy);
   return {
     method: source === 'cron' ? 'SCHEDULED' : 'POST',
     path: defaultAuditPath(source),
@@ -274,9 +296,12 @@ function createExecutionResult(
   result: UpdateCheckJobRunnerResult,
   auditTasks: CompletedAuditTask[],
 ) {
-  const checkedUsers = uniqueUserIds(
-    auditTasks.map((item) => item.task.userId),
-  );
+  const checkedUsers = uniqueUserIds([
+    options.trigger === 'cron'
+      ? undefined
+      : (options.userId ?? options.requestedBy),
+    ...auditTasks.map((item) => item.task.userId),
+  ]);
   const updatedUsers = uniqueUserIds(
     auditTasks
       .filter((item) => item.result?.hasUpdate)
@@ -303,6 +328,9 @@ function createExecutionResult(
     trigger: 'manual-trigger' as const,
     triggerSource: resolveTriggerSource(options),
     ...(options.requestedBy ? { username: options.requestedBy } : {}),
+    checkedUsers,
+    updatedUsers,
+    failedUsers,
     result: result.schedulerResult,
   };
 }
@@ -322,7 +350,8 @@ export class UpdateCheckJobRunner {
   };
 
   constructor(
-    private readonly scheduler: UpdateCheckSchedulerRunner = updateCheckScheduler,
+    private readonly scheduler: UpdateCheckSchedulerRunner &
+      UpdateCheckUserRunner = updateCheckScheduler,
     private readonly now: () => number = Date.now,
     private readonly auditLogger: UpdateCheckAuditLogger | null = watchingUpdateCheckLogService,
     private readonly notifications: NotificationPayloadDispatcher = notificationDispatcher,
@@ -352,6 +381,7 @@ export class UpdateCheckJobRunner {
     options: UpdateCheckJobRunnerOptions,
   ): Promise<UpdateCheckJobRunnerResult> {
     const auditTasks: CompletedAuditTask[] = [];
+    const displayResults: UpdateCheckJobDisplayResult[] = [];
     let auditLogId: string | null = null;
     const onTaskComplete: UpdateCheckSchedulerOptions['onTaskComplete'] =
       async (value) => {
@@ -363,6 +393,10 @@ export class UpdateCheckJobRunner {
           };
         }
         await options.onTaskComplete?.(value);
+      };
+    const onNotificationData: UpdateCheckSchedulerOptions['onNotificationData'] =
+      async (value) => {
+        displayResults.push({ userId: value.userId, ...value.data });
       };
 
     if (this.running) {
@@ -409,9 +443,9 @@ export class UpdateCheckJobRunner {
       trigger: options.trigger,
       triggerSource,
       ...(options.tokenId === undefined ? {} : { tokenId: options.tokenId }),
-      ...(options.requestedBy === undefined
-        ? {}
-        : { userId: options.requestedBy }),
+      ...((options.userId ?? options.requestedBy)
+        ? { userId: options.userId ?? options.requestedBy }
+        : {}),
       ...(options.requestedBy === undefined
         ? {}
         : { requestedBy: options.requestedBy }),
@@ -431,7 +465,7 @@ export class UpdateCheckJobRunner {
 
     let result: UpdateCheckJobRunnerResult;
     try {
-      const schedulerResult = await this.scheduler.run({
+      const schedulerOptions: UpdateCheckSchedulerOptions = {
         ...(options.limit === undefined ? {} : { limit: options.limit }),
         ...(options.ignoreSchedule === undefined
           ? {}
@@ -440,7 +474,12 @@ export class UpdateCheckJobRunner {
           ? {}
           : { preserveNextCheckAt: options.preserveNextCheckAt }),
         onTaskComplete,
-      });
+        onNotificationData,
+      };
+      const schedulerResult =
+        options.mode === 'user'
+          ? await this.runUserScheduler(options, schedulerOptions)
+          : await this.scheduler.run(schedulerOptions);
       const finishedAt = this.now();
       result = {
         trigger: options.trigger,
@@ -453,6 +492,7 @@ export class UpdateCheckJobRunner {
         running: false,
         success: true,
         schedulerResult,
+        ...(displayResults.length > 0 ? { displayResults } : {}),
       };
     } catch (error) {
       const finishedAt = this.now();
@@ -469,6 +509,7 @@ export class UpdateCheckJobRunner {
         success: false,
         error: message,
         schedulerResult: null,
+        ...(displayResults.length > 0 ? { displayResults } : {}),
       };
       await this.dispatchSchedulerFailure(options, message, finishedAt);
     }
@@ -499,8 +540,9 @@ export class UpdateCheckJobRunner {
         finishedAt: result.finishedAt,
         durationMs: result.durationMs,
         result: result.schedulerResult
-          ? summarizeSchedulerResult(result.schedulerResult)
+          ? summarizeSchedulerResult(result.schedulerResult, auditTasks)
           : null,
+        displayResults: result.displayResults,
         ...(result.error ? { error: result.error } : {}),
       };
       this.running = false;
@@ -537,6 +579,7 @@ export class UpdateCheckJobRunner {
       );
       const taskUserIds = input.auditTasks.map((item) => item.task.userId);
       const userIds = uniqueUserIds([
+        input.options.userId,
         ...(input.options.audit?.userIds ?? []),
         ...taskUserIds,
         source === 'cron' ? undefined : input.options.requestedBy,
@@ -633,6 +676,21 @@ export class UpdateCheckJobRunner {
         dispatchError,
       );
     }
+  }
+
+  private runUserScheduler(
+    options: UpdateCheckJobRunnerOptions,
+    schedulerOptions: UpdateCheckSchedulerOptions,
+  ): Promise<UpdateCheckSchedulerResult> {
+    const userId = options.userId ?? options.requestedBy;
+    if (!userId) throw new Error('UPDATE_CHECK_USER_REQUIRED');
+    if (typeof this.scheduler.runUser !== 'function') {
+      throw new Error('UPDATE_CHECK_USER_MODE_UNAVAILABLE');
+    }
+    return this.scheduler.runUser(userId, {
+      ...schedulerOptions,
+      preserveNextCheckAt: schedulerOptions.preserveNextCheckAt ?? true,
+    });
   }
 
   private dispatchNotificationPayload(payload: NotificationPayload) {

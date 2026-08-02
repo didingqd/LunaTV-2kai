@@ -5,6 +5,7 @@ import type { AdminConfig } from '@/lib/admin.types';
 import { getAdminRoleFromRequest } from '@/lib/admin-auth';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { clearConfigCache, getConfig } from '@/lib/config';
+import { buildUpdateCheckTriggerUrl } from '@/lib/site-url';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { triggerTokenService } from '@/lib/trigger-token-service';
 
@@ -50,13 +51,6 @@ function errorResponse(error: string, status: number) {
   );
 }
 
-function triggerUrlFromToken(request: NextRequest, token: string | null) {
-  if (!token) return null;
-  const url = new URL('/api/update-check-trigger', request.url);
-  url.searchParams.set('token', token);
-  return url.toString();
-}
-
 function serializeTriggerLink(
   request: NextRequest,
   status: Awaited<ReturnType<typeof triggerTokenService.getStatus>>,
@@ -65,6 +59,9 @@ function serializeTriggerLink(
   const tokenForUrl = plainToken ?? status.maskedToken;
   return {
     enabled: status.enabled,
+    userTriggerEnabled: status.userTriggerEnabled,
+    adminTriggerEnabled: status.adminTriggerEnabled,
+    effectiveEnabled: status.effectiveEnabled,
     disabledReason: status.disabledReason,
     disabledAt: status.disabledAt,
     disabledSource: status.disabledSource,
@@ -77,11 +74,11 @@ function serializeTriggerLink(
     tokenId: status.tokenId,
     maskedToken: status.maskedToken,
     canRevealToken: status.canRevealToken,
-    triggerLink: triggerUrlFromToken(request, tokenForUrl),
+    triggerLink: buildUpdateCheckTriggerUrl(request, tokenForUrl),
     ...(plainToken
       ? {
           fullToken: plainToken,
-          fullTriggerLink: triggerUrlFromToken(request, plainToken),
+          fullTriggerLink: buildUpdateCheckTriggerUrl(request, plainToken),
         }
       : {}),
   };
@@ -102,9 +99,6 @@ async function authorizeTarget(request: NextRequest, context: RouteContext) {
     (candidate) => candidate.username === username,
   );
   if (!user) return { response: errorResponse('User not found', 404) };
-  if (role === 'admin' && user.role !== 'user') {
-    return { response: errorResponse('Forbidden', 403) };
-  }
 
   return { config, operator, user, username };
 }
@@ -171,16 +165,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         access.username,
         parsed.data.token,
         {
-          enabled: parsed.data.enabled,
+          adminTriggerEnabled: parsed.data.enabled,
         },
       );
     } else if (parsed.data.action === 'generate') {
       status = await triggerTokenService.createToken(access.username);
       if (parsed.data.enabled === false) {
-        status = await triggerTokenService.setEnabled(access.username, false);
+        status = await triggerTokenService.setAdminEnabled(
+          access.username,
+          false,
+        );
       }
     } else {
-      status = await triggerTokenService.setEnabled(
+      status = await triggerTokenService.setAdminEnabled(
         access.username,
         parsed.data.enabled ?? false,
       );

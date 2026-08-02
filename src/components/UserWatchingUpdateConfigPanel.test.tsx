@@ -185,7 +185,6 @@ describe('UserWatchingUpdateConfigPanel', () => {
     );
     expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
-      allowTriggerLink: false,
       cronExpression: '0 */6 * * *',
     });
   });
@@ -220,7 +219,6 @@ describe('UserWatchingUpdateConfigPanel', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
-      allowTriggerLink: false,
       timezone: 'Asia/Tokyo',
     });
   });
@@ -254,12 +252,11 @@ describe('UserWatchingUpdateConfigPanel', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
     expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: true,
-      allowTriggerLink: false,
     });
     expectConfigRequest(fetchMock, 4, 'DELETE', { field: 'cronExpression' });
   });
 
-  it('saves permission, custom schedule, and trigger link in one action', async () => {
+  it('saves permission and custom schedule in one action', async () => {
     const initial = configResponse({
       permission: {
         enabled: true,
@@ -285,7 +282,6 @@ describe('UserWatchingUpdateConfigPanel', () => {
 
     expect(await screen.findByText('能力限制')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch', { name: '允许用户自定义调度' }));
-    fireEvent.click(screen.getByRole('switch', { name: '允许触发链接' }));
     fireEvent.click(screen.getByRole('button', { name: '保存全部设置' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
@@ -294,8 +290,21 @@ describe('UserWatchingUpdateConfigPanel', () => {
     );
     expectConfigRequest(fetchMock, 3, 'PATCH', {
       allowCustomSchedule: false,
-      allowTriggerLink: true,
     });
+  });
+
+  it('renders trigger link permission and admin token controls', async () => {
+    setFetch(jest.fn().mockResolvedValue(jsonResponse(configResponse())));
+
+    renderPanel();
+
+    expect(await screen.findByText('能力限制')).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: '允许触发链接' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '启用触发链接' }),
+    ).toBeInTheDocument();
   });
 
   it('does not display log retention editing', async () => {

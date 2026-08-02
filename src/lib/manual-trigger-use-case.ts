@@ -76,9 +76,12 @@ export class ManualTriggerUseCase {
 
     return {
       jobResult: await this.jobRunner.run({
+        mode: 'user',
         trigger: 'manual',
         triggerSource: 'manual',
+        userId: user.username,
         requestedBy: user.username,
+        preserveNextCheckAt: true,
         audit: {
           source: 'trigger',
           operation: 'manual-trigger',

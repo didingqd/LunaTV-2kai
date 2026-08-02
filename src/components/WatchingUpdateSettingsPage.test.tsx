@@ -42,6 +42,9 @@ type ConfigResponse = {
 
 type TriggerLinkStatusResponse = {
   enabled: boolean;
+  userTriggerEnabled?: boolean;
+  adminTriggerEnabled?: boolean;
+  effectiveEnabled?: boolean;
   createdAt: number | null;
   rotatedAt: number | null;
   expiresAt: number | null;
@@ -226,8 +229,10 @@ describe('WatchingUpdateSettingsPage', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(configResponse()))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
       .mockResolvedValueOnce(jsonResponse(saved))
-      .mockResolvedValueOnce(jsonResponse(saved));
+      .mockResolvedValueOnce(jsonResponse(saved))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
@@ -237,9 +242,9 @@ describe('WatchingUpdateSettingsPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '保存 Cron' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expectRequest(fetchMock, 1, 'PATCH', { cronExpression: '0 */6 * * *' });
-    expect(fetchMock.mock.calls[2][1]).toEqual({ cache: 'no-store' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expectRequest(fetchMock, 2, 'PATCH', { cronExpression: '0 */6 * * *' });
+    expect(fetchMock.mock.calls[3][1]).toEqual({ cache: 'no-store' });
   });
 
   it('saves a user timezone override', async () => {
@@ -255,8 +260,10 @@ describe('WatchingUpdateSettingsPage', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(configResponse()))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
       .mockResolvedValueOnce(jsonResponse(saved))
-      .mockResolvedValueOnce(jsonResponse(saved));
+      .mockResolvedValueOnce(jsonResponse(saved))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
@@ -266,8 +273,8 @@ describe('WatchingUpdateSettingsPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '保存时区' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expectRequest(fetchMock, 1, 'PATCH', { timezone: 'Europe/Berlin' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expectRequest(fetchMock, 2, 'PATCH', { timezone: 'Europe/Berlin' });
   });
 
   it('clears overrides and returns to inherited config', async () => {
@@ -295,8 +302,10 @@ describe('WatchingUpdateSettingsPage', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
       .mockResolvedValueOnce(jsonResponse(inherited))
-      .mockResolvedValueOnce(jsonResponse(inherited));
+      .mockResolvedValueOnce(jsonResponse(inherited))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
@@ -305,8 +314,8 @@ describe('WatchingUpdateSettingsPage', () => {
       await screen.findByRole('button', { name: '恢复系统配置' }),
     );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expectRequest(fetchMock, 1, 'DELETE', {});
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expectRequest(fetchMock, 2, 'DELETE', {});
   });
 
   it('disables schedule editing when custom schedule is not allowed', async () => {
@@ -338,6 +347,7 @@ describe('WatchingUpdateSettingsPage', () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(configResponse()))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()))
       .mockResolvedValueOnce(
         jsonResponse({ error: 'Custom schedule is not allowed' }, 403),
       );
@@ -353,21 +363,22 @@ describe('WatchingUpdateSettingsPage', () => {
     expect(
       await screen.findByText('管理员未允许修改自定义调度'),
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('shows trigger link as unavailable when it is not allowed', async () => {
+  it('shows trigger link as not configured when no token exists', async () => {
     const fetchMock = jest
       .fn()
-      .mockResolvedValue(jsonResponse(configResponse()));
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(jsonResponse(triggerStatus()));
     setFetch(fetchMock);
 
     render(<WatchingUpdateSettingsPage />);
 
     expect(
-      await screen.findByText('管理员未允许使用触发链接。'),
+      await screen.findByText('管理员尚未配置触发链接 Token。'),
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('loads trigger link status when allowed', async () => {
@@ -395,6 +406,108 @@ describe('WatchingUpdateSettingsPage', () => {
     expect(screen.getByText('toke****cret')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
     expectTriggerRequest(fetchMock, 1);
+  });
+
+  it('shows token controls but keeps the trigger ineffective when the user switch is closed', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: false,
+            userTriggerEnabled: false,
+            adminTriggerEnabled: true,
+            effectiveEnabled: false,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    expect(await screen.findByText('toke****cret')).toBeInTheDocument();
+    expect(screen.getAllByText('用户已关闭').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '启用触发链接' })).toBeEnabled();
+  });
+
+  it('shows token controls but does not allow effective use when the admin switch is closed', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: false,
+            userTriggerEnabled: true,
+            adminTriggerEnabled: false,
+            effectiveEnabled: false,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    expect(await screen.findByText('toke****cret')).toBeInTheDocument();
+    expect(screen.getAllByText('管理员已关闭').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: '启用触发链接' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows token and trigger controls after the user re-enables the link', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: false,
+            userTriggerEnabled: false,
+            adminTriggerEnabled: true,
+            effectiveEnabled: false,
+            hasToken: true,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            userTriggerEnabled: true,
+            adminTriggerEnabled: true,
+            effectiveEnabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
+      );
+    setFetch(fetchMock);
+
+    render(<WatchingUpdateSettingsPage />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '启用触发链接' }),
+    );
+
+    expect(await screen.findByText('toke****cret')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看触发链接' })).toBeEnabled();
+    expectTriggerRequest(fetchMock, 2, 'PATCH', { enabled: true });
   });
 
   it('reveals the full trigger link on demand', async () => {

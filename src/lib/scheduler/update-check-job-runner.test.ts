@@ -1,6 +1,9 @@
 /** @jest-environment node */
 
-import type { UpdateCheckSchedulerResult } from '@/lib/update-check-scheduler';
+import type {
+  UpdateCheckSchedulerOptions,
+  UpdateCheckSchedulerResult,
+} from '@/lib/update-check-scheduler';
 import type { UpdateCheckTask, UpdateResult } from '@/lib/update-check-types';
 
 import { UpdateCheckJobRunner } from './update-check-job-runner';
@@ -105,6 +108,7 @@ describe('UpdateCheckJobRunner', () => {
     expect(run).toHaveBeenCalledWith({
       limit: 25,
       onTaskComplete: expect.any(Function),
+      onNotificationData: expect.any(Function),
     });
     expect(result).toEqual({
       trigger: 'cron',
@@ -139,6 +143,67 @@ describe('UpdateCheckJobRunner', () => {
       task: auditTask,
       result: auditResult,
     });
+  });
+
+  it('collects notification display data from the scheduler', async () => {
+    const run = jest.fn(async ({ onNotificationData }) => {
+      await onNotificationData({
+        userId: 'alice',
+        data: {
+          title: '更新提醒',
+          newUpdates: [
+            {
+              followId: 'follow-1',
+              title: '九门',
+              fromEpisode: 6,
+              toEpisode: 10,
+            },
+          ],
+          updated: [
+            {
+              followId: 'follow-2',
+              title: '穹庐下的魔女',
+              fromEpisode: 5,
+              toEpisode: 6,
+            },
+          ],
+          checkedAt: 1_020,
+          timezone: 'Asia/Shanghai',
+          displayTime: '2026-08-02 12:30:01',
+        },
+      });
+      return schedulerResult;
+    });
+    const runner = noAuditRunner(run, clock(1_000, 1_025));
+
+    const result = await runner.run({ trigger: 'cron' });
+
+    expect(result.displayResults).toEqual([
+      {
+        userId: 'alice',
+        title: '更新提醒',
+        newUpdates: [
+          {
+            followId: 'follow-1',
+            title: '九门',
+            fromEpisode: 6,
+            toEpisode: 10,
+          },
+        ],
+        updated: [
+          {
+            followId: 'follow-2',
+            title: '穹庐下的魔女',
+            fromEpisode: 5,
+            toEpisode: 6,
+          },
+        ],
+        checkedAt: 1_020,
+        timezone: 'Asia/Shanghai',
+        displayTime: '2026-08-02 12:30:01',
+      },
+    ]);
+    expect(runner.getStatus().displayResults).toEqual(result.displayResults);
   });
 
   it('records start and finish audit logs around the scheduler run', async () => {
@@ -208,6 +273,101 @@ describe('UpdateCheckJobRunner', () => {
       updatedUsers: ['alice'],
       failedUsers: [],
       result: schedulerResult,
+    });
+  });
+
+  it('runs a requested user immediately and records checkedUsers for external triggers', async () => {
+    const auditLogger = { record: jest.fn().mockResolvedValue('audit-user') };
+    const run = jest.fn();
+    const runUser = jest.fn(
+      async (
+        _userId: string,
+        { onTaskComplete }: UpdateCheckSchedulerOptions,
+      ) => {
+        await onTaskComplete?.({ task: auditTask, result: auditResult });
+        return schedulerResult;
+      },
+    );
+    const runner = new UpdateCheckJobRunner(
+      { run, runUser },
+      clock(1_100, 1_140),
+      auditLogger,
+    );
+
+    const result = await runner.run({
+      mode: 'user',
+      trigger: 'trigger-link',
+      triggerSource: 'external_http',
+      userId: 'alice',
+      tokenId: 'token-1',
+      requestedBy: 'alice',
+      audit: {
+        source: 'trigger',
+        operation: 'manual-trigger',
+        request: {
+          method: 'GET',
+          path: '/api/update-check-trigger',
+          userId: 'alice',
+          tokenId: 'token-1',
+          requestedBy: 'alice',
+          trigger: 'external_http',
+          client: {
+            ip: '203.0.113.1',
+            userAgent: 'jest-agent',
+          },
+        },
+        userIds: ['alice'],
+      },
+    });
+
+    expect(run).not.toHaveBeenCalled();
+    expect(runUser).toHaveBeenCalledWith(
+      'alice',
+      expect.objectContaining({
+        preserveNextCheckAt: true,
+        onTaskComplete: expect.any(Function),
+        onNotificationData: expect.any(Function),
+      }),
+    );
+    expect(result).toMatchObject({
+      trigger: 'trigger-link',
+      requestedBy: 'alice',
+      success: true,
+      schedulerResult,
+    });
+    expect(runner.getStatus().result).toMatchObject({
+      inspected: 3,
+      updateFoundCount: 1,
+      updates: [
+        {
+          resourceId: 'resource-1',
+          title: '????',
+          oldEpisode: 1,
+          newEpisode: 2,
+          source: 'douban',
+        },
+      ],
+    });
+    expect(auditLogger.record.mock.calls[1]?.[0].result).toMatchObject({
+      trigger: 'manual-trigger',
+      triggerSource: 'external_http',
+      checkedUsers: ['alice'],
+      updatedUsers: ['alice'],
+      failedUsers: [],
+      updates: [
+        {
+          resourceId: 'resource-1',
+          title: '????',
+          oldEpisode: 1,
+          newEpisode: 2,
+          source: 'douban',
+        },
+      ],
+    });
+    expect(auditLogger.record).toHaveBeenLastCalledWith(expect.any(Object), {
+      id: 'audit-user',
+      replaceExisting: true,
+      userIds: ['alice'],
     });
   });
 

@@ -148,6 +148,9 @@ describe('TriggerTokenService', () => {
     );
     expect(configRepository.configs.get('alice')?.triggerLink).toEqual({
       enabled: true,
+      userTriggerEnabled: true,
+      adminTriggerEnabled: true,
+      effectiveEnabled: true,
       tokenId,
       createdAt: 1000,
       rotatedAt: 1000,
@@ -163,6 +166,9 @@ describe('TriggerTokenService', () => {
 
     expect(status).toEqual({
       enabled: true,
+      userTriggerEnabled: true,
+      adminTriggerEnabled: true,
+      effectiveEnabled: true,
       createdAt: 1000,
       rotatedAt: 1000,
       expiresAt: null,
@@ -257,6 +263,55 @@ describe('TriggerTokenService', () => {
     });
   });
 
+  it('keeps admin-disabled tokens ineffective even when the user switch is on', async () => {
+    const { service } = createService();
+    const created = await service.createToken('alice');
+
+    await expect(
+      service.setAdminEnabled('alice', false),
+    ).resolves.toMatchObject({
+      enabled: false,
+      userTriggerEnabled: true,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
+      disabledSource: 'admin',
+    });
+    await expect(service.setUserEnabled('alice', true)).resolves.toMatchObject({
+      enabled: false,
+      userTriggerEnabled: true,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
+      disabledSource: 'admin',
+    });
+    await expect(service.verify(created.plainToken)).rejects.toThrow(
+      'TRIGGER_TOKEN_DISABLED',
+    );
+  });
+
+  it('restores the same token when the admin switch is re-enabled', async () => {
+    const { service, tokenRepository } = createService();
+    const created = await service.createToken('alice');
+    const { tokenId } = splitPlainToken(created.plainToken);
+
+    await service.setAdminEnabled('alice', false);
+    await expect(service.setAdminEnabled('alice', true)).resolves.toMatchObject(
+      {
+        enabled: true,
+        userTriggerEnabled: true,
+        adminTriggerEnabled: true,
+        effectiveEnabled: true,
+      },
+    );
+
+    await expect(tokenRepository.getTokenIdForUser('alice')).resolves.toBe(
+      tokenId,
+    );
+    await expect(service.verify(created.plainToken)).resolves.toMatchObject({
+      tokenId,
+      userId: 'alice',
+    });
+  });
+
   it('expires a token', async () => {
     const { service, setNow } = createService();
     await service.createToken('alice');
@@ -305,6 +360,9 @@ describe('TriggerTokenService', () => {
 
     await expect(service.getStatus('alice')).resolves.toEqual({
       enabled: false,
+      userTriggerEnabled: false,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
       createdAt: null,
       rotatedAt: null,
       expiresAt: null,

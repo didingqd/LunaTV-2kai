@@ -15,7 +15,11 @@ export interface UserWatchingUpdateConfig {
   /** @deprecated User-level log retention is ignored; use SystemConfig.updateCheckLogRetentionCount. */
   logRetentionCount?: number;
   triggerLink?: {
+    /** @deprecated Use effectiveEnabled/userTriggerEnabled/adminTriggerEnabled. */
     enabled: boolean;
+    userTriggerEnabled?: boolean;
+    adminTriggerEnabled?: boolean;
+    effectiveEnabled?: boolean;
     tokenId?: string;
     createdAt?: number;
     rotatedAt?: number;

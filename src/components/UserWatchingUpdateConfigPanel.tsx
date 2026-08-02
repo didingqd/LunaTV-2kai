@@ -77,6 +77,9 @@ interface AdminTriggerLinkResponse {
   };
   triggerLink: {
     enabled: boolean;
+    userTriggerEnabled?: boolean;
+    adminTriggerEnabled?: boolean;
+    effectiveEnabled?: boolean;
     disabledReason: string | null;
     disabledAt: number | null;
     disabledSource: 'admin' | 'system' | 'user' | null;
@@ -459,7 +462,7 @@ export default function UserWatchingUpdateConfigPanel({
     }
     await updateTriggerLink('manual', {
       token,
-      enabled: triggerLink?.enabled ?? true,
+      enabled: triggerLink?.adminTriggerEnabled ?? triggerLink?.enabled ?? true,
     });
   };
 
@@ -537,7 +540,7 @@ export default function UserWatchingUpdateConfigPanel({
           />
           <SwitchRow
             label='允许触发链接'
-            description='控制用户是否可管理外部触发链接。'
+            description='控制用户端是否显示和使用自己的触发链接。'
             checked={allowTriggerLink}
             disabled={saving}
             onChange={() => setAllowTriggerLink((current) => !current)}
@@ -549,13 +552,29 @@ export default function UserWatchingUpdateConfigPanel({
         <SectionHeading icon='key' title='触发链接 Token' />
         <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
           <TokenStatusItem
-            label='启用状态'
+            label='生效状态'
             value={
               triggerLoading
                 ? '加载中'
                 : triggerLink?.enabled
                   ? '已启用'
                   : '已关闭'
+            }
+          />
+          <TokenStatusItem
+            label='用户开关'
+            value={
+              (triggerLink?.userTriggerEnabled ?? triggerLink?.enabled)
+                ? '已开启'
+                : '已关闭'
+            }
+          />
+          <TokenStatusItem
+            label='管理员开关'
+            value={
+              (triggerLink?.adminTriggerEnabled ?? triggerLink?.enabled)
+                ? '已开启'
+                : '已关闭'
             }
           />
           <TokenStatusItem
@@ -602,12 +621,18 @@ export default function UserWatchingUpdateConfigPanel({
             }
             onClick={() =>
               void updateTriggerLink('enabled', {
-                enabled: !(triggerLink?.enabled ?? false),
+                enabled: !(
+                  triggerLink?.adminTriggerEnabled ??
+                  triggerLink?.enabled ??
+                  false
+                ),
               })
             }
             className='inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
           >
-            {triggerLink?.enabled ? '关闭触发链接' : '启用触发链接'}
+            {(triggerLink?.adminTriggerEnabled ?? triggerLink?.enabled)
+              ? '关闭触发链接'
+              : '启用触发链接'}
           </button>
           <button
             type='button'

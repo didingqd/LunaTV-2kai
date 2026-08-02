@@ -44,9 +44,13 @@ const verifyToken = triggerTokenService.verify as jest.Mock;
 function request(
   url = 'http://localhost/api/update-check-trigger',
   token = 'token.secret',
+  headers: Record<string, string> = {},
 ) {
   return new NextRequest(url, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...headers,
+    },
   });
 }
 
@@ -91,13 +95,16 @@ describe('GET /api/update-check-trigger', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(runInBackground).toHaveBeenCalledWith({
-      trigger: 'cron',
+      mode: 'user',
+      trigger: 'trigger-link',
       triggerSource: 'external_http',
+      userId: 'alice',
       tokenId: 'token-1',
       requestedBy: 'alice',
+      preserveNextCheckAt: true,
       audit: {
         source: 'trigger',
-        operation: 'scheduled-check',
+        operation: 'manual-trigger',
         request: {
           method: 'GET',
           path: '/api/update-check-trigger',
@@ -212,6 +219,15 @@ describe('GET /api/update-check-trigger', () => {
           oldestDueAt: 90,
           dataSourceCount: 2,
           updateFoundCount: 1,
+          updates: [
+            {
+              resourceId: 'resource-1',
+              title: '九门',
+              oldEpisode: 6,
+              newEpisode: 10,
+              source: 'aqyzy',
+            },
+          ],
           notificationCount: 1,
           skipped: 0,
         },
@@ -232,7 +248,141 @@ describe('GET /api/update-check-trigger', () => {
       result: {
         inspected: 3,
         updateFoundCount: 1,
+        updates: [
+          {
+            resourceId: 'resource-1',
+            title: '九门',
+            oldEpisode: 6,
+            newEpisode: 10,
+            source: 'aqyzy',
+          },
+        ],
       },
+      checkedCount: 3,
+      updateFoundCount: 1,
+      updates: [
+        {
+          resourceId: 'resource-1',
+          title: '九门',
+          oldEpisode: 6,
+          newEpisode: 10,
+          source: 'aqyzy',
+        },
+      ],
     });
+  });
+
+  it('renders completed notification display data as a simple HTML result page', async () => {
+    getStatus.mockReturnValue(
+      status({
+        status: 'completed',
+        running: false,
+        finishedAt: 150,
+        durationMs: 50,
+        result: {
+          inspected: 3,
+          succeeded: 3,
+          failed: 0,
+          oldestDueAt: 90,
+          dataSourceCount: 2,
+          updateFoundCount: 2,
+          notificationCount: 1,
+          skipped: 0,
+        },
+        displayResults: [
+          {
+            userId: 'alice',
+            title: '更新提醒',
+            newUpdates: [
+              {
+                followId: 'follow-1',
+                title: '九门',
+                fromEpisode: 6,
+                toEpisode: 10,
+              },
+            ],
+            updated: [
+              {
+                followId: 'follow-2',
+                title: '穹庐下的魔女',
+                fromEpisode: 5,
+                toEpisode: 6,
+              },
+            ],
+            checkedAt: 150,
+            timezone: 'Asia/Shanghai',
+            displayTime: '2026-08-02 12:30:01',
+          },
+        ],
+      }),
+    );
+
+    const response = await GET(
+      request(
+        'http://localhost/api/update-check-trigger?status=1',
+        'token.secret',
+        {
+          accept: 'text/html',
+        },
+      ),
+    );
+    const html = await response.text();
+
+    expect(response.headers.get('Content-Type')).toContain('text/html');
+    expect(html).toContain('🆕 新更新（1）');
+    expect(html).toContain('✅ 已更新（1）');
+    expect(html).toContain('九门');
+    expect(html).toContain('6 → 10 集');
+    expect(html).toContain('+4');
+    expect(html).toContain('穹庐下的魔女');
+    expect(html).toContain('检测时间：2026-08-02 12:30:01');
+    expect(html).not.toContain('推送渠道');
+    expect(html).not.toContain('通知历史');
+  });
+
+  it('renders an empty HTML result without a zero-count new update section', async () => {
+    getStatus.mockReturnValue(
+      status({
+        status: 'completed',
+        running: false,
+        finishedAt: 150,
+        durationMs: 50,
+        result: {
+          inspected: 1,
+          succeeded: 1,
+          failed: 0,
+          oldestDueAt: 90,
+          dataSourceCount: 1,
+          updateFoundCount: 0,
+          notificationCount: 0,
+          skipped: 0,
+        },
+        displayResults: [
+          {
+            userId: 'alice',
+            title: '更新提醒',
+            newUpdates: [],
+            updated: [],
+            checkedAt: 150,
+            timezone: 'Asia/Shanghai',
+            displayTime: '2026-08-02 12:30:01',
+          },
+        ],
+      }),
+    );
+
+    const response = await GET(
+      request(
+        'http://localhost/api/update-check-trigger?status=1',
+        'token.secret',
+        {
+          accept: 'text/html',
+        },
+      ),
+    );
+    const html = await response.text();
+
+    expect(html).toContain('暂无更新');
+    expect(html).not.toContain('新更新（0）');
   });
 });

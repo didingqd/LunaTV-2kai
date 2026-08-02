@@ -13,6 +13,9 @@ import {
 
 export interface TriggerLinkStatus {
   enabled: boolean;
+  userTriggerEnabled: boolean;
+  adminTriggerEnabled: boolean;
+  effectiveEnabled: boolean;
   disabledReason: string | null;
   disabledAt: number | null;
   disabledSource: 'admin' | 'system' | 'user' | null;
@@ -39,6 +42,22 @@ export interface TriggerTokenVerifyResult {
 export interface TriggerTokenServiceClock {
   now(): number;
 }
+
+type TriggerDisabledSource = 'admin' | 'system' | 'user';
+
+interface TriggerSwitchState {
+  userTriggerEnabled: boolean;
+  adminTriggerEnabled: boolean;
+  effectiveEnabled: boolean;
+  disabledReason?: string;
+  disabledAt?: number;
+  disabledSource?: TriggerDisabledSource;
+}
+
+type TriggerDisabledMetadata = Pick<
+  TriggerTokenRecord,
+  'disabledReason' | 'disabledAt' | 'disabledSource'
+>;
 
 const TOKEN_ID_BYTES = 16;
 const TOKEN_SECRET_BYTES = 32;
@@ -92,6 +111,64 @@ function hasUserConfigOverride(config: UserWatchingUpdateConfig): boolean {
   );
 }
 
+function legacyDisabledSource(
+  record: TriggerTokenRecord | null,
+  metadata: UserWatchingUpdateConfig['triggerLink'] | undefined,
+) {
+  return record?.disabledSource ?? metadata?.disabledSource ?? null;
+}
+
+function legacyEnabled(
+  record: TriggerTokenRecord | null,
+  metadata: UserWatchingUpdateConfig['triggerLink'] | undefined,
+) {
+  return record?.enabled ?? metadata?.enabled ?? false;
+}
+
+function resolveSwitchState(
+  record: TriggerTokenRecord | null,
+  metadata: UserWatchingUpdateConfig['triggerLink'] | undefined,
+): TriggerSwitchState {
+  const source = legacyDisabledSource(record, metadata);
+  const enabled = legacyEnabled(record, metadata);
+  const userTriggerEnabled =
+    record?.userTriggerEnabled ??
+    metadata?.userTriggerEnabled ??
+    (enabled ? true : source === 'admin' || source === 'system' ? true : false);
+  const adminTriggerEnabled =
+    record?.adminTriggerEnabled ??
+    metadata?.adminTriggerEnabled ??
+    (enabled ? true : source === 'user' ? true : false);
+  return {
+    userTriggerEnabled,
+    adminTriggerEnabled,
+    effectiveEnabled: userTriggerEnabled && adminTriggerEnabled,
+  };
+}
+
+function disabledMetadataForSwitches(
+  input: TriggerSwitchState,
+): TriggerDisabledMetadata {
+  if (input.userTriggerEnabled && input.adminTriggerEnabled) {
+    return {
+      disabledReason: undefined,
+      disabledAt: undefined,
+      disabledSource: undefined,
+    };
+  }
+
+  const source: TriggerDisabledSource = !input.adminTriggerEnabled
+    ? input.disabledSource === 'system'
+      ? 'system'
+      : 'admin'
+    : 'user';
+  return {
+    disabledReason: input.disabledReason,
+    disabledAt: input.disabledAt,
+    disabledSource: source,
+  };
+}
+
 function statusFromRecord(
   record: TriggerTokenRecord | null,
   metadata: UserWatchingUpdateConfig['triggerLink'] | undefined,
@@ -99,8 +176,18 @@ function statusFromRecord(
 ): TriggerLinkStatus {
   const expiresAt = record?.expiresAt ?? metadata?.expiresAt ?? null;
   const hasToken = Boolean(record);
+  const switchState = hasToken
+    ? resolveSwitchState(record, metadata)
+    : {
+        userTriggerEnabled: false,
+        adminTriggerEnabled: false,
+        effectiveEnabled: false,
+      };
   return {
-    enabled: hasToken ? record!.enabled : false,
+    enabled: hasToken ? switchState.effectiveEnabled : false,
+    userTriggerEnabled: switchState.userTriggerEnabled,
+    adminTriggerEnabled: switchState.adminTriggerEnabled,
+    effectiveEnabled: hasToken ? switchState.effectiveEnabled : false,
     disabledReason: record?.disabledReason ?? metadata?.disabledReason ?? null,
     disabledAt: record?.disabledAt ?? metadata?.disabledAt ?? null,
     disabledSource: record?.disabledSource ?? metadata?.disabledSource ?? null,
@@ -151,7 +238,9 @@ export class TriggerTokenService {
       record = tokenId ? await this.tokenRepository.getToken(tokenId) : null;
     }
     if (!record) throw new Error('TRIGGER_TOKEN_INVALID');
-    if (!record.enabled) throw new Error('TRIGGER_TOKEN_DISABLED');
+    if (!resolveSwitchState(record, undefined).effectiveEnabled) {
+      throw new Error('TRIGGER_TOKEN_DISABLED');
+    }
     const now = this.clock.now();
     if (typeof record.expiresAt === 'number' && record.expiresAt <= now) {
       throw new Error('TRIGGER_TOKEN_EXPIRED');
@@ -185,25 +274,36 @@ export class TriggerTokenService {
     const now = this.clock.now();
     const secret = createSecret();
     const tokenId = await this.createUniqueTokenId();
+    const current =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
+    const currentTokenId = current?.triggerLink?.tokenId;
+    const currentRecord = currentTokenId
+      ? await this.tokenRepository.getToken(currentTokenId)
+      : null;
+    const switchState =
+      currentRecord || current?.triggerLink
+        ? resolveSwitchState(currentRecord, current?.triggerLink)
+        : {
+            userTriggerEnabled: true,
+            adminTriggerEnabled: true,
+            effectiveEnabled: true,
+          };
     const record: TriggerTokenRecord = {
       tokenId,
       userId: username,
       secretHash: hashTriggerTokenSecret(secret),
       lookupHash: hashTriggerTokenSecret(toPlainToken(tokenId, secret)),
       plainToken: toPlainToken(tokenId, secret),
-      enabled: true,
-      disabledReason: undefined,
-      disabledAt: undefined,
-      disabledSource: undefined,
+      enabled: switchState.effectiveEnabled,
+      userTriggerEnabled: switchState.userTriggerEnabled,
+      adminTriggerEnabled: switchState.adminTriggerEnabled,
+      ...disabledMetadataForSwitches(switchState),
       createdAt: now,
       rotatedAt: now,
       expiresAt: options.expiresAt ?? null,
       lastUsedAt: null,
     };
 
-    const current =
-      await this.configRepository.getUserWatchingUpdateConfig(username);
-    const currentTokenId = current?.triggerLink?.tokenId;
     if (currentTokenId && currentTokenId !== tokenId) {
       await this.tokenRepository.deleteToken(currentTokenId);
     }
@@ -220,7 +320,12 @@ export class TriggerTokenService {
   async setToken(
     username: string,
     token: string,
-    options: { enabled?: boolean; expiresAt?: number | null } = {},
+    options: {
+      enabled?: boolean;
+      userTriggerEnabled?: boolean;
+      adminTriggerEnabled?: boolean;
+      expiresAt?: number | null;
+    } = {},
   ): Promise<TriggerLinkTokenResult> {
     const trimmed = token.trim();
     if (!trimmed) throw new Error('TRIGGER_TOKEN_INVALID');
@@ -230,6 +335,31 @@ export class TriggerTokenService {
     const tokenId = parsed ? parsed.tokenId : await this.createUniqueTokenId();
     const secret = parsed ? parsed.secret : trimmed;
     const lookupHash = hashTriggerTokenSecret(trimmed);
+    const current =
+      await this.configRepository.getUserWatchingUpdateConfig(username);
+    const currentTokenId = current?.triggerLink?.tokenId;
+    const currentRecord = currentTokenId
+      ? await this.tokenRepository.getToken(currentTokenId)
+      : null;
+    const currentSwitchState =
+      currentRecord || current?.triggerLink
+        ? resolveSwitchState(currentRecord, current?.triggerLink)
+        : {
+            userTriggerEnabled: true,
+            adminTriggerEnabled: true,
+            effectiveEnabled: true,
+          };
+    const userTriggerEnabled =
+      options.userTriggerEnabled ?? currentSwitchState.userTriggerEnabled;
+    const adminTriggerEnabled =
+      options.adminTriggerEnabled ??
+      options.enabled ??
+      currentSwitchState.adminTriggerEnabled;
+    const switchState = {
+      userTriggerEnabled,
+      adminTriggerEnabled,
+      effectiveEnabled: userTriggerEnabled && adminTriggerEnabled,
+    };
     if (parsed) {
       const existing = await this.tokenRepository.getToken(tokenId);
       if (existing && existing.userId !== username) {
@@ -252,19 +382,16 @@ export class TriggerTokenService {
       secretHash: hashTriggerTokenSecret(secret),
       lookupHash,
       plainToken: trimmed,
-      enabled: options.enabled ?? true,
-      disabledReason: undefined,
-      disabledAt: undefined,
-      disabledSource: undefined,
+      enabled: switchState.effectiveEnabled,
+      userTriggerEnabled,
+      adminTriggerEnabled,
+      ...disabledMetadataForSwitches(switchState),
       createdAt: now,
       rotatedAt: now,
       expiresAt: options.expiresAt ?? null,
       lastUsedAt: null,
     };
 
-    const current =
-      await this.configRepository.getUserWatchingUpdateConfig(username);
-    const currentTokenId = current?.triggerLink?.tokenId;
     if (currentTokenId && currentTokenId !== tokenId) {
       await this.tokenRepository.deleteToken(currentTokenId);
     }
@@ -283,14 +410,14 @@ export class TriggerTokenService {
     const now = this.clock.now();
     const secret = createSecret();
     const plainToken = toPlainToken(record.tokenId, secret);
+    const switchState = resolveSwitchState(record, userConfig?.triggerLink);
     const updated = await this.tokenRepository.updateToken(record.tokenId, {
       secretHash: hashTriggerTokenSecret(secret),
       lookupHash: hashTriggerTokenSecret(plainToken),
       plainToken,
-      enabled: true,
-      disabledReason: undefined,
-      disabledAt: undefined,
-      disabledSource: undefined,
+      enabled: switchState.effectiveEnabled,
+      userTriggerEnabled: switchState.userTriggerEnabled,
+      adminTriggerEnabled: switchState.adminTriggerEnabled,
       rotatedAt: now,
     });
     await this.saveMetadata(username, userConfig, updated);
@@ -318,21 +445,112 @@ export class TriggerTokenService {
       disabledSource?: 'admin' | 'system' | 'user';
     } = {},
   ): Promise<TriggerLinkStatus> {
+    if (
+      options.disabledSource === 'admin' ||
+      options.disabledSource === 'system'
+    ) {
+      return this.setAdminEnabled(username, enabled, {
+        disabledReason: options.disabledReason,
+        disabledAt: options.disabledAt,
+        disabledSource: options.disabledSource,
+      });
+    }
+    if (options.disabledSource === 'user') {
+      return this.setUserEnabled(username, enabled, {
+        disabledReason: options.disabledReason,
+        disabledAt: options.disabledAt,
+        disabledSource: options.disabledSource,
+      });
+    }
     const { record, userConfig } = await this.getCurrentRecord(username);
+    const switchState = {
+      userTriggerEnabled: enabled,
+      adminTriggerEnabled: enabled,
+      effectiveEnabled: enabled,
+    };
     const disabledAt = options.disabledAt ?? this.clock.now();
     const updated = await this.tokenRepository.updateToken(record.tokenId, {
       enabled,
-      ...(enabled
-        ? {
-            disabledReason: undefined,
-            disabledAt: undefined,
-            disabledSource: undefined,
-          }
-        : {
-            disabledReason: options.disabledReason,
-            disabledAt,
-            disabledSource: options.disabledSource,
-          }),
+      userTriggerEnabled: enabled,
+      adminTriggerEnabled: enabled,
+      ...disabledMetadataForSwitches({
+        ...switchState,
+        disabledReason: options.disabledReason,
+        disabledAt,
+        disabledSource: options.disabledSource,
+      }),
+    });
+    await this.saveMetadata(username, userConfig, updated);
+    return statusFromRecord(
+      updated,
+      recordToMetadata(updated),
+      this.clock.now(),
+    );
+  }
+
+  async setUserEnabled(
+    username: string,
+    enabled: boolean,
+    options: {
+      disabledReason?: string;
+      disabledAt?: number;
+      disabledSource?: 'user';
+    } = {},
+  ): Promise<TriggerLinkStatus> {
+    const { record, userConfig } = await this.getCurrentRecord(username);
+    const current = resolveSwitchState(record, userConfig?.triggerLink);
+    const switchState = {
+      userTriggerEnabled: enabled,
+      adminTriggerEnabled: current.adminTriggerEnabled,
+      effectiveEnabled: enabled && current.adminTriggerEnabled,
+    };
+    const disabledAt = options.disabledAt ?? this.clock.now();
+    const updated = await this.tokenRepository.updateToken(record.tokenId, {
+      enabled: switchState.effectiveEnabled,
+      userTriggerEnabled: switchState.userTriggerEnabled,
+      adminTriggerEnabled: switchState.adminTriggerEnabled,
+      ...disabledMetadataForSwitches({
+        ...switchState,
+        disabledReason: options.disabledReason,
+        disabledAt,
+        disabledSource: 'user',
+      }),
+    });
+    await this.saveMetadata(username, userConfig, updated);
+    return statusFromRecord(
+      updated,
+      recordToMetadata(updated),
+      this.clock.now(),
+    );
+  }
+
+  async setAdminEnabled(
+    username: string,
+    enabled: boolean,
+    options: {
+      disabledReason?: string;
+      disabledAt?: number;
+      disabledSource?: 'admin' | 'system';
+    } = {},
+  ): Promise<TriggerLinkStatus> {
+    const { record, userConfig } = await this.getCurrentRecord(username);
+    const current = resolveSwitchState(record, userConfig?.triggerLink);
+    const switchState = {
+      userTriggerEnabled: current.userTriggerEnabled,
+      adminTriggerEnabled: enabled,
+      effectiveEnabled: current.userTriggerEnabled && enabled,
+    };
+    const disabledAt = options.disabledAt ?? this.clock.now();
+    const updated = await this.tokenRepository.updateToken(record.tokenId, {
+      enabled: switchState.effectiveEnabled,
+      userTriggerEnabled: switchState.userTriggerEnabled,
+      adminTriggerEnabled: switchState.adminTriggerEnabled,
+      ...disabledMetadataForSwitches({
+        ...switchState,
+        disabledReason: options.disabledReason,
+        disabledAt,
+        disabledSource: options.disabledSource ?? 'admin',
+      }),
     });
     await this.saveMetadata(username, userConfig, updated);
     return statusFromRecord(
@@ -372,6 +590,9 @@ export class TriggerTokenService {
     await this.clearMetadata(username, userConfig);
     return {
       enabled: false,
+      userTriggerEnabled: false,
+      adminTriggerEnabled: false,
+      effectiveEnabled: false,
       disabledReason: null,
       disabledAt: null,
       disabledSource: null,
@@ -441,8 +662,12 @@ export class TriggerTokenService {
 }
 
 function recordToMetadata(record: TriggerTokenRecord) {
+  const switchState = resolveSwitchState(record, undefined);
   return {
-    enabled: record.enabled,
+    enabled: switchState.effectiveEnabled,
+    userTriggerEnabled: switchState.userTriggerEnabled,
+    adminTriggerEnabled: switchState.adminTriggerEnabled,
+    effectiveEnabled: switchState.effectiveEnabled,
     tokenId: record.tokenId,
     createdAt: record.createdAt,
     rotatedAt: record.rotatedAt,
