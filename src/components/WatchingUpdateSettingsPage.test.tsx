@@ -162,6 +162,9 @@ function expectTriggerLinkActionsHidden() {
   ).toBeInTheDocument();
   expect(screen.getByText('链接状态')).toBeInTheDocument();
   expect(screen.getByText('生效状态')).toBeInTheDocument();
+  expect(screen.getByText('管理员是否开启')).toBeInTheDocument();
+  expect(screen.getByText('最后生成')).toBeInTheDocument();
+  expect(screen.getByText('过期时间')).toBeInTheDocument();
   expect(screen.queryByLabelText('更新检测触发链接')).not.toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: '查看触发链接' }),
@@ -182,7 +185,7 @@ function expectTriggerLinkActionsHidden() {
   expect(
     screen.queryByRole('button', { name: '启用触发链接' }) ??
       screen.queryByRole('button', { name: '关闭触发链接' }),
-  ).toBeDisabled();
+  ).toBeEnabled();
 }
 
 function triggerAllowedConfig(overrides: Partial<ConfigResponse> = {}) {
@@ -433,7 +436,11 @@ describe('WatchingUpdateSettingsPage', () => {
 
     render(<WatchingUpdateSettingsPage />);
 
-    expect(await screen.findByText('链接状态')).toBeInTheDocument();
+    expect(await screen.findByText('管理员是否开启')).toBeInTheDocument();
+    expect(screen.getByText('链接状态')).toBeInTheDocument();
+    expect(screen.getByText('生效状态')).toBeInTheDocument();
+    expect(screen.getByText('最后生成')).toBeInTheDocument();
+    expect(screen.getByText('过期时间')).toBeInTheDocument();
     expect(
       screen.getByDisplayValue(
         `${window.location.origin}/api/update-check-trigger?token=toke****cret`,
@@ -462,6 +469,20 @@ describe('WatchingUpdateSettingsPage', () => {
               'http://localhost/api/update-check-trigger?token=toke****cret',
           }),
         ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          triggerStatus({
+            enabled: true,
+            userTriggerEnabled: true,
+            adminTriggerEnabled: true,
+            effectiveEnabled: true,
+            hasToken: true,
+            maskedToken: 'toke****cret',
+            triggerLink:
+              'http://localhost/api/update-check-trigger?token=toke****cret',
+          }),
+        ),
       );
     setFetch(fetchMock);
 
@@ -469,6 +490,9 @@ describe('WatchingUpdateSettingsPage', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expectTriggerLinkActionsHidden();
+    fireEvent.click(screen.getByRole('button', { name: '启用触发链接' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expectTriggerRequest(fetchMock, 2, 'PATCH', { enabled: true });
   });
 
   it('keeps the trigger link setting and hides link actions when the admin switch is closed', async () => {
@@ -552,7 +576,7 @@ describe('WatchingUpdateSettingsPage', () => {
     expectTriggerRequest(fetchMock, 2, 'POST', { action: 'generate' });
   });
 
-  it('keeps the user switch state disabled when the trigger link is ineffective', async () => {
+  it('keeps the user switch usable when the trigger link is ineffective', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(triggerAllowedConfig()))

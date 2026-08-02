@@ -146,6 +146,11 @@ function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
   return isTriggerEffectiveEnabled(status) ? '已启用' : '已关闭';
 }
 
+function getAdminTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
+  if (!status) return '加载中';
+  return (status.adminTriggerEnabled ?? status.enabled) ? '已开启' : '已关闭';
+}
+
 function isTriggerEffectiveEnabled(status: TriggerLinkStatusResponse | null) {
   return status?.effectiveEnabled === true;
 }
@@ -155,7 +160,7 @@ function canExposeTriggerLink(status: TriggerLinkStatusResponse | null) {
 }
 
 function canToggleUserTriggerLink(status: TriggerLinkStatusResponse | null) {
-  return isTriggerEffectiveEnabled(status);
+  return status !== null;
 }
 
 function canCopyTriggerLink(status: TriggerLinkStatusResponse | null) {
@@ -645,7 +650,11 @@ export default function WatchingUpdateSettingsPage({
 
               <div className='space-y-4'>
                 <div className='rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950'>
-                  <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+                  <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
+                    <StatusItem
+                      label='管理员是否开启'
+                      value={getAdminTriggerStatusLabel(triggerLink)}
+                    />
                     <StatusItem
                       label='链接状态'
                       value={getTriggerStatusLabel(triggerLink)}
