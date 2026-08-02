@@ -205,7 +205,7 @@ describe('GET /api/update-check-trigger', () => {
     });
   });
 
-  it('can return the recent completed status without triggering', async () => {
+  it('can return the recent completed status through the internal refresh header without triggering', async () => {
     getStatus.mockReturnValue(
       status({
         status: 'completed',
@@ -235,7 +235,13 @@ describe('GET /api/update-check-trigger', () => {
     );
 
     const response = await GET(
-      request('http://localhost/api/update-check-trigger?status=1'),
+      request(
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
+        {
+          'x-lunatv-update-check-status-refresh': '1',
+        },
+      ),
     );
 
     expect(runInBackground).not.toHaveBeenCalled();
@@ -319,10 +325,11 @@ describe('GET /api/update-check-trigger', () => {
 
     const response = await GET(
       request(
-        'http://localhost/api/update-check-trigger?status=1',
-        'token.secret',
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
         {
           accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
         },
       ),
     );
@@ -339,7 +346,7 @@ describe('GET /api/update-check-trigger', () => {
     expect(html).not.toContain('通知历史');
   });
 
-  it('renders updateFound results as new updates when display data is empty', async () => {
+  it('does not classify updateFound results when notification display data is empty', async () => {
     getStatus.mockReturnValue(
       status({
         status: 'completed',
@@ -381,20 +388,21 @@ describe('GET /api/update-check-trigger', () => {
 
     const response = await GET(
       request(
-        'http://localhost/api/update-check-trigger?status=1',
-        'token.secret',
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
         {
           accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
         },
       ),
     );
     const html = await response.text();
 
-    expect(html).toContain('🆕 新更新（1）');
-    expect(html).toContain('九门');
-    expect(html).toContain('6 → 10 集（+4）');
+    expect(html).toContain('暂无更新');
+    expect(html).toContain('检测时间：2026-08-02 12:30:01');
+    expect(html).not.toContain('🆕 新更新');
     expect(html).not.toContain('✅ 已更新');
-    expect(html).not.toContain('暂无更新');
+    expect(html).not.toContain('九门');
   });
 
   it('renders updated-only display data without a new update section', async () => {
@@ -410,8 +418,16 @@ describe('GET /api/update-check-trigger', () => {
           failed: 0,
           oldestDueAt: 90,
           dataSourceCount: 1,
-          updateFoundCount: 0,
-          updates: [],
+          updateFoundCount: 1,
+          updates: [
+            {
+              resourceId: 'resource-2',
+              title: '相反的你和我第二季',
+              oldEpisode: 4,
+              newEpisode: 5,
+              source: 'aqyzy',
+            },
+          ],
           notificationCount: 0,
           skipped: 0,
         },
@@ -438,10 +454,11 @@ describe('GET /api/update-check-trigger', () => {
 
     const response = await GET(
       request(
-        'http://localhost/api/update-check-trigger?status=1',
-        'token.secret',
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
         {
           accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
         },
       ),
     );
@@ -511,10 +528,11 @@ describe('GET /api/update-check-trigger', () => {
 
     const response = await GET(
       request(
-        'http://localhost/api/update-check-trigger?status=1',
-        'token.secret',
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
         {
           accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
         },
       ),
     );
@@ -528,7 +546,7 @@ describe('GET /api/update-check-trigger', () => {
     expect(html).not.toContain('暂无更新');
   });
 
-  it('uses forwarded origin for the HTML status refresh URL', async () => {
+  it('uses an internal refresh request without changing the trigger URL', async () => {
     getStatus.mockReturnValue(
       status({ taskId: null, status: 'idle', running: false }),
     );
@@ -547,9 +565,10 @@ describe('GET /api/update-check-trigger', () => {
     );
     const html = await response.text();
 
-    expect(html).toContain(
-      'content="3;url=https://a.com/api/update-check-trigger?token=query.secret&amp;status=1"',
-    );
+    expect(html).toContain('fetch(window.location.href');
+    expect(html).toContain("'x-lunatv-update-check-status-refresh': '1'");
+    expect(html).not.toContain('http-equiv="refresh"');
+    expect(html).not.toContain('status=1');
     expect(html).not.toContain('0.0.0.0:3000');
     expect(html).not.toContain('localhost');
   });
@@ -587,10 +606,11 @@ describe('GET /api/update-check-trigger', () => {
 
     const response = await GET(
       request(
-        'http://localhost/api/update-check-trigger?status=1',
-        'token.secret',
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
         {
           accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
         },
       ),
     );

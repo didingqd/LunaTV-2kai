@@ -6,7 +6,6 @@ import {
   type UpdateCheckJobStatusSnapshot,
   type UpdateCheckJobTriggerSource,
 } from '@/lib/scheduler/update-check-job-runner';
-import { getSiteUrl } from '@/lib/site-url';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import {
   triggerTokenService,
@@ -47,8 +46,11 @@ function wantsHtml(request: NextRequest): boolean {
   return request.headers.get('accept')?.includes('text/html') === true;
 }
 
-function isStatusOnly(request: NextRequest): boolean {
-  const value = new URL(request.url).searchParams.get('status');
+function isStatusRefreshRequest(request: NextRequest): boolean {
+  const value = request.headers
+    .get('x-lunatv-update-check-status-refresh')
+    ?.trim()
+    .toLowerCase();
   return value === '1' || value === 'true';
 }
 
@@ -139,19 +141,6 @@ function episodeDelta(item: {
   return Math.max(0, item.toEpisode - item.fromEpisode);
 }
 
-function statusRefreshUrl(request: NextRequest): string {
-  const url = new URL(request.url);
-  const siteUrl = getSiteUrl(request);
-  if (siteUrl) {
-    const origin = new URL(siteUrl);
-    url.protocol = origin.protocol;
-    url.hostname = origin.hostname;
-    url.port = origin.port;
-  }
-  url.searchParams.set('status', '1');
-  return url.toString();
-}
-
 function resolveDisplayResult(
   snapshot: UpdateCheckJobStatusSnapshot,
   userId: string,
@@ -174,31 +163,15 @@ function hasDisplayUpdates(result: UpdateCheckJobDisplayResult): boolean {
   return result.newUpdates.length > 0 || result.updated.length > 0;
 }
 
-function fallbackNewUpdatesFromResult(
-  snapshot: UpdateCheckJobStatusSnapshot,
-): DisplayUpdateItem[] {
-  if (!Array.isArray(snapshot.result?.updates)) return [];
-  return snapshot.result.updates.map((item) => ({
-    title: item.title,
-    fromEpisode: item.oldEpisode,
-    toEpisode: item.newEpisode,
-  }));
-}
-
 function resolveDisplaySections(
   snapshot: UpdateCheckJobStatusSnapshot,
   userId: string,
 ) {
   const displayResult = resolveDisplayResult(snapshot, userId);
-  const displayNewUpdates = displayResult?.newUpdates ?? [];
-  const newUpdates =
-    displayNewUpdates.length > 0
-      ? displayNewUpdates
-      : fallbackNewUpdatesFromResult(snapshot);
 
   return {
     displayResult,
-    newUpdates,
+    newUpdates: displayResult?.newUpdates ?? [],
     updated: displayResult?.updated ?? [],
   };
 }
@@ -224,7 +197,6 @@ function renderResultsPage(input: {
   userId: string;
 }) {
   const { request, snapshot, accepted, userId } = input;
-  const refreshUrl = statusRefreshUrl(request);
   const running = snapshot.running || snapshot.status === 'running';
   const { displayResult, newUpdates, updated } = resolveDisplaySections(
     snapshot,
@@ -242,7 +214,6 @@ function renderResultsPage(input: {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  ${running ? `<meta http-equiv="refresh" content="3;url=${htmlEscape(refreshUrl)}" />` : ''}
   <title>更新检测结果</title>
   <style>
     :root { color-scheme: light dark; }
@@ -279,6 +250,26 @@ function renderResultsPage(input: {
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .status-item {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+    .status-label {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .status-value {
+      margin-top: 4px;
+      font-weight: 700;
+    }
     section { margin-top: 18px; }
     .section-title {
       display: flex;
@@ -332,6 +323,8 @@ function renderResultsPage(input: {
       body { background: #020617; color: #e2e8f0; }
       .panel { background: #0f172a; border-color: #1e293b; }
       .muted, .time, .empty { color: #94a3b8; }
+      .status-item { background: #020617; border-color: #1e293b; }
+      .status-label { color: #94a3b8; }
       .update-item, .time { border-color: #1e293b; }
       .episodes { color: #cbd5e1; }
       .empty { border-color: #334155; }
@@ -345,7 +338,7 @@ function renderResultsPage(input: {
       ${
         running
           ? `<div class="waiting"><span class="spinner"></span><span>${accepted ? '检测已启动，正在等待完成' : '检测中，请稍候'}</span></div>
-             <p class="muted">页面会自动刷新。</p>`
+             <p class="muted">页面会自动刷新检测状态，地址栏不会变化。</p>`
           : `${
               hasAnyUpdates
                 ? `${hasNewUpdates ? `<section class="new"><h2 class="section-title">🆕 新更新（${newUpdates.length}）</h2><ul>${renderUpdateItems(newUpdates)}</ul></section>` : ''}
@@ -354,8 +347,53 @@ function renderResultsPage(input: {
             }
             <div class="time">检测时间：${htmlEscape(displayTime || '-')}</div>`
       }
+      <div class="status-grid">
+        <div class="status-item">
+          <div class="status-label">触发检测状态</div>
+          <div class="status-value">${htmlEscape(snapshot.status)}</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">是否启动任务</div>
+          <div class="status-value">${accepted ? '是' : '否'}</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">任务 ID</div>
+          <div class="status-value">${htmlEscape(snapshot.taskId ?? '-')}</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">执行结果</div>
+          <div class="status-value">${htmlEscape(snapshot.error ?? (snapshot.result ? `检查 ${snapshot.result.inspected} 项，发现 ${snapshot.result.updateFoundCount} 项更新` : running ? '检测中' : '-'))}</div>
+        </div>
+      </div>
     </div>
   </main>
+  ${
+    running
+      ? `<script>
+        (() => {
+          const refresh = async () => {
+            try {
+              const response = await fetch(window.location.href, {
+                cache: 'no-store',
+                headers: {
+                  accept: 'text/html',
+                  'x-lunatv-update-check-status-refresh': '1',
+                },
+              });
+              if (!response.ok) return;
+              const html = await response.text();
+              document.open();
+              document.write(html);
+              document.close();
+            } catch {
+              window.setTimeout(refresh, 3000);
+            }
+          };
+          window.setTimeout(refresh, 3000);
+        })();
+      </script>`
+      : ''
+  }
 </body>
 </html>`;
 }
@@ -458,7 +496,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (isStatusOnly(request)) {
+  if (isStatusRefreshRequest(request)) {
     const snapshot = updateCheckJobRunner.getStatus();
     if (renderHtml) {
       return noStoreHtml(

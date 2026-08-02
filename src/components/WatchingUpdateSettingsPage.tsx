@@ -142,11 +142,8 @@ function formatTimestamp(value: number | null) {
 }
 
 function getTriggerStatusLabel(status: TriggerLinkStatusResponse | null) {
-  if (!status || !status.hasToken) return '未创建';
-  if (status.expired) return '已过期';
-  if (status.adminTriggerEnabled === false) return '管理员已关闭';
-  if (status.userTriggerEnabled === false) return '用户已关闭';
-  return isTriggerEffectiveEnabled(status) ? '已启用' : '已禁用';
+  if (!status) return '加载中';
+  return isTriggerEffectiveEnabled(status) ? '已启用' : '已关闭';
 }
 
 function isTriggerEffectiveEnabled(status: TriggerLinkStatusResponse | null) {
@@ -154,15 +151,15 @@ function isTriggerEffectiveEnabled(status: TriggerLinkStatusResponse | null) {
 }
 
 function canExposeTriggerLink(status: TriggerLinkStatusResponse | null) {
-  return Boolean(status?.hasToken && !status.expired);
+  return isTriggerEffectiveEnabled(status);
 }
 
 function canToggleUserTriggerLink(status: TriggerLinkStatusResponse | null) {
-  return Boolean(status?.hasToken && !status.expired);
+  return isTriggerEffectiveEnabled(status);
 }
 
 function canCopyTriggerLink(status: TriggerLinkStatusResponse | null) {
-  return canExposeTriggerLink(status);
+  return isTriggerEffectiveEnabled(status);
 }
 
 function getSettingsUsername() {
@@ -227,7 +224,6 @@ export default function WatchingUpdateSettingsPage({
     null,
   );
   const [fullTriggerLink, setFullTriggerLink] = useState<string | null>(null);
-  const [fullTriggerToken, setFullTriggerToken] = useState<string | null>(null);
   const [triggerTestResult, setTriggerTestResult] =
     useState<TriggerTestResult | null>(null);
   const [message, setMessage] = useState<{
@@ -245,7 +241,6 @@ export default function WatchingUpdateSettingsPage({
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data);
       setFullTriggerLink(null);
-      setFullTriggerToken(null);
       setTriggerTestResult(null);
     } catch (error) {
       setMessage({
@@ -382,7 +377,6 @@ export default function WatchingUpdateSettingsPage({
     );
     setTriggerLink(data);
     setFullTriggerLink(link);
-    setFullTriggerToken(token);
     return link;
   };
 
@@ -410,7 +404,7 @@ export default function WatchingUpdateSettingsPage({
     if (!canCopyTriggerLink(triggerLink)) return;
     try {
       const link =
-        fullTriggerLink && fullTriggerToken
+        fullTriggerLink && isTriggerEffectiveEnabled(triggerLink)
           ? fullTriggerLink
           : await requestFullTriggerLink();
       if (!link) throw new Error('Trigger link is unavailable');
@@ -436,7 +430,6 @@ export default function WatchingUpdateSettingsPage({
       const data = await readTriggerLinkResponse(response);
       setTriggerLink(data);
       setFullTriggerLink(null);
-      setFullTriggerToken(null);
       setTriggerTestResult(null);
       setMessage({ type: 'success', text: '触发链接状态已更新' });
     } catch (error) {
@@ -450,6 +443,7 @@ export default function WatchingUpdateSettingsPage({
   };
 
   const generateTriggerToken = async () => {
+    if (!isTriggerEffectiveEnabled(triggerLink)) return;
     setTriggerSaving('generate');
     setMessage(null);
     try {
@@ -464,13 +458,10 @@ export default function WatchingUpdateSettingsPage({
       setFullTriggerLink(
         getBrowserTriggerLink(data, data.fullTriggerLink ?? null, token),
       );
-      setFullTriggerToken(token);
       setTriggerTestResult(null);
       setMessage({
         type: 'success',
-        text: triggerLink?.hasToken
-          ? '触发链接 Token 已重新生成'
-          : '触发链接 Token 已生成',
+        text: '触发链接已重新生成',
       });
     } catch (error) {
       setMessage({
@@ -490,7 +481,7 @@ export default function WatchingUpdateSettingsPage({
     setTriggerTestResult(null);
     try {
       const link =
-        fullTriggerLink && fullTriggerToken
+        fullTriggerLink && isTriggerEffectiveEnabled(triggerLink)
           ? fullTriggerLink
           : await requestFullTriggerLink();
       if (!link) return;
@@ -523,14 +514,12 @@ export default function WatchingUpdateSettingsPage({
 
   const canEditSchedule = config?.permission.allowCustomSchedule === true;
   const controlsDisabled = loading || !canEditSchedule || saving !== null;
-  const triggerLinkVisible = canExposeTriggerLink(triggerLink);
   const userCanToggleTriggerLink = canToggleUserTriggerLink(triggerLink);
   const triggerLinkEffective = isTriggerEffectiveEnabled(triggerLink);
-  const triggerLinkManagementVisible = triggerLinkVisible;
   const displayedTriggerLink = getBrowserTriggerLink(
     triggerLink,
     fullTriggerLink,
-    fullTriggerToken,
+    null,
   );
   const triggerControlsDisabled =
     loading || triggerLoading || triggerSaving !== null;
@@ -646,47 +635,17 @@ export default function WatchingUpdateSettingsPage({
               </div>
             </section>
 
-            <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
-              <div className='mb-4 flex items-center gap-2'>
-                <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
-                <h2 className='text-lg font-semibold tracking-normal'>
-                  {triggerLinkManagementVisible
-                    ? '更新检测触发链接'
-                    : '触发链接状态'}
-                </h2>
-              </div>
+            {triggerLinkEffective && (
+              <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
+                <div className='mb-4 flex items-center gap-2'>
+                  <KeyRound className='h-5 w-5 text-violet-600 dark:text-violet-400' />
+                  <h2 className='text-lg font-semibold tracking-normal'>
+                    更新检测触发链接
+                  </h2>
+                </div>
 
-              <div className='space-y-4'>
-                {triggerLoading && !triggerLink ? (
-                  <div className='rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300'>
-                    正在加载触发链接状态。
-                  </div>
-                ) : !triggerLink?.hasToken ? (
-                  <div className='rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-                    <div>尚未生成触发链接 Token。</div>
-                    <button
-                      type='button'
-                      disabled={triggerControlsDisabled}
-                      onClick={() => void generateTriggerToken()}
-                      className='mt-3 inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:text-amber-100 dark:hover:bg-amber-900'
-                    >
-                      {triggerSaving === 'generate' ? (
-                        <LoaderCircle className='h-4 w-4 animate-spin' />
-                      ) : (
-                        <RefreshCw className='h-4 w-4' />
-                      )}
-                      生成 Token
-                    </button>
-                  </div>
-                ) : triggerLinkManagementVisible ? (
+                <div className='space-y-4'>
                   <div className='rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950'>
-                    {!triggerLinkEffective && (
-                      <div className='mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-                        {triggerLink.adminTriggerEnabled === false
-                          ? '管理员已关闭触发权限，当前链接不可访问。'
-                          : '我的开关已关闭，当前链接不可访问。'}
-                      </div>
-                    )}
                     <div className='mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
                       <StatusItem
                         label='链接状态'
@@ -697,26 +656,12 @@ export default function WatchingUpdateSettingsPage({
                         value={triggerLinkEffective ? '已启用' : '已关闭'}
                       />
                       <StatusItem
-                        label='我的开关'
-                        value={
-                          (triggerLink.userTriggerEnabled ??
-                          triggerLink.enabled)
-                            ? '已开启'
-                            : '已关闭'
-                        }
+                        label='最后生成'
+                        value={formatTimestamp(triggerLink?.rotatedAt ?? null)}
                       />
                       <StatusItem
-                        label='管理员开关'
-                        value={
-                          (triggerLink.adminTriggerEnabled ??
-                          triggerLink.enabled)
-                            ? '已开启'
-                            : '已关闭'
-                        }
-                      />
-                      <StatusItem
-                        label='Token 配置'
-                        value={triggerLink.maskedToken ?? '已配置'}
+                        label='过期时间'
+                        value={formatTimestamp(triggerLink?.expiresAt ?? null)}
                       />
                     </div>
                     <label
@@ -729,7 +674,7 @@ export default function WatchingUpdateSettingsPage({
                       <textarea
                         id='watching-update-trigger-link'
                         readOnly
-                        value={displayedTriggerLink ?? 'Token 未配置'}
+                        value={displayedTriggerLink ?? '链接暂不可用'}
                         rows={3}
                         className='min-w-0 resize-none rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'
                       />
@@ -737,7 +682,7 @@ export default function WatchingUpdateSettingsPage({
                         <button
                           type='button'
                           disabled={
-                            triggerControlsDisabled || !triggerLinkVisible
+                            triggerControlsDisabled || !triggerLinkEffective
                           }
                           onClick={() => void revealTriggerLink()}
                           className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
@@ -747,7 +692,9 @@ export default function WatchingUpdateSettingsPage({
                         </button>
                         <button
                           type='button'
-                          disabled={triggerControlsDisabled}
+                          disabled={
+                            triggerControlsDisabled || !triggerLinkEffective
+                          }
                           onClick={() => void copyTriggerLink()}
                           className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
                         >
@@ -789,7 +736,9 @@ export default function WatchingUpdateSettingsPage({
                         </button>
                         <button
                           type='button'
-                          disabled={triggerControlsDisabled}
+                          disabled={
+                            triggerControlsDisabled || !triggerLinkEffective
+                          }
                           onClick={() => void generateTriggerToken()}
                           className='inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-900'
                         >
@@ -802,77 +751,44 @@ export default function WatchingUpdateSettingsPage({
                         </button>
                       </div>
                     </div>
-                    {fullTriggerToken && (
-                      <div className='mt-3'>
-                        <div className='mb-1 text-sm font-medium text-sky-900 dark:text-sky-100'>
-                          Token
-                        </div>
-                        <div className='break-all rounded-md border border-sky-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 dark:border-sky-800 dark:bg-gray-950 dark:text-slate-100'>
-                          {fullTriggerToken}
-                        </div>
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <div className='rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200'>
-                    <div>触发链接已关闭</div>
-                    <div className='mt-1'>
-                      {triggerLink.adminTriggerEnabled === false
-                        ? '管理员已关闭，请联系管理员。'
-                        : '请开启后使用。'}
-                    </div>
-                    {userCanToggleTriggerLink &&
-                      triggerLink.userTriggerEnabled === false && (
-                        <button
-                          type='button'
-                          disabled={triggerControlsDisabled}
-                          onClick={() => void updateTriggerEnabled()}
-                          className='mt-3 inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:text-amber-100 dark:hover:bg-amber-900'
-                        >
-                          {triggerSaving === 'enabled' ? (
-                            <LoaderCircle className='h-4 w-4 animate-spin' />
-                          ) : (
-                            <KeyRound className='h-4 w-4' />
-                          )}
-                          启用触发链接
-                        </button>
-                      )}
-                  </div>
-                )}
 
-                {triggerTestResult && (
-                  <div
-                    role='status'
-                    className={`rounded-md border px-3 py-2 text-sm ${
-                      triggerTestResult.ok && triggerTestResult.success
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
-                        : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
-                    }`}
-                  >
-                    <div className='font-semibold'>
-                      {triggerTestResult.ok && triggerTestResult.success
-                        ? '请求成功'
-                        : '请求失败'}
-                    </div>
-                    <div className='mt-2 space-y-1 text-xs'>
-                      <div>HTTP 状态：{triggerTestResult.statusCode}</div>
-                      <div>当前检测状态：{triggerTestResult.status ?? '-'}</div>
-                      <div>
-                        是否启动任务：
-                        {triggerTestResult.accepted === undefined
-                          ? '-'
-                          : triggerTestResult.accepted
-                            ? '是'
-                            : '否'}
+                  {triggerTestResult && (
+                    <div
+                      role='status'
+                      className={`rounded-md border px-3 py-2 text-sm ${
+                        triggerTestResult.ok && triggerTestResult.success
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                          : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
+                      }`}
+                    >
+                      <div className='font-semibold'>
+                        {triggerTestResult.ok && triggerTestResult.success
+                          ? '请求成功'
+                          : '请求失败'}
                       </div>
-                      {triggerTestResult.error && (
-                        <div>错误原因：{triggerTestResult.error}</div>
-                      )}
+                      <div className='mt-2 space-y-1 text-xs'>
+                        <div>HTTP 状态：{triggerTestResult.statusCode}</div>
+                        <div>
+                          当前检测状态：{triggerTestResult.status ?? '-'}
+                        </div>
+                        <div>
+                          是否启动任务：
+                          {triggerTestResult.accepted === undefined
+                            ? '-'
+                            : triggerTestResult.accepted
+                              ? '是'
+                              : '否'}
+                        </div>
+                        {triggerTestResult.error && (
+                          <div>错误原因：{triggerTestResult.error}</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </section>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className='rounded-md border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900'>
               <div className='mb-4 flex items-center gap-2'>
