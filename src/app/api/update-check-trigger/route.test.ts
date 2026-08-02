@@ -30,16 +30,24 @@ jest.mock('@/lib/watching-update-check-log-request', () => ({
     },
   })),
 }));
+jest.mock('@/lib/notification/inbox-notification-repository', () => ({
+  inboxNotificationRepository: {
+    listForUser: jest.fn(),
+  },
+}));
 
+import { inboxNotificationRepository } from '@/lib/notification/inbox-notification-repository';
 import { updateCheckJobRunner } from '@/lib/scheduler/update-check-job-runner';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { triggerTokenService } from '@/lib/trigger-token-service';
+import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '@/lib/watching-update-notification-events';
 import { GET } from './route';
 
 const getStatus = updateCheckJobRunner.getStatus as jest.Mock;
 const runInBackground = updateCheckJobRunner.runInBackground as jest.Mock;
 const authorizeAccess = triggerLinkAccessControlService.authorize as jest.Mock;
 const verifyToken = triggerTokenService.verify as jest.Mock;
+const listNotifications = inboxNotificationRepository.listForUser as jest.Mock;
 
 function request(
   url = 'http://localhost/api/update-check-trigger',
@@ -81,6 +89,7 @@ describe('GET /api/update-check-trigger', () => {
       lastUsedAt: 90,
     });
     authorizeAccess.mockResolvedValue({ allowed: true });
+    listNotifications.mockResolvedValue([]);
   });
 
   it('starts the shared JobRunner in the background when idle', async () => {
@@ -346,7 +355,41 @@ describe('GET /api/update-check-trigger', () => {
     expect(html).not.toContain('通知历史');
   });
 
-  it('does not classify updateFound results when notification display data is empty', async () => {
+  it('uses recent notification payload when job display data is empty', async () => {
+    listNotifications.mockResolvedValue([
+      {
+        id: 'notification-1',
+        userId: 'alice',
+        type: WATCHING_UPDATE_FOUND_EVENT_TYPE,
+        title: '更新提醒',
+        content: '更新提醒',
+        createdAt: 151,
+        read: false,
+        readAt: null,
+        payload: {
+          title: '更新提醒',
+          newUpdates: [
+            {
+              followId: 'resource-1',
+              title: '九门',
+              fromEpisode: 6,
+              toEpisode: 10,
+            },
+          ],
+          updated: [
+            {
+              followId: 'resource-2',
+              title: '相反的你和我第二季',
+              fromEpisode: 4,
+              toEpisode: 5,
+            },
+          ],
+          checkedAt: 150,
+          timezone: 'Asia/Shanghai',
+          displayTime: '2026-08-02 12:30:01',
+        },
+      },
+    ]);
     getStatus.mockReturnValue(
       status({
         status: 'completed',
@@ -398,11 +441,111 @@ describe('GET /api/update-check-trigger', () => {
     );
     const html = await response.text();
 
-    expect(html).toContain('暂无更新');
+    expect(listNotifications).toHaveBeenCalledWith('alice');
+    expect(html).toContain('🆕 新更新（1）');
+    expect(html).toContain('✅ 已更新（1）');
+    expect(html).toContain('九门');
+    expect(html).toContain('6 → 10 集（+4）');
+    expect(html).toContain('相反的你和我第二季');
+    expect(html).toContain('4 → 5 集（+1）');
     expect(html).toContain('检测时间：2026-08-02 12:30:01');
-    expect(html).not.toContain('🆕 新更新');
-    expect(html).not.toContain('✅ 已更新');
-    expect(html).not.toContain('九门');
+    expect(html).not.toContain('暂无更新');
+  });
+
+  it('renders actual result updates when notification display data is unavailable', async () => {
+    getStatus.mockReturnValue(
+      status({
+        status: 'completed',
+        running: false,
+        finishedAt: 150,
+        durationMs: 50,
+        result: {
+          inspected: 1,
+          succeeded: 1,
+          failed: 0,
+          oldestDueAt: 90,
+          dataSourceCount: 1,
+          updateFoundCount: 1,
+          updates: [
+            {
+              resourceId: 'resource-1',
+              title: '九门',
+              oldEpisode: 6,
+              newEpisode: 10,
+              source: 'aqyzy',
+            },
+          ],
+          notificationCount: 0,
+          skipped: 0,
+        },
+        displayResults: [
+          {
+            userId: 'alice',
+            title: '更新提醒',
+            newUpdates: [],
+            updated: [],
+            checkedAt: 150,
+            timezone: 'Asia/Shanghai',
+            displayTime: '2026-08-02 12:30:01',
+          },
+        ],
+      }),
+    );
+
+    const response = await GET(
+      request(
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
+        {
+          accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
+        },
+      ),
+    );
+    const html = await response.text();
+
+    expect(html).toContain('🆕 新更新（1）');
+    expect(html).toContain('九门');
+    expect(html).toContain('6 → 10 集（+4）');
+    expect(html).not.toContain('暂无更新');
+  });
+
+  it('does not show no updates when updateFoundCount is positive without renderable details', async () => {
+    getStatus.mockReturnValue(
+      status({
+        status: 'completed',
+        running: false,
+        finishedAt: 150,
+        durationMs: 50,
+        result: {
+          inspected: 13,
+          succeeded: 13,
+          failed: 0,
+          oldestDueAt: 90,
+          dataSourceCount: 1,
+          updateFoundCount: 5,
+          updates: [],
+          notificationCount: 0,
+          skipped: 0,
+        },
+        displayResults: [],
+      }),
+    );
+
+    const response = await GET(
+      request(
+        'http://localhost/api/update-check-trigger?token=query.secret',
+        '',
+        {
+          accept: 'text/html',
+          'x-lunatv-update-check-status-refresh': '1',
+        },
+      ),
+    );
+    const html = await response.text();
+
+    expect(html).toContain('发现 5 项更新');
+    expect(html).not.toContain('暂无更新');
   });
 
   it('renders updated-only display data without a new update section', async () => {

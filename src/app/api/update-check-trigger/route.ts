@@ -6,21 +6,38 @@ import {
   type UpdateCheckJobStatusSnapshot,
   type UpdateCheckJobTriggerSource,
 } from '@/lib/scheduler/update-check-job-runner';
+import { inboxNotificationRepository } from '@/lib/notification/inbox-notification-repository';
+import type { InboxNotification } from '@/lib/notification/notification-types';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import {
   triggerTokenService,
   type TriggerTokenVerifyResult,
 } from '@/lib/trigger-token-service';
 import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
+import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '@/lib/watching-update-notification-events';
 
 export const runtime = 'nodejs';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' };
 
 type DisplayUpdateItem = {
+  followId?: string;
   title: string;
   fromEpisode: number;
   toEpisode: number;
+};
+
+type DisplayUpdatePayload = {
+  title: string;
+  newUpdates: DisplayUpdateItem[];
+  updated: DisplayUpdateItem[];
+  checkedAt: number;
+  timezone: string;
+  displayTime: string;
+};
+
+type ResolvedDisplayResult = DisplayUpdatePayload & {
+  userId: string;
 };
 
 function noStoreJson(body: Record<string, unknown>, status = 200) {
@@ -163,16 +180,105 @@ function hasDisplayUpdates(result: UpdateCheckJobDisplayResult): boolean {
   return result.newUpdates.length > 0 || result.updated.length > 0;
 }
 
-function resolveDisplaySections(
+function isDisplayUpdateItem(value: unknown): value is DisplayUpdateItem {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as DisplayUpdateItem;
+  return (
+    typeof item.title === 'string' &&
+    typeof item.fromEpisode === 'number' &&
+    typeof item.toEpisode === 'number'
+  );
+}
+
+function toDisplayUpdateItems(value: unknown): DisplayUpdateItem[] {
+  return Array.isArray(value) ? value.filter(isDisplayUpdateItem) : [];
+}
+
+function getNotificationDisplayPayload(
+  notification: InboxNotification,
+): DisplayUpdatePayload | null {
+  if (notification.type !== WATCHING_UPDATE_FOUND_EVENT_TYPE) return null;
+  const payload = notification.payload;
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload as Record<string, unknown>;
+  const newUpdates = toDisplayUpdateItems(data.newUpdates);
+  const updated = toDisplayUpdateItems(data.updated);
+  if (newUpdates.length === 0 && updated.length === 0) return null;
+  return {
+    title: typeof data.title === 'string' ? data.title : '更新提醒',
+    newUpdates,
+    updated,
+    checkedAt: typeof data.checkedAt === 'number' ? data.checkedAt : 0,
+    timezone: typeof data.timezone === 'string' ? data.timezone : '',
+    displayTime:
+      typeof data.displayTime === 'string'
+        ? data.displayTime
+        : new Date(notification.createdAt).toLocaleString(),
+  };
+}
+
+function isNotificationForSnapshot(
+  notification: InboxNotification,
+  payload: DisplayUpdatePayload,
+  snapshot: UpdateCheckJobStatusSnapshot,
+): boolean {
+  if (!snapshot.startedAt) return true;
+  return (
+    payload.checkedAt >= snapshot.startedAt ||
+    notification.createdAt >= snapshot.startedAt
+  );
+}
+
+async function resolveNotificationDisplayResult(
+  snapshot: UpdateCheckJobStatusSnapshot,
+  userId: string,
+): Promise<ResolvedDisplayResult | null> {
+  const notifications = await inboxNotificationRepository
+    .listForUser(userId)
+    .catch(() => []);
+  for (const notification of notifications) {
+    const payload = getNotificationDisplayPayload(notification);
+    if (!payload) continue;
+    if (!isNotificationForSnapshot(notification, payload, snapshot)) continue;
+    return {
+      userId,
+      ...payload,
+    };
+  }
+  return null;
+}
+
+function resolveResultUpdatesFallback(
+  snapshot: UpdateCheckJobStatusSnapshot,
+): DisplayUpdateItem[] {
+  return (snapshot.result?.updates ?? []).map((item) => ({
+    title: item.title,
+    fromEpisode: item.oldEpisode,
+    toEpisode: item.newEpisode,
+  }));
+}
+
+async function resolveDisplaySections(
   snapshot: UpdateCheckJobStatusSnapshot,
   userId: string,
 ) {
-  const displayResult = resolveDisplayResult(snapshot, userId);
+  const notificationResult = await resolveNotificationDisplayResult(
+    snapshot,
+    userId,
+  );
+  const displayResult =
+    notificationResult ?? resolveDisplayResult(snapshot, userId);
+  const newUpdates = displayResult?.newUpdates ?? [];
+  const updated = displayResult?.updated ?? [];
+  const fallbackUpdates =
+    newUpdates.length === 0 && updated.length === 0
+      ? resolveResultUpdatesFallback(snapshot)
+      : [];
 
   return {
     displayResult,
-    newUpdates: displayResult?.newUpdates ?? [],
-    updated: displayResult?.updated ?? [],
+    newUpdates: fallbackUpdates.length > 0 ? fallbackUpdates : newUpdates,
+    updated,
   };
 }
 
@@ -190,7 +296,7 @@ function renderUpdateItems(items: DisplayUpdateItem[]): string {
     .join('');
 }
 
-function renderResultsPage(input: {
+async function renderResultsPage(input: {
   request: NextRequest;
   snapshot: UpdateCheckJobStatusSnapshot;
   accepted: boolean;
@@ -198,13 +304,16 @@ function renderResultsPage(input: {
 }) {
   const { request, snapshot, accepted, userId } = input;
   const running = snapshot.running || snapshot.status === 'running';
-  const { displayResult, newUpdates, updated } = resolveDisplaySections(
+  const { displayResult, newUpdates, updated } = await resolveDisplaySections(
     snapshot,
     userId,
   );
   const hasNewUpdates = newUpdates.length > 0;
   const hasUpdated = updated.length > 0;
   const hasAnyUpdates = hasNewUpdates || hasUpdated;
+  const detectedUpdateCount =
+    snapshot.result?.updateFoundCount ?? newUpdates.length + updated.length;
+  const hasDetectedUpdates = hasAnyUpdates || detectedUpdateCount > 0;
   const displayTime =
     displayResult?.displayTime ??
     (snapshot.finishedAt ? new Date(snapshot.finishedAt).toLocaleString() : '');
@@ -312,6 +421,15 @@ function renderResultsPage(input: {
       color: #64748b;
       font-weight: 650;
     }
+    .summary {
+      margin-top: 18px;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      padding: 18px;
+      background: #fffbeb;
+      color: #92400e;
+      font-weight: 700;
+    }
     .time {
       margin-top: 20px;
       border-top: 1px solid #e2e8f0;
@@ -328,6 +446,7 @@ function renderResultsPage(input: {
       .update-item, .time { border-color: #1e293b; }
       .episodes { color: #cbd5e1; }
       .empty { border-color: #334155; }
+      .summary { background: #451a03; border-color: #78350f; color: #fde68a; }
     }
   </style>
 </head>
@@ -343,7 +462,9 @@ function renderResultsPage(input: {
               hasAnyUpdates
                 ? `${hasNewUpdates ? `<section class="new"><h2 class="section-title">🆕 新更新（${newUpdates.length}）</h2><ul>${renderUpdateItems(newUpdates)}</ul></section>` : ''}
                    ${hasUpdated ? `<section class="updated"><h2 class="section-title">✅ 已更新（${updated.length}）</h2><ul>${renderUpdateItems(updated)}</ul></section>` : ''}`
-                : '<div class="empty">暂无更新</div>'
+                : hasDetectedUpdates
+                  ? `<div class="summary">发现 ${htmlEscape(detectedUpdateCount)} 项更新，暂无可展示明细。</div>`
+                  : '<div class="empty">暂无更新</div>'
             }
             <div class="time">检测时间：${htmlEscape(displayTime || '-')}</div>`
       }
@@ -500,7 +621,7 @@ export async function GET(request: NextRequest) {
     const snapshot = updateCheckJobRunner.getStatus();
     if (renderHtml) {
       return noStoreHtml(
-        renderResultsPage({
+        await renderResultsPage({
           request,
           snapshot,
           accepted: false,
@@ -515,7 +636,7 @@ export async function GET(request: NextRequest) {
   if (current.running) {
     if (renderHtml) {
       return noStoreHtml(
-        renderResultsPage({
+        await renderResultsPage({
           request,
           snapshot: current,
           accepted: false,
@@ -551,7 +672,7 @@ export async function GET(request: NextRequest) {
 
   if (renderHtml) {
     return noStoreHtml(
-      renderResultsPage({
+      await renderResultsPage({
         request,
         snapshot: status,
         accepted: status.running,
