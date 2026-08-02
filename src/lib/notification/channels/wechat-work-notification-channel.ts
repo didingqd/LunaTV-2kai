@@ -134,17 +134,13 @@ function isEpisodeLine(line: string): boolean {
 function formatWatchingUpdateSectionHeading(
   section: ParsedWatchingUpdateSection,
 ): string {
-  const color = section.kind === 'new' ? 'info' : 'comment';
   const icon = section.kind === 'new' ? '🆕' : '✅';
   const heading = stripWatchingUpdateSectionIcon(section.heading);
-  return `## <font color="${color}">${icon} ${heading}</font>`;
+  return `## <font color="info">${icon} ${heading}</font>`;
 }
 
 function formatWatchingUpdateItem(item: ParsedWatchingUpdateItem): string[] {
-  return [
-    `• ${item.title}`,
-    `  <font color="warning">${item.episodeLine}</font>`,
-  ];
+  return [`• ${item.title}`, `  ${item.episodeLine}`];
 }
 
 function stripWatchingUpdateSectionIcon(heading: string): string {

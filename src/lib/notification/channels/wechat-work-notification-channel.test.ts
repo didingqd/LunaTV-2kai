@@ -100,7 +100,7 @@ describe('WeChatWorkNotificationChannel', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.markdown.content).toBe(
-      '#  更新提醒\n\n## <font color="info">🆕 新更新（1）</font>\n\n• 昭阳公主\n  <font color="warning">14 → 15 集（+1）</font>\n\n## <font color="comment">✅ 已更新（3）</font>\n\n• 才女的侍从 在满是高岭之花的贵族学校暗中照顾（毫无生活自理能力的）学院第一大小姐\n  <font color="warning">4 → 5 集（+1）</font>\n\n• 九门\n  <font color="warning">6 → 8 集（+2）</font>\n\n• 穹庐下的魔女\n  <font color="warning">5 → 6 集（+1）</font>\n\n<font color="comment"> 2026-08-02 12:30:01</font>',
+      '#  更新提醒\n\n## <font color="info">🆕 新更新（1）</font>\n\n• 昭阳公主\n  14 → 15 集（+1）\n\n## <font color="info">✅ 已更新（3）</font>\n\n• 才女的侍从 在满是高岭之花的贵族学校暗中照顾（毫无生活自理能力的）学院第一大小姐\n  4 → 5 集（+1）\n\n• 九门\n  6 → 8 集（+2）\n\n• 穹庐下的魔女\n  5 → 6 集（+1）\n\n<font color="comment"> 2026-08-02 12:30:01</font>',
     );
     expect(body.markdown.content.match(/更新提醒/g)).toHaveLength(1);
   });
