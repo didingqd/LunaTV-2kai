@@ -253,12 +253,39 @@ function episodeDelta(item: {
 }
 
 function sortNewUpdatesForDisplay<T extends {
+  title: string;
   fromEpisode: number;
   toEpisode: number;
 }>(items: T[]): T[] {
   return [...items].sort(
-    (left, right) => episodeDelta(right) - episodeDelta(left),
+    (left, right) =>
+      episodeDelta(right) - episodeDelta(left) ||
+      displayTimestamp(right) - displayTimestamp(left) ||
+      compareDisplayTitle(left, right),
   );
+}
+
+function displayTimestamp(item: object): number {
+  const value = (item as { detectedAt?: unknown; updatedAt?: unknown })
+    .detectedAt;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  const updatedAt = (item as { updatedAt?: unknown }).updatedAt;
+  if (typeof updatedAt === 'number' && Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+  if (typeof updatedAt === 'string') {
+    const timestamp = Date.parse(updatedAt);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+  return 0;
+}
+
+function compareDisplayTitle(
+  left: { title: string },
+  right: { title: string },
+): number {
+  return left.title.localeCompare(right.title, 'zh-CN');
 }
 
 export const watchingUpdateNotificationBuilder =

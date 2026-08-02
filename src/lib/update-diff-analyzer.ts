@@ -10,16 +10,42 @@ import type {
 function sortByTitle<T extends { followId: string; title: string }>(
   items: T[],
 ): T[] {
-  return [...items].sort(
-    (left, right) =>
-      left.title.localeCompare(right.title, 'zh-CN') ||
-      left.followId.localeCompare(right.followId),
-  );
+  return [...items].sort(compareByTitle);
 }
 
 function sortByFollowId<T extends { followId: string }>(items: T[]): T[] {
   return [...items].sort((left, right) =>
     left.followId.localeCompare(right.followId),
+  );
+}
+
+function compareByTitle<T extends { followId: string; title: string }>(
+  left: T,
+  right: T,
+): number {
+  return (
+    left.title.localeCompare(right.title, 'zh-CN') ||
+    left.followId.localeCompare(right.followId)
+  );
+}
+
+function historyUpdatedAtTimestamp(
+  history: NotificationHistory | undefined,
+): number {
+  if (!history) return 0;
+  const timestamp = Date.parse(history.updatedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortUpdatedByHistory<T extends { followId: string; title: string }>(
+  items: T[],
+  history: Map<string, NotificationHistory>,
+): T[] {
+  return [...items].sort(
+    (left, right) =>
+      historyUpdatedAtTimestamp(history.get(right.followId)) -
+        historyUpdatedAtTimestamp(history.get(left.followId)) ||
+      compareByTitle(left, right),
   );
 }
 
@@ -191,7 +217,7 @@ export class UpdateDiffAnalyzer {
       });
     }
 
-    const updated = sortByTitle(
+    const updated = sortUpdatedByHistory(
       [...allCurrent.values()].flatMap((candidate) =>
         candidate.hasUpdate &&
         !newUpdateIds.has(candidate.followId) &&
@@ -207,6 +233,7 @@ export class UpdateDiffAnalyzer {
             ]
           : [],
       ),
+      previousHistory,
     );
 
     return {

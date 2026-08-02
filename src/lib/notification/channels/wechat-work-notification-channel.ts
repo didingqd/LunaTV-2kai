@@ -1,5 +1,6 @@
 import type { NotificationChannel } from '../notification-channel';
 import type { NotificationMessage } from '../notification-types';
+import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '../../watching-update-notification-events';
 
 export interface WeChatWorkNotificationChannelConfig {
   webhookUrl?: unknown;
@@ -10,7 +11,21 @@ interface WeChatWorkResponse {
   errmsg?: string;
 }
 
+interface ParsedWatchingUpdateItem {
+  title: string;
+  episodeLine: string;
+}
+
+interface ParsedWatchingUpdateSection {
+  kind: 'new' | 'updated';
+  heading: string;
+  items: ParsedWatchingUpdateItem[];
+}
+
 function toMarkdownContent(message: NotificationMessage): string {
+  const watchingUpdateMarkdown = toWatchingUpdateMarkdownContent(message);
+  if (watchingUpdateMarkdown) return watchingUpdateMarkdown;
+
   const displayTime =
     typeof message.payload?.displayTime === 'string'
       ? message.payload.displayTime
@@ -18,6 +33,111 @@ function toMarkdownContent(message: NotificationMessage): string {
   return [`### ${message.title}`, message.content, `时间：${displayTime}`].join(
     '\n',
   );
+}
+
+function toWatchingUpdateMarkdownContent(
+  message: NotificationMessage,
+): string | null {
+  if (message.type !== WATCHING_UPDATE_FOUND_EVENT_TYPE) return null;
+
+  const sections = parseWatchingUpdateSections(message);
+  if (!sections || sections.length === 0) return null;
+
+  const displayTime =
+    typeof message.payload?.displayTime === 'string'
+      ? message.payload.displayTime
+      : '-';
+  const lines = [`#  ${message.title}`, ''];
+
+  sections.forEach((section, sectionIndex) => {
+    if (sectionIndex > 0) lines.push('');
+    lines.push(
+      section.kind === 'new'
+        ? `## <font color="info"> ${section.heading}</font>`
+        : `## <font color="comment">✅ ${section.heading}</font>`,
+      '',
+    );
+
+    section.items.forEach((item, itemIndex) => {
+      if (itemIndex > 0) lines.push('');
+      lines.push(
+        `• ${item.title}`,
+        section.kind === 'new'
+          ? `  <font color="warning">${item.episodeLine}</font>`
+          : `  ${item.episodeLine}`,
+      );
+    });
+  });
+
+  lines.push('', `<font color="comment"> ${displayTime}</font>`);
+  return lines.join('\n');
+}
+
+function parseWatchingUpdateSections(
+  message: NotificationMessage,
+): ParsedWatchingUpdateSection[] | null {
+  const lines = message.content.split(/\r?\n/).map((line) => line.trimEnd());
+  let index = skipBlankLines(lines, 0);
+
+  if (lines[index]?.trim() !== message.title.trim()) return null;
+  index += 1;
+
+  const sections: ParsedWatchingUpdateSection[] = [];
+  while (index < lines.length) {
+    index = skipBlankLines(lines, index);
+    if (lines[index]?.trim() === '----------------') {
+      index += 1;
+      continue;
+    }
+
+    const heading = lines[index]?.trim();
+    const kind = getWatchingUpdateSectionKind(heading);
+    if (!kind || !heading) return null;
+    index += 1;
+    index = skipBlankLines(lines, index);
+
+    const items: ParsedWatchingUpdateItem[] = [];
+    while (index < lines.length) {
+      index = skipBlankLines(lines, index);
+      const currentLine = lines[index]?.trim();
+      if (!currentLine) break;
+      if (
+        currentLine === '----------------' ||
+        getWatchingUpdateSectionKind(currentLine)
+      ) {
+        break;
+      }
+
+      const episodeLine = lines[index + 1]?.trim();
+      if (!episodeLine || !isEpisodeLine(episodeLine)) return null;
+
+      items.push({ title: currentLine, episodeLine });
+      index += 2;
+    }
+
+    sections.push({ kind, heading, items });
+  }
+
+  return sections;
+}
+
+function skipBlankLines(lines: string[], startIndex: number): number {
+  let index = startIndex;
+  while (index < lines.length && lines[index].trim() === '') index += 1;
+  return index;
+}
+
+function getWatchingUpdateSectionKind(
+  heading: string | undefined,
+): ParsedWatchingUpdateSection['kind'] | null {
+  if (!heading) return null;
+  if (/^新更新（\d+）$/.test(heading)) return 'new';
+  if (/^已更新（\d+）$/.test(heading)) return 'updated';
+  return null;
+}
+
+function isEpisodeLine(line: string): boolean {
+  return /^\d+ → \d+ 集（\+\d+）$/.test(line);
 }
 
 export class WeChatWorkNotificationChannel implements NotificationChannel {
