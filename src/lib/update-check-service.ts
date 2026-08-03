@@ -75,6 +75,10 @@ export interface UpdateCheckBatch {
   errors: Array<{ followId: string; error: string }>;
 }
 
+interface CalculateAndSaveOptions {
+  markTaskSuccess?: boolean;
+}
+
 function normalizeEpisode(value: unknown): number {
   const parsed =
     typeof value === 'number'
@@ -221,7 +225,6 @@ export class UpdateCheckService {
     const latestEpisode = normalizeEpisode(observation.latestEpisode);
     if (latestEpisode <= 0) return null;
 
-    await this.scheduleFollow(observation.userId, identity.follow, false);
     const previousObservation = await this.observations.get(
       observation.userId,
       observation.followId,
@@ -238,6 +241,8 @@ export class UpdateCheckService {
       identity.follow,
       latestEpisode,
       this.clock(),
+      undefined,
+      { markTaskSuccess: false },
     );
   }
 
@@ -302,6 +307,7 @@ export class UpdateCheckService {
       year?: string;
       type?: string;
     },
+    options: CalculateAndSaveOptions = {},
   ): Promise<UpdateResult | null> {
     const record = await this.facts.getPlayRecord(
       userId,
@@ -311,7 +317,9 @@ export class UpdateCheckService {
     if (!record) {
       // A follow can exist before its first playback fact. Keep the task on
       // its normal cadence without manufacturing an UpdateResult.
-      await this.markTaskSuccess(userId, follow, checkedAt);
+      if (options.markTaskSuccess !== false) {
+        await this.markTaskSuccess(userId, follow, checkedAt);
+      }
       return null;
     }
 
@@ -370,7 +378,9 @@ export class UpdateCheckService {
       },
     };
     await this.results.save(result);
-    await this.markTaskSuccess(userId, follow, checkedAt);
+    if (options.markTaskSuccess !== false) {
+      await this.markTaskSuccess(userId, follow, checkedAt);
+    }
     return result;
   }
 

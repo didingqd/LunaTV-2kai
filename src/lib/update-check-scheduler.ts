@@ -23,10 +23,9 @@ import {
   type UpdateCheckService,
 } from './update-check-service';
 import type { UpdateCheckTask, UpdateResult } from './update-check-types';
-import { updateDiffAnalyzer } from './update-diff-analyzer';
+import { UpdateResultNotificationDispatcher } from './update-result-notification-dispatcher';
 import {
   createWatchingUpdateFailedPayload,
-  createWatchingUpdateFoundPayload,
   registerWatchingUpdateNotificationBuilder,
   type WatchingUpdateNotificationPayloadData,
 } from './watching-update-notification-builder';
@@ -381,73 +380,28 @@ export class UpdateCheckScheduler {
         userId,
         results,
       );
-      const previousState = await this.notificationState.get(userId);
-      const analysis = updateDiffAnalyzer.analyze(
-        results.flatMap(toNotificationCandidate),
-        previousState,
-        checkedAt,
-        allCurrentResults.flatMap(toNotificationCandidate),
-      );
-      if (Number.isFinite(checkedAt)) {
-        const timezone = this.resolveNotificationTimezone(
-          userId,
-          settings,
-          usersById,
-          authorizedUsers,
-          ownerId,
-          checkedAt,
-        );
-        const displayTime = formatNotificationTime(checkedAt, timezone);
-        await this.notifyDisplayData(options, {
-          userId,
-          data: {
-            title: '更新提醒',
-            newUpdates: analysis.newUpdates,
-            updated: analysis.updated,
-            checkedAt,
-            timezone,
-            displayTime,
-          },
-        });
-      }
-
-      if (analysis.newUpdates.length === 0) {
-        await this.notificationState.save(userId, analysis.nextState);
-        continue;
-      }
-      const timezone = this.resolveNotificationTimezone(
-        userId,
-        settings,
-        usersById,
-        authorizedUsers,
-        ownerId,
-        checkedAt,
-      );
-      const displayTime = formatNotificationTime(checkedAt, timezone);
-
-      try {
-        const result = await this.dispatchNotificationPayload(
-          createWatchingUpdateFoundPayload({
+      const timezone = Number.isFinite(checkedAt)
+        ? this.resolveNotificationTimezone(
             userId,
-            newUpdates: analysis.newUpdates,
-            updated: analysis.updated,
+            settings,
+            usersById,
+            authorizedUsers,
+            ownerId,
             checkedAt,
-            timezone,
-            displayTime,
-          }),
-        );
-        onDispatched(result.succeeded);
-        if (!result.success) {
-          console.error(
-            'Update check notification dispatch failed',
-            result.errors,
-          );
-          continue;
-        }
-        await this.notificationState.save(userId, analysis.nextState);
-      } catch (error) {
-        console.error('Update check notification dispatch threw', error);
-      }
+          )
+        : 'UTC';
+      const result = await new UpdateResultNotificationDispatcher(
+        this.notifications,
+        this.notificationState,
+      ).dispatchUpdateResultNotifications({
+        userId,
+        results,
+        allCurrentResults,
+        source: 'cron',
+        timezone,
+        onNotificationData: options.onNotificationData,
+      });
+      onDispatched(result.notificationCount);
     }
   }
 
@@ -508,18 +462,6 @@ export class UpdateCheckScheduler {
     return this.notifications.dispatchPayload(payload);
   }
 
-  private async notifyDisplayData(
-    options: UpdateCheckSchedulerOptions,
-    value: { userId: string; data: WatchingUpdateNotificationPayloadData },
-  ): Promise<void> {
-    if (!options.onNotificationData) return;
-    try {
-      await options.onNotificationData(value);
-    } catch (error) {
-      console.error('Update check notification data callback failed', error);
-    }
-  }
-
   private buildFailureNotificationPayload(
     completedTask: CompletedTask,
     timezone: string,
@@ -577,22 +519,6 @@ export class UpdateCheckScheduler {
 }
 
 export const updateCheckScheduler = new UpdateCheckScheduler();
-
-function toNotificationCandidate(result: UpdateResult) {
-  const fromEpisode = result.metadata?.baselineEpisode;
-  const toEpisode = result.metadata?.effectiveLatestEpisode;
-  return Number.isFinite(fromEpisode) && Number.isFinite(toEpisode)
-    ? [
-        {
-          followId: result.followId,
-          title: result.title,
-          fromEpisode,
-          toEpisode,
-          hasUpdate: result.hasUpdate,
-        },
-      ]
-    : [];
-}
 
 function sanitizeNotificationError(error: string | undefined): string {
   const normalized = String(error ?? '')

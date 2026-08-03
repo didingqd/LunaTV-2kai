@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { updateCheckCapabilityService } from '@/lib/update-check-capability';
 import { updateCheckService } from '@/lib/update-check-service';
 import {
+  resolveUpdateResultNotificationTimezone,
+  updateResultNotificationDispatcher,
+} from '@/lib/update-result-notification-dispatcher';
+import type { UpdateResult } from '@/lib/update-check-types';
+import {
   createWatchingUpdateCheckLogResult,
   errorMessage,
   watchingUpdateCheckLogService,
@@ -66,7 +71,7 @@ export async function POST(request: NextRequest) {
     );
     try {
       await watchingUpdateCheckLogService.record({
-        source: context.source,
+        source: 'app',
         operation: 'sync',
         request: context.request,
         execution: {
@@ -128,7 +133,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const accepted = [];
+    const accepted: UpdateResult[] = [];
     const rejected = [];
     for (const observation of parsed.data.observations) {
       const result = await updateCheckService.processObservation({
@@ -147,6 +152,35 @@ export async function POST(request: NextRequest) {
           followId: observation.followId,
           reason: 'Follow or PlayRecord is invalid',
         });
+    }
+
+    if (accepted.length > 0) {
+      const checkedAt = Math.max(...accepted.map((result) => result.checkedAt));
+      const timezone = await resolveUpdateResultNotificationTimezone(
+        auth.username,
+        checkedAt,
+      );
+      let allCurrentResults = accepted;
+      try {
+        const currentResults = await updateCheckService.getResultsForUser(
+          auth.username,
+        );
+        if (currentResults.length > 0) allCurrentResults = currentResults;
+      } catch (lookupError) {
+        console.error(
+          'App update sync notification result lookup failed',
+          lookupError,
+        );
+      }
+      await updateResultNotificationDispatcher.dispatchUpdateResultNotifications(
+        {
+          userId: auth.username,
+          results: accepted,
+          allCurrentResults,
+          source: 'app',
+          timezone,
+        },
+      );
     }
 
     await recordLog({

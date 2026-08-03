@@ -344,7 +344,7 @@ describe('UpdateCheckService', () => {
     ).toBe(11);
   });
 
-  it('ensures an UpdateCheckTask exists when an Observation arrives', async () => {
+  it('does not create an UpdateCheckTask when an Observation arrives', async () => {
     const task = [...tasks.values.values()][0];
     tasks.values.clear();
 
@@ -357,7 +357,22 @@ describe('UpdateCheckService', () => {
       observedAt: 1000,
     });
 
-    expect(tasks.values.size).toBe(1);
+    expect(tasks.values.size).toBe(0);
+  });
+
+  it('does not update scheduler success timing when an Observation arrives', async () => {
+    const task = [...tasks.values.values()][0];
+
+    await service.processObservation({
+      userId: 'alice',
+      followId: task.followId,
+      source: follow.source,
+      resourceId: follow.id,
+      latestEpisode: 11,
+      observedAt: 1000,
+    });
+
+    expect(await tasks.get(task.id)).toEqual(task);
   });
 
   it('reschedules a successful provider check when PlayRecord is absent', async () => {
