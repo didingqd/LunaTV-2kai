@@ -402,8 +402,8 @@ export class UpdateCheckScheduler {
           userId,
           data: {
             title: '更新提醒',
-            newUpdates: [],
-            updated: [],
+            newUpdates: analysis.newUpdates,
+            updated: analysis.updated,
             checkedAt,
             timezone,
             displayTime,

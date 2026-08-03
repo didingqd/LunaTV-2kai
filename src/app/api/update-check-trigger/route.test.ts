@@ -30,24 +30,16 @@ jest.mock('@/lib/watching-update-check-log-request', () => ({
     },
   })),
 }));
-jest.mock('@/lib/notification/inbox-notification-repository', () => ({
-  inboxNotificationRepository: {
-    listForUser: jest.fn(),
-  },
-}));
 
-import { inboxNotificationRepository } from '@/lib/notification/inbox-notification-repository';
 import { updateCheckJobRunner } from '@/lib/scheduler/update-check-job-runner';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import { triggerTokenService } from '@/lib/trigger-token-service';
-import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '@/lib/watching-update-notification-events';
 import { GET } from './route';
 
 const getStatus = updateCheckJobRunner.getStatus as jest.Mock;
 const runInBackground = updateCheckJobRunner.runInBackground as jest.Mock;
 const authorizeAccess = triggerLinkAccessControlService.authorize as jest.Mock;
 const verifyToken = triggerTokenService.verify as jest.Mock;
-const listNotifications = inboxNotificationRepository.listForUser as jest.Mock;
 
 function request(
   url = 'http://localhost/api/update-check-trigger',
@@ -89,7 +81,6 @@ describe('GET /api/update-check-trigger', () => {
       lastUsedAt: 90,
     });
     authorizeAccess.mockResolvedValue({ allowed: true });
-    listNotifications.mockResolvedValue([]);
   });
 
   it('starts the shared JobRunner in the background when idle', async () => {
@@ -355,41 +346,7 @@ describe('GET /api/update-check-trigger', () => {
     expect(html).not.toContain('通知历史');
   });
 
-  it('uses recent notification payload when job display data is empty', async () => {
-    listNotifications.mockResolvedValue([
-      {
-        id: 'notification-1',
-        userId: 'alice',
-        type: WATCHING_UPDATE_FOUND_EVENT_TYPE,
-        title: '更新提醒',
-        content: '更新提醒',
-        createdAt: 151,
-        read: false,
-        readAt: null,
-        payload: {
-          title: '更新提醒',
-          newUpdates: [
-            {
-              followId: 'resource-1',
-              title: '九门',
-              fromEpisode: 6,
-              toEpisode: 10,
-            },
-          ],
-          updated: [
-            {
-              followId: 'resource-2',
-              title: '相反的你和我第二季',
-              fromEpisode: 4,
-              toEpisode: 5,
-            },
-          ],
-          checkedAt: 150,
-          timezone: 'Asia/Shanghai',
-          displayTime: '2026-08-02 12:30:01',
-        },
-      },
-    ]);
+  it('uses displayResults as the trigger page display source', async () => {
     getStatus.mockReturnValue(
       status({
         status: 'completed',
@@ -419,8 +376,22 @@ describe('GET /api/update-check-trigger', () => {
           {
             userId: 'alice',
             title: '更新提醒',
-            newUpdates: [],
-            updated: [],
+            newUpdates: [
+              {
+                followId: 'resource-1',
+                title: '九门',
+                fromEpisode: 6,
+                toEpisode: 10,
+              },
+            ],
+            updated: [
+              {
+                followId: 'resource-2',
+                title: '相反的你和我第二季',
+                fromEpisode: 4,
+                toEpisode: 5,
+              },
+            ],
             checkedAt: 150,
             timezone: 'Asia/Shanghai',
             displayTime: '2026-08-02 12:30:01',
@@ -441,7 +412,6 @@ describe('GET /api/update-check-trigger', () => {
     );
     const html = await response.text();
 
-    expect(listNotifications).toHaveBeenCalledWith('alice');
     expect(html).toContain('🆕 新更新（1）');
     expect(html).toContain('✅ 已更新（1）');
     expect(html).toContain('九门');
@@ -452,7 +422,7 @@ describe('GET /api/update-check-trigger', () => {
     expect(html).not.toContain('暂无更新');
   });
 
-  it('renders actual result updates when notification display data is unavailable', async () => {
+  it('does not render result.updates as classified trigger page sections', async () => {
     getStatus.mockReturnValue(
       status({
         status: 'completed',
@@ -504,9 +474,10 @@ describe('GET /api/update-check-trigger', () => {
     );
     const html = await response.text();
 
-    expect(html).toContain('🆕 新更新（1）');
-    expect(html).toContain('九门');
-    expect(html).toContain('6 → 10 集（+4）');
+    expect(html).toContain('发现 1 项更新');
+    expect(html).not.toContain('🆕 新更新（1）');
+    expect(html).not.toContain('✅ 已更新（1）');
+    expect(html).not.toContain('九门');
     expect(html).not.toContain('暂无更新');
   });
 

@@ -6,15 +6,12 @@ import {
   type UpdateCheckJobStatusSnapshot,
   type UpdateCheckJobTriggerSource,
 } from '@/lib/scheduler/update-check-job-runner';
-import { inboxNotificationRepository } from '@/lib/notification/inbox-notification-repository';
-import type { InboxNotification } from '@/lib/notification/notification-types';
 import { triggerLinkAccessControlService } from '@/lib/trigger-link-access-control-service';
 import {
   triggerTokenService,
   type TriggerTokenVerifyResult,
 } from '@/lib/trigger-token-service';
 import { getWatchingUpdateCheckLogRequestContext } from '@/lib/watching-update-check-log-request';
-import { WATCHING_UPDATE_FOUND_EVENT_TYPE } from '@/lib/watching-update-notification-events';
 
 export const runtime = 'nodejs';
 
@@ -25,19 +22,6 @@ type DisplayUpdateItem = {
   title: string;
   fromEpisode: number;
   toEpisode: number;
-};
-
-type DisplayUpdatePayload = {
-  title: string;
-  newUpdates: DisplayUpdateItem[];
-  updated: DisplayUpdateItem[];
-  checkedAt: number;
-  timezone: string;
-  displayTime: string;
-};
-
-type ResolvedDisplayResult = DisplayUpdatePayload & {
-  userId: string;
 };
 
 function noStoreJson(body: Record<string, unknown>, status = 200) {
@@ -180,104 +164,17 @@ function hasDisplayUpdates(result: UpdateCheckJobDisplayResult): boolean {
   return result.newUpdates.length > 0 || result.updated.length > 0;
 }
 
-function isDisplayUpdateItem(value: unknown): value is DisplayUpdateItem {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as DisplayUpdateItem;
-  return (
-    typeof item.title === 'string' &&
-    typeof item.fromEpisode === 'number' &&
-    typeof item.toEpisode === 'number'
-  );
-}
-
-function toDisplayUpdateItems(value: unknown): DisplayUpdateItem[] {
-  return Array.isArray(value) ? value.filter(isDisplayUpdateItem) : [];
-}
-
-function getNotificationDisplayPayload(
-  notification: InboxNotification,
-): DisplayUpdatePayload | null {
-  if (notification.type !== WATCHING_UPDATE_FOUND_EVENT_TYPE) return null;
-  const payload = notification.payload;
-  if (!payload || typeof payload !== 'object') return null;
-  const data = payload as Record<string, unknown>;
-  const newUpdates = toDisplayUpdateItems(data.newUpdates);
-  const updated = toDisplayUpdateItems(data.updated);
-  if (newUpdates.length === 0 && updated.length === 0) return null;
-  return {
-    title: typeof data.title === 'string' ? data.title : '更新提醒',
-    newUpdates,
-    updated,
-    checkedAt: typeof data.checkedAt === 'number' ? data.checkedAt : 0,
-    timezone: typeof data.timezone === 'string' ? data.timezone : '',
-    displayTime:
-      typeof data.displayTime === 'string'
-        ? data.displayTime
-        : new Date(notification.createdAt).toLocaleString(),
-  };
-}
-
-function isNotificationForSnapshot(
-  notification: InboxNotification,
-  payload: DisplayUpdatePayload,
-  snapshot: UpdateCheckJobStatusSnapshot,
-): boolean {
-  if (!snapshot.startedAt) return true;
-  return (
-    payload.checkedAt >= snapshot.startedAt ||
-    notification.createdAt >= snapshot.startedAt
-  );
-}
-
-async function resolveNotificationDisplayResult(
-  snapshot: UpdateCheckJobStatusSnapshot,
-  userId: string,
-): Promise<ResolvedDisplayResult | null> {
-  const notifications = await inboxNotificationRepository
-    .listForUser(userId)
-    .catch(() => []);
-  for (const notification of notifications) {
-    const payload = getNotificationDisplayPayload(notification);
-    if (!payload) continue;
-    if (!isNotificationForSnapshot(notification, payload, snapshot)) continue;
-    return {
-      userId,
-      ...payload,
-    };
-  }
-  return null;
-}
-
-function resolveResultUpdatesFallback(
-  snapshot: UpdateCheckJobStatusSnapshot,
-): DisplayUpdateItem[] {
-  return (snapshot.result?.updates ?? []).map((item) => ({
-    title: item.title,
-    fromEpisode: item.oldEpisode,
-    toEpisode: item.newEpisode,
-  }));
-}
-
-async function resolveDisplaySections(
+function resolveDisplaySections(
   snapshot: UpdateCheckJobStatusSnapshot,
   userId: string,
 ) {
-  const notificationResult = await resolveNotificationDisplayResult(
-    snapshot,
-    userId,
-  );
-  const displayResult =
-    notificationResult ?? resolveDisplayResult(snapshot, userId);
+  const displayResult = resolveDisplayResult(snapshot, userId);
   const newUpdates = displayResult?.newUpdates ?? [];
   const updated = displayResult?.updated ?? [];
-  const fallbackUpdates =
-    newUpdates.length === 0 && updated.length === 0
-      ? resolveResultUpdatesFallback(snapshot)
-      : [];
 
   return {
     displayResult,
-    newUpdates: fallbackUpdates.length > 0 ? fallbackUpdates : newUpdates,
+    newUpdates,
     updated,
   };
 }
@@ -296,7 +193,7 @@ function renderUpdateItems(items: DisplayUpdateItem[]): string {
     .join('');
 }
 
-async function renderResultsPage(input: {
+function renderResultsPage(input: {
   request: NextRequest;
   snapshot: UpdateCheckJobStatusSnapshot;
   accepted: boolean;
@@ -304,7 +201,7 @@ async function renderResultsPage(input: {
 }) {
   const { request, snapshot, accepted, userId } = input;
   const running = snapshot.running || snapshot.status === 'running';
-  const { displayResult, newUpdates, updated } = await resolveDisplaySections(
+  const { displayResult, newUpdates, updated } = resolveDisplaySections(
     snapshot,
     userId,
   );
@@ -621,7 +518,7 @@ export async function GET(request: NextRequest) {
     const snapshot = updateCheckJobRunner.getStatus();
     if (renderHtml) {
       return noStoreHtml(
-        await renderResultsPage({
+        renderResultsPage({
           request,
           snapshot,
           accepted: false,
@@ -636,7 +533,7 @@ export async function GET(request: NextRequest) {
   if (current.running) {
     if (renderHtml) {
       return noStoreHtml(
-        await renderResultsPage({
+        renderResultsPage({
           request,
           snapshot: current,
           accepted: false,
@@ -672,7 +569,7 @@ export async function GET(request: NextRequest) {
 
   if (renderHtml) {
     return noStoreHtml(
-      await renderResultsPage({
+      renderResultsPage({
         request,
         snapshot: status,
         accepted: status.running,

@@ -746,6 +746,58 @@ describe('UpdateCheckScheduler', () => {
     });
   });
 
+  it('passes updated-only diff data to display callbacks without sending a notification', async () => {
+    const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
+    const task = createTask();
+    const dispatch = createDispatch();
+    const onNotificationData = jest.fn();
+    const notificationState =
+      new CachedWatchingUpdateNotificationStateRepository(new MemoryCache());
+    await tasks.save(task);
+    await notificationState.save('alice', {
+      snapshots: [
+        { followId: 'follow-1', lastNotifiedEffectiveLatestEpisode: 12 },
+      ],
+      history: [
+        {
+          followId: 'follow-1',
+          fromEpisode: 10,
+          toEpisode: 12,
+          updatedAt: '2026-07-30T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await createScheduler(
+      tasks,
+      successfulService(tasks, runAt, updateResult({ hasUpdate: true })),
+      {
+        notifications: { dispatchPayload: dispatch },
+        notificationState,
+      },
+    ).run({ now: runAt, onNotificationData });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(onNotificationData).toHaveBeenCalledWith({
+      userId: 'alice',
+      data: {
+        title: '更新提醒',
+        newUpdates: [],
+        updated: [
+          {
+            followId: 'follow-1',
+            title: 'Demo Show',
+            fromEpisode: 10,
+            toEpisode: 12,
+          },
+        ],
+        checkedAt: runAt,
+        timezone: 'UTC',
+        displayTime: '2026-07-30 12:01:00',
+      },
+    });
+  });
+
   it('includes already updated items from current UpdateResults when a new update triggers notification', async () => {
     const tasks = new CachedUpdateCheckTaskRepository(new MemoryCache());
     const task = createTask();
