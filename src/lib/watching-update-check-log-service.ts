@@ -47,7 +47,8 @@ export function toWatchingUpdateCheckLogUpdates(
         resourceId: result.resourceId,
         title: result.title,
         oldEpisode,
-        newEpisode: result.latestEpisode,
+        newEpisode:
+          result.metadata.effectiveLatestEpisode ?? result.latestEpisode,
         source: result.source,
       },
     ];
