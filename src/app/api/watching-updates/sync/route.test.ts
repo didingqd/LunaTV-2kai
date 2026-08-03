@@ -150,7 +150,10 @@ function createRequest(
 ) {
   return new NextRequest('http://localhost/api/watching-updates/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-lunatv-client-source': 'app',
+    },
     body: JSON.stringify({
       observations: [
         {

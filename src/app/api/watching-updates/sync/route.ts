@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     );
     try {
       await watchingUpdateCheckLogService.record({
-        source: 'app',
+        source: context.source,
         operation: 'sync',
         request: context.request,
         execution: {

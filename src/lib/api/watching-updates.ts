@@ -71,7 +71,10 @@ export class WatchingUpdatesRepository implements WatchingUpdatesRepositoryContr
   ): Promise<WatchingUpdatesSyncResponse> {
     return requestJson('/api/watching-updates/sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-lunatv-client-source': 'web',
+      },
       body: JSON.stringify({ observations }),
     });
   }
