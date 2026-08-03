@@ -790,8 +790,7 @@ function PlayPageClient() {
     isFollowing,
     createFollow,
     deleteFollow,
-    isCreating: isCreatingFollow,
-    isDeleting: isDeletingFollow,
+    isFollowPending,
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
 
@@ -8528,7 +8527,12 @@ function PlayPageClient() {
             onToggleFavorite={handleToggleFavorite}
             following={followingCurrentSource}
             followLoading={
-              !isFollowStateKnown || isCreatingFollow || isDeletingFollow
+              !isFollowStateKnown ||
+              (!!activeResourceIdentity &&
+                isFollowPending(
+                  activeResourceIdentity.source,
+                  activeResourceIdentity.id,
+                ))
             }
             onToggleFollow={handleToggleWatchingFollow}
             detail={detail}

@@ -1082,6 +1082,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             } as React.MouseEvent;
             handleDeleteRecord(mockEvent);
           },
+          disabled: from === 'follow' ? followLoading : false,
           color: 'danger' as const,
         });
       }

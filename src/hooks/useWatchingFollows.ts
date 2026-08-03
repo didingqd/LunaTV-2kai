@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 
 import {
   deleteWatchingFollow,
@@ -127,11 +128,10 @@ export function useCreateWatchingFollowMutation() {
         }),
       );
     },
-    onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] }),
-      ]),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+    },
   });
 }
 
@@ -163,11 +163,10 @@ export function useDeleteWatchingFollowMutation() {
         queryClient.setQueryData(watchingFollowsQueryKey, context.previous);
       }
     },
-    onSettled: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] }),
-      ]),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+    },
   });
 }
 
@@ -185,9 +184,58 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
   const createMutation = useCreateWatchingFollowMutation();
   const deleteMutation = useDeleteWatchingFollowMutation();
   const refresh = useRefreshWatchingFollows();
+  const [pendingFollowKeys, setPendingFollowKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const list = Object.values(query.data ?? {})
     .filter((follow) => follow.enabled)
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const setFollowPending = useCallback(
+    (source: string, id: string, pending: boolean) => {
+      const key = watchingFollowKey(source, id);
+      setPendingFollowKeys((current) => {
+        if (pending && current.has(key)) return current;
+        if (!pending && !current.has(key)) return current;
+
+        const next = new Set(current);
+        if (pending) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const createFollow = useCallback(
+    async (input: CreateWatchingFollowInput) => {
+      setFollowPending(input.source, input.id, true);
+      try {
+        return await createMutation.mutateAsync(input);
+      } finally {
+        setFollowPending(input.source, input.id, false);
+      }
+    },
+    [createMutation, setFollowPending],
+  );
+
+  const deleteFollow = useCallback(
+    async (source: string, id: string) => {
+      setFollowPending(source, id, true);
+      try {
+        return await deleteMutation.mutateAsync({ source, id });
+      } finally {
+        setFollowPending(source, id, false);
+      }
+    },
+    [deleteMutation, setFollowPending],
+  );
+
+  const isFollowPending = useCallback(
+    (source: string, id: string) =>
+      pendingFollowKeys.has(watchingFollowKey(source, id)),
+    [pendingFollowKeys],
+  );
 
   return {
     list,
@@ -197,10 +245,9 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
     error: query.error,
     isFollowing: (source: string, id: string) =>
       isWatchingFollowActive(query.data ?? {}, source, id),
-    createFollow: (input: CreateWatchingFollowInput) =>
-      createMutation.mutateAsync(input),
-    deleteFollow: (source: string, id: string) =>
-      deleteMutation.mutateAsync({ source, id }),
+    createFollow,
+    deleteFollow,
+    isFollowPending,
     refresh,
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,

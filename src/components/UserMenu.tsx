@@ -264,8 +264,7 @@ export const UserMenu: React.FC = () => {
     createFollow,
     deleteFollow,
     refresh: refreshWatchingFollows,
-    isCreating: isCreatingFollow,
-    isDeleting: isDeletingFollow,
+    isFollowPending,
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
   const { data: sources = [] } = useSourcesQuery({
@@ -1328,6 +1327,10 @@ export const UserMenu: React.FC = () => {
                           currentEpisode={update?.currentEpisode}
                           from='follow'
                           type={follow.type || ''}
+                          followLoading={isFollowPending(
+                            follow.source,
+                            follow.id,
+                          )}
                           onDelete={() =>
                             void deleteFollow(follow.source, follow.id)
                           }
@@ -1436,8 +1439,7 @@ export const UserMenu: React.FC = () => {
                       }
                       followLoading={
                         !isFollowStateKnown ||
-                        isCreatingFollow ||
-                        isDeletingFollow
+                        isFollowPending(followSource, id)
                       }
                       onToggleFollow={
                         isFollowStateKnown

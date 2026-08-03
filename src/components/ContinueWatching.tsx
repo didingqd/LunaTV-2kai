@@ -44,8 +44,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
     isFollowing,
     createFollow,
     deleteFollow,
-    isCreating: isCreatingFollow,
-    isDeleting: isDeletingFollow,
+    isFollowPending,
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
 
@@ -235,8 +234,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                       }
                       followLoading={
                         !isFollowStateKnown ||
-                        isCreatingFollow ||
-                        isDeletingFollow
+                        isFollowPending(source, id)
                       }
                       onToggleFollow={
                         isFollowStateKnown
