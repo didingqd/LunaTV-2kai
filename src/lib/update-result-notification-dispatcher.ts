@@ -99,7 +99,7 @@ export class UpdateResultNotificationDispatcher {
           displayTime,
         }),
       );
-      if (!result.success) {
+      if (!result.success || result.succeeded <= 0) {
         console.error(
           'Update check notification dispatch failed',
           result.errors,
