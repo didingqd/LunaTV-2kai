@@ -1,6 +1,6 @@
 import { buildSkipConfigKey } from './skip-config-identity';
 
-const config = { enable: true, intro_time: 90, outro_time: -60 };
+const config = { enable: true, intro_time: 90, outro_time: 60 };
 const originalFetch = global.fetch;
 
 describe('SkipConfig identity in Local and Online modes', () => {
@@ -49,17 +49,18 @@ describe('SkipConfig identity in Local and Online modes', () => {
     });
   });
 
-  it('lazily adds canonical Local data without deleting legacy data', async () => {
+  it('migrates Local legacy key data to canonical positive seconds', async () => {
     (window as any).RUNTIME_CONFIG = { STORAGE_TYPE: 'localstorage' };
     localStorage.setItem(
       'moontv_skip_configs',
-      JSON.stringify({ 'bangumi+123': config }),
+      JSON.stringify({
+        'bangumi+123': { enable: true, intro_time: 90, outro_time: -60 },
+      }),
     );
     const { getSkipConfig } = await import('./db.client');
 
     await expect(getSkipConfig('bangumi', '123')).resolves.toEqual(config);
     expect(JSON.parse(localStorage.getItem('moontv_skip_configs')!)).toEqual({
-      'bangumi+123': config,
       [buildSkipConfigKey('bangumi', '123')]: config,
     });
   });
@@ -90,5 +91,8 @@ describe('SkipConfig identity in Local and Online modes', () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect(JSON.parse(String(init?.body))).toMatchObject({ key });
     }
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
+      config,
+    });
   });
 });

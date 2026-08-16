@@ -259,6 +259,51 @@ export async function putWatchingFollow(
   return parseWatchingFollow(response);
 }
 
+export async function advanceWatchingFollowOriginalEpisodes(
+  source: string,
+  id: string,
+  confirmedEpisode: number,
+): Promise<WatchingFollow> {
+  const normalizedEpisode =
+    Number.isFinite(confirmedEpisode) && confirmedEpisode > 0
+      ? Math.floor(confirmedEpisode)
+      : 0;
+
+  if (isLocalWatchingFollowMode()) {
+    const follows = readLocalWatchingFollows();
+    const key = watchingFollowKey(source, id);
+    const existing = follows[key];
+    if (!existing) {
+      throw new WatchingFollowApiError('WatchingFollow not found', 404);
+    }
+    const nextEpisodes = Math.max(existing.originalEpisodes, normalizedEpisode);
+    // This is the Web local-mode equivalent of the backend baseline endpoint.
+    // It updates only the confirmation baseline and never touches PlayRecord
+    // state, so Continue Watching remains the user's actual playback position.
+    const follow: WatchingFollow =
+      nextEpisodes === existing.originalEpisodes
+        ? existing
+        : {
+            ...existing,
+            originalEpisodes: nextEpisodes,
+            updatedAt: Date.now(),
+          };
+    follows[key] = follow;
+    writeLocalWatchingFollows(follows);
+    return follow;
+  }
+
+  const path = `/api/watching-follows/${encodeURIComponent(source)}/${encodeURIComponent(id)}/original-episodes`;
+  const response = await requestJson(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      originalEpisodes: normalizedEpisode,
+    }),
+  });
+  return parseWatchingFollow(response);
+}
+
 export async function deleteWatchingFollow(
   source: string,
   id: string,

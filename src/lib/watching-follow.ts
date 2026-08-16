@@ -38,11 +38,20 @@ export const watchingFollowUpdateSchema = z
     message: 'At least one updatable field is required',
   });
 
+export const watchingFollowOriginalEpisodesAdvanceSchema = z
+  .object({
+    originalEpisodes: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export type WatchingFollowCreateInput = z.infer<
   typeof watchingFollowCreateSchema
 >;
 export type WatchingFollowUpdateInput = z.infer<
   typeof watchingFollowUpdateSchema
+>;
+export type WatchingFollowOriginalEpisodesAdvanceInput = z.infer<
+  typeof watchingFollowOriginalEpisodesAdvanceSchema
 >;
 
 export function watchingFollowStorageKey(source: string, id: string): string {
@@ -118,5 +127,29 @@ export function updateWatchingFollow(
     enabled: input.enabled ?? existing.enabled,
     updatedAt: now,
     originalEpisodes: existing.originalEpisodes,
+  };
+}
+
+export function advanceWatchingFollowOriginalEpisodes(
+  existing: WatchingFollow,
+  confirmedEpisode: number,
+  now = Date.now(),
+): WatchingFollow {
+  const normalizedEpisode =
+    Number.isFinite(confirmedEpisode) && confirmedEpisode > 0
+      ? Math.floor(confirmedEpisode)
+      : 0;
+  const nextEpisodes = Math.max(existing.originalEpisodes, normalizedEpisode);
+
+  // originalEpisodes is the explicit follow-confirmation baseline. This pure
+  // helper is the only domain function that may advance it; ordinary metadata
+  // updates continue to preserve the existing value, while stale callers can
+  // only request a lower value that is ignored by the max() guard.
+  if (nextEpisodes === existing.originalEpisodes) return existing;
+
+  return {
+    ...existing,
+    originalEpisodes: nextEpisodes,
+    updatedAt: now,
   };
 }

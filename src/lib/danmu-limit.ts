@@ -1,5 +1,5 @@
 export const DANMU_SEGMENT_SECONDS = 300;
-export const DEFAULT_DANMU_SEGMENT_LIMIT = 0;
+export const DEFAULT_DANMU_SEGMENT_LIMIT = 3000;
 export const DANMU_SEGMENT_LIMIT_STORAGE_PREFIX = 'moontv_danmu_segment_limit';
 export const DANMU_SEGMENT_LIMIT_CHANGE_EVENT =
   'moontv_danmu_segment_limit_change';

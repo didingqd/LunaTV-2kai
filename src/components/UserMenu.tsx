@@ -263,6 +263,7 @@ export const UserMenu: React.FC = () => {
     isFollowing,
     createFollow,
     deleteFollow,
+    confirmWatchedToLatest,
     refresh: refreshWatchingFollows,
     isFollowPending,
     isStateKnown: isFollowStateKnown,
@@ -504,6 +505,41 @@ export const UserMenu: React.FC = () => {
       toast.success('已加追');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '追更操作失败');
+    }
+  };
+
+  const handleMarkContinueWatchingWatchedToLatest = async (
+    record: PlayRecord & { key: string },
+  ) => {
+    const identity = parseKey(record.key);
+    const source = resolveSourceKey(identity.source);
+    if (!source || !identity.id) return;
+
+    try {
+      const matchedSeries = watchingUpdates?.updatedSeries?.find((series) =>
+        compareContentIdentity(series, { source, id: identity.id }),
+      );
+      let latestEpisodes = matchedSeries?.latestEpisodes || 0;
+      if (latestEpisodes <= 0) {
+        const response = await fetch(
+          `/api/detail?source=${encodeURIComponent(source)}&id=${encodeURIComponent(identity.id)}`,
+          { cache: 'no-store' },
+        );
+        if (!response.ok) throw new Error('详情获取失败，无法确认最新集数');
+        const detail = await response.json();
+        latestEpisodes = Array.isArray(detail.episodes)
+          ? detail.episodes.length
+          : 0;
+      }
+      if (latestEpisodes <= 0) throw new Error('详情缺少有效剧集信息');
+
+      // This menu action confirms the follow baseline only. It deliberately
+      // leaves PlayRecord.index/play_time untouched so the Continue Watching
+      // card remains the user's real saved playback position.
+      await confirmWatchedToLatest(source, identity.id, latestEpisodes);
+      toast.success('已确认观看至最新');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '确认失败');
     }
   };
 
@@ -1438,12 +1474,17 @@ export const UserMenu: React.FC = () => {
                           : false
                       }
                       followLoading={
-                        !isFollowStateKnown ||
-                        isFollowPending(followSource, id)
+                        !isFollowStateKnown || isFollowPending(followSource, id)
                       }
                       onToggleFollow={
                         isFollowStateKnown
                           ? () => handleToggleContinueWatchingFollow(record)
+                          : undefined
+                      }
+                      onMarkWatchedToLatest={
+                        isFollowStateKnown && isFollowing(followSource, id)
+                          ? () =>
+                              handleMarkContinueWatchingWatchedToLatest(record)
                           : undefined
                       }
                     />

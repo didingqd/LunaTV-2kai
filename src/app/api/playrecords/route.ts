@@ -20,6 +20,8 @@ import {
   parseLegacyPlayRecordKey,
   resolvePlayRecordIdentity,
 } from '@/lib/play-record-identity';
+import { watchCompletionThresholdPreference } from '@/lib/watch-completion-threshold-preference';
+import { watchedEpisodesForRecord } from '@/lib/watching-update-calculation';
 
 export const runtime = 'nodejs';
 
@@ -346,6 +348,38 @@ export async function POST(request: NextRequest) {
     } as PlayRecord;
 
     await db.savePlayRecord(authInfo.username, source, id, finalRecord);
+
+    const follow = await db.getWatchingFollow(authInfo.username, source, id);
+    if (follow?.enabled) {
+      const completionThreshold =
+        await watchCompletionThresholdPreference.getWatchCompletionThreshold(
+          authInfo.username,
+        );
+      const watchedEpisode = watchedEpisodesForRecord(
+        finalRecord,
+        completionThreshold,
+      );
+      if (watchedEpisode > 0) {
+        const advanced = await db.advanceWatchingFollowOriginalEpisodes(
+          authInfo.username,
+          source,
+          id,
+          watchedEpisode,
+        );
+        // Playback completion advances only the follow-confirmation baseline.
+        // It never rewrites the saved PlayRecord, so Continue Watching remains
+        // the episode the user actually saved while NEW/+N consume the updated
+        // WatchingFollow.originalEpisodes baseline.
+        if (advanced.changed) {
+          await updateCheckService.refreshResultAfterBaselineAdvance({
+            userId: authInfo.username,
+            source,
+            resourceId: id,
+            latestEpisode: Math.max(finalRecord.total_episodes, watchedEpisode),
+          });
+        }
+      }
+    }
 
     // 更新播放统计（如果存储类型支持）
     if (db.isStatsSupported()) {

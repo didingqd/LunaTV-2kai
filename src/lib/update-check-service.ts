@@ -246,6 +246,39 @@ export class UpdateCheckService {
     );
   }
 
+  async refreshResultAfterBaselineAdvance({
+    userId,
+    source,
+    resourceId,
+    latestEpisode,
+  }: {
+    userId: string;
+    source: string;
+    resourceId: string;
+    latestEpisode?: number;
+  }): Promise<UpdateResult | null> {
+    const followId = watchingFollowStorageKey(source, resourceId);
+    const current = await this.results.get(userId, followId);
+    const knownLatestEpisode =
+      normalizeEpisode(latestEpisode) ||
+      normalizeEpisode(current?.metadata.effectiveLatestEpisode) ||
+      normalizeEpisode(current?.latestEpisode);
+    if (knownLatestEpisode <= 0) return current;
+
+    // Baseline changes do not define a new calculation formula. Re-submit the
+    // latest episode fact that the backend already knows, so processObservation
+    // recomputes the persisted result with the freshly advanced Follow
+    // originalEpisodes and the current PlayRecord.
+    return this.processObservation({
+      userId,
+      followId,
+      source,
+      resourceId,
+      latestEpisode: knownLatestEpisode,
+      observedAt: this.clock(),
+    });
+  }
+
   async checkTask(task: UpdateCheckTask): Promise<UpdateResult | null> {
     if (!(await this.isBackendEnabled(task.userId))) return null;
     const follow = await this.facts.getWatchingFollow(

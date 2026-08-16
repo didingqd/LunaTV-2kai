@@ -30,8 +30,11 @@ import {
   resolvePlayRecordIdentity,
 } from './play-record-identity';
 import {
+  advanceWatchingFollowOriginalEpisodes as applyWatchingFollowOriginalEpisodesAdvance,
   assertWatchingFollowCanBeStored,
   migrateStoredWatchingFollow,
+  updateWatchingFollow as applyWatchingFollowUpdate,
+  type WatchingFollowUpdateInput,
   watchingFollowStorageKey,
 } from './watching-follow';
 import {
@@ -42,6 +45,10 @@ import {
   findFavoriteReminderIdentityEntry,
   normalizeFavoriteReminderRecord,
 } from './favorite-reminder-identity';
+import {
+  normalizeSkipConfigRecord,
+  normalizeSkipConfigValue,
+} from './skip-config';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -93,6 +100,38 @@ export function generateStorageKey(source: string, id: string): string {
 
 function userVideoRemarksCacheKey(userName: string): string {
   return `user:${userName}:video_remarks`;
+}
+
+const watchingFollowWriteQueues = new Map<string, Promise<void>>();
+
+async function queuedWatchingFollowWrite<T>(
+  key: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = watchingFollowWriteQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current);
+  watchingFollowWriteQueues.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (watchingFollowWriteQueues.get(key) === queued) {
+      watchingFollowWriteQueues.delete(key);
+    }
+  }
+}
+
+export interface WatchingFollowBaselineAdvanceResult {
+  found: boolean;
+  changed: boolean;
+  previousEpisodes: number;
+  originalEpisodes: number;
+  follow: WatchingFollow | null;
 }
 
 // 导出便捷方法
@@ -395,13 +434,107 @@ export class DbManager {
   ): Promise<void> {
     incrementDbQuery();
     const key = watchingFollowStorageKey(source, id);
-    const rawExisting = await this.storage.getWatchingFollow(userName, key);
-    const existing = rawExisting
-      ? await this.migrateWatchingFollowValue(userName, key, rawExisting)
-      : null;
-    assertWatchingFollowCanBeStored(existing, source, id, follow);
+    await queuedWatchingFollowWrite(`${userName}:${key}`, async () => {
+      const rawExisting = await this.storage.getWatchingFollow(userName, key);
+      const existing = rawExisting
+        ? await this.migrateWatchingFollowValue(userName, key, rawExisting)
+        : null;
+      assertWatchingFollowCanBeStored(existing, source, id, follow);
 
-    await this.storage.setWatchingFollow(userName, key, follow);
+      await this.storage.setWatchingFollow(userName, key, follow);
+    });
+  }
+
+  async updateWatchingFollow(
+    userName: string,
+    source: string,
+    id: string,
+    input: WatchingFollowUpdateInput,
+  ): Promise<WatchingFollow | null> {
+    incrementDbQuery();
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) return null;
+
+    return queuedWatchingFollowWrite(
+      `${userName}:${identity.canonicalKey}`,
+      async () => {
+        const existing = await this.getWatchingFollow(userName, source, id);
+        if (!existing) return null;
+
+        // Ordinary Follow updates are metadata-only. Reading and writing inside
+        // the same per-identity queue keeps a concurrent baseline advancement
+        // from being overwritten by a stale metadata PUT.
+        const follow = applyWatchingFollowUpdate(existing, input);
+        assertWatchingFollowCanBeStored(existing, source, id, follow);
+        await this.storage.setWatchingFollow(
+          userName,
+          identity.canonicalKey,
+          follow,
+        );
+        return follow;
+      },
+    );
+  }
+
+  async advanceWatchingFollowOriginalEpisodes(
+    userName: string,
+    source: string,
+    id: string,
+    confirmedEpisode: number,
+  ): Promise<WatchingFollowBaselineAdvanceResult> {
+    incrementDbQuery();
+    const identity = normalizePlayRecordIdentity(source, id);
+    if (!identity) {
+      return {
+        found: false,
+        changed: false,
+        previousEpisodes: 0,
+        originalEpisodes: 0,
+        follow: null,
+      };
+    }
+
+    return queuedWatchingFollowWrite(
+      `${userName}:${identity.canonicalKey}`,
+      async () => {
+        const existing = await this.getWatchingFollow(userName, source, id);
+        if (!existing) {
+          return {
+            found: false,
+            changed: false,
+            previousEpisodes: 0,
+            originalEpisodes: 0,
+            follow: null,
+          };
+        }
+
+        const advanced = applyWatchingFollowOriginalEpisodesAdvance(
+          existing,
+          confirmedEpisode,
+        );
+        const changed = advanced.originalEpisodes !== existing.originalEpisodes;
+
+        // This is the dedicated monotonic baseline writer. It bypasses the
+        // ordinary immutable-field guard only after applying max(current,
+        // requested), so replaying an older episode or receiving a stale sync
+        // request can never lower originalEpisodes in this process.
+        if (changed) {
+          await this.storage.setWatchingFollow(
+            userName,
+            identity.canonicalKey,
+            advanced,
+          );
+        }
+
+        return {
+          found: true,
+          changed,
+          previousEpisodes: existing.originalEpisodes,
+          originalEpisodes: advanced.originalEpisodes,
+          follow: advanced,
+        };
+      },
+    );
   }
 
   async getAllWatchingFollows(
@@ -659,7 +792,12 @@ export class DbManager {
   ): Promise<SkipConfig | null> {
     incrementDbQuery();
     if (typeof (this.storage as any).getSkipConfig === 'function') {
-      return (this.storage as any).getSkipConfig(userName, source, id);
+      const config = await (this.storage as any).getSkipConfig(
+        userName,
+        source,
+        id,
+      );
+      return normalizeSkipConfigValue(config);
     }
     return null;
   }
@@ -672,7 +810,16 @@ export class DbManager {
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).setSkipConfig === 'function') {
-      await (this.storage as any).setSkipConfig(userName, source, id, config);
+      const normalized = normalizeSkipConfigValue(config);
+      if (!normalized) return;
+      // DB 层是所有后端存储实现的共同边界；这里保证落库数据是正数秒
+      // canonical 模型，而不是某个播放器的内部负数表示。
+      await (this.storage as any).setSkipConfig(
+        userName,
+        source,
+        id,
+        normalized,
+      );
     }
   }
 
@@ -692,7 +839,9 @@ export class DbManager {
   ): Promise<{ [key: string]: SkipConfig }> {
     incrementDbQuery();
     if (typeof (this.storage as any).getAllSkipConfigs === 'function') {
-      return (this.storage as any).getAllSkipConfigs(userName);
+      return normalizeSkipConfigRecord(
+        await (this.storage as any).getAllSkipConfigs(userName),
+      );
     }
     return {};
   }
@@ -705,7 +854,12 @@ export class DbManager {
   ): Promise<EpisodeSkipConfig | null> {
     incrementDbQuery();
     if (typeof (this.storage as any).getEpisodeSkipConfig === 'function') {
-      return (this.storage as any).getEpisodeSkipConfig(userName, source, id);
+      const config = await (this.storage as any).getEpisodeSkipConfig(
+        userName,
+        source,
+        id,
+      );
+      return normalizeSkipConfigValue(config);
     }
     return null;
   }
@@ -718,11 +872,13 @@ export class DbManager {
   ): Promise<void> {
     incrementDbQuery();
     if (typeof (this.storage as any).saveEpisodeSkipConfig === 'function') {
+      const normalized = normalizeSkipConfigValue(config);
+      if (!normalized) return;
       await (this.storage as any).saveEpisodeSkipConfig(
         userName,
         source,
         id,
-        config,
+        normalized,
       );
     }
   }
@@ -743,7 +899,9 @@ export class DbManager {
   ): Promise<{ [key: string]: EpisodeSkipConfig }> {
     incrementDbQuery();
     if (typeof (this.storage as any).getAllEpisodeSkipConfigs === 'function') {
-      return (this.storage as any).getAllEpisodeSkipConfigs(userName);
+      return normalizeSkipConfigRecord(
+        await (this.storage as any).getAllEpisodeSkipConfigs(userName),
+      );
     }
     return {};
   }

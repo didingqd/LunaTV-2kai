@@ -74,19 +74,14 @@ export interface VideoCardProps {
   source_names?: string[];
   progress?: number;
   year?: string;
-  from:
-    | 'playrecord'
-    | 'favorite'
-    | 'search'
-    | 'douban'
-    | 'reminder'
-    | 'follow';
+  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'reminder' | 'follow';
   currentEpisode?: number;
   douban_id?: number;
   onDelete?: () => void;
   following?: boolean;
   followLoading?: boolean;
   onToggleFollow?: () => void | Promise<void>;
+  onMarkWatchedToLatest?: () => void | Promise<void>;
   rate?: string;
   type?: string;
   isBangumi?: boolean;
@@ -130,6 +125,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       following = false,
       followLoading = false,
       onToggleFollow,
+      onMarkWatchedToLatest,
       rate,
       type = '',
       isBangumi = false,
@@ -1064,6 +1060,25 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         });
       }
 
+      if (
+        from === 'playrecord' &&
+        following &&
+        onMarkWatchedToLatest &&
+        actualSource &&
+        actualId
+      ) {
+        actions.push({
+          id: 'mark-watched-to-latest',
+          label: '已观看至最新',
+          icon: <Check size={20} />,
+          onClick: () => {
+            void onMarkWatchedToLatest();
+          },
+          disabled: followLoading,
+          color: 'default' as const,
+        });
+      }
+
       // 删除播放记录或取消追更操作
       if (
         config.showCheckCircle &&
@@ -1156,6 +1171,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       following,
       followLoading,
       onToggleFollow,
+      onMarkWatchedToLatest,
       handleDeleteRecord,
       aiEnabled,
       actualTitle,

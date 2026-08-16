@@ -3,8 +3,8 @@ import { AdminConfig } from './admin.types';
 // 源仓库风格的跳过片头片尾配置
 export interface SkipConfig {
   enable: boolean; // 是否启用跳过片头片尾
-  intro_time: number; // 片头结束时间（秒）
-  outro_time: number; // 片尾开始前的剩余时间（负数秒）
+  intro_time: number; // 从视频开头跳过多少秒
+  outro_time: number; // 从视频结尾向前跳过多少秒（正数秒）
 }
 
 // 崩溃日志数据结构
@@ -77,7 +77,7 @@ export interface WatchingFollow {
   cover: string;
   year: string;
   type: string;
-  originalEpisodes: number; // 创建关注时客户端获取到的最新集数快照，创建后不可变
+  originalEpisodes: number; // 用户已确认追到的最高集数，只能通过专用基线入口单调递增
   createdAt: number;
   updatedAt: number;
   enabled: boolean;
@@ -98,10 +98,10 @@ export interface ShortDramaItem {
   score: number;
   episode_count: number;
   description?: string;
-  author?: string;        // 演员/导演信息
-  backdrop?: string;      // 高清背景图
-  vote_average?: number;  // 用户评分 (0-10)
-  tmdb_id?: number;       // TMDB ID
+  author?: string; // 演员/导演信息
+  backdrop?: string; // 高清背景图
+  vote_average?: number; // 用户评分 (0-10)
+  tmdb_id?: number; // TMDB ID
 }
 
 // 短剧解析结果数据结构
@@ -147,14 +147,14 @@ export interface IStorage {
   setPlayRecord(
     userName: string,
     key: string,
-    record: PlayRecord
+    record: PlayRecord,
   ): Promise<void>;
   getAllPlayRecords(userName: string): Promise<{ [key: string]: PlayRecord }>;
   deletePlayRecord(userName: string, key: string): Promise<void>;
   // 🚀 批量写入播放记录（Upstash 优化，使用 mset 只算1条命令）
   setPlayRecordsBatch?(
     userName: string,
-    records: { [key: string]: PlayRecord }
+    records: { [key: string]: PlayRecord },
   ): Promise<void>;
 
   // 收藏相关
@@ -165,7 +165,7 @@ export interface IStorage {
   // 🚀 批量写入收藏（Upstash 优化，使用 mset 只算1条命令）
   setFavoritesBatch?(
     userName: string,
-    favorites: { [key: string]: Favorite }
+    favorites: { [key: string]: Favorite },
   ): Promise<void>;
 
   // 提醒相关
@@ -177,15 +177,15 @@ export interface IStorage {
   // 追更关注相关
   getWatchingFollow(
     userName: string,
-    key: string
+    key: string,
   ): Promise<WatchingFollow | null>;
   setWatchingFollow(
     userName: string,
     key: string,
-    follow: WatchingFollow
+    follow: WatchingFollow,
   ): Promise<void>;
   getAllWatchingFollows(
-    userName: string
+    userName: string,
   ): Promise<{ [key: string]: WatchingFollow }>;
   deleteWatchingFollow(userName: string, key: string): Promise<void>;
 
@@ -215,13 +215,13 @@ export interface IStorage {
   getSkipConfig(
     userName: string,
     source: string,
-    id: string
+    id: string,
   ): Promise<SkipConfig | null>;
   setSkipConfig(
     userName: string,
     source: string,
     id: string,
-    config: SkipConfig
+    config: SkipConfig,
   ): Promise<void>;
   deleteSkipConfig(userName: string, source: string, id: string): Promise<void>;
   getAllSkipConfigs(userName: string): Promise<{ [key: string]: SkipConfig }>;
@@ -243,14 +243,14 @@ export interface IStorage {
     userName: string,
     source: string,
     id: string,
-    watchTime: number
+    watchTime: number,
   ): Promise<void>;
 
   // 登入统计相关
   updateUserLoginStats(
     userName: string,
     loginTime: number,
-    isFirstLogin?: boolean
+    isFirstLogin?: boolean,
   ): Promise<void>;
 
   // 崩溃日志相关
@@ -316,8 +316,8 @@ export interface DoubanItem {
   first_aired?: string;
   plot_summary?: string;
   // 🎬 Netflix风格字段
-  backdrop?: string;      // 高清背景图（用于HeroBanner）
-  trailerUrl?: string;    // 预告片视频URL
+  backdrop?: string; // 高清背景图（用于HeroBanner）
+  trailerUrl?: string; // 预告片视频URL
 }
 
 export interface DoubanResult {
@@ -354,8 +354,8 @@ export interface DoubanCommentsResult {
 // 跳过配置（与源仓库一致：单视频的片头/片尾时间配置）
 export interface SkipConfig {
   enable: boolean; // 是否启用跳过片头片尾
-  intro_time: number; // 片头结束时间（秒）
-  outro_time: number; // 片尾开始前的剩余时间（负数秒）
+  intro_time: number; // 从视频开头跳过多少秒
+  outro_time: number; // 从视频结尾向前跳过多少秒（正数秒）
 }
 
 // 向后兼容旧命名

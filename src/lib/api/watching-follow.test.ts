@@ -1,4 +1,5 @@
 import {
+  advanceWatchingFollowOriginalEpisodes,
   deleteWatchingFollow,
   getWatchingFollows,
   isLocalWatchingFollowMode,
@@ -92,6 +93,35 @@ describe('WatchingFollow client service', () => {
     expect(isWatchingFollowActive(follows, 'main', 'missing')).toBe(false);
   });
 
+  it('advances local originalEpisodes monotonically without changing other state', async () => {
+    const created = await postWatchingFollow({
+      source: 'main',
+      id: 'demo',
+      title: 'Demo',
+      cover: '',
+      year: '2026',
+      type: 'tv',
+      originalEpisodes: 8,
+      enabled: true,
+    });
+
+    const advanced = await advanceWatchingFollowOriginalEpisodes(
+      'main',
+      'demo',
+      9,
+    );
+    const stale = await advanceWatchingFollowOriginalEpisodes(
+      'main',
+      'demo',
+      6,
+    );
+
+    expect(created.originalEpisodes).toBe(8);
+    expect(advanced.originalEpisodes).toBe(9);
+    expect(stale.originalEpisodes).toBe(9);
+    expect(stale.title).toBe('Demo');
+  });
+
   it('uses the backend API outside local mode', async () => {
     (
       window as Window & { RUNTIME_CONFIG?: { STORAGE_TYPE: string } }
@@ -146,6 +176,38 @@ describe('WatchingFollow client service', () => {
       expect.objectContaining({
         createdAt: expect.anything(),
         updatedAt: expect.anything(),
+      }),
+    );
+  });
+
+  it('uses the dedicated backend endpoint to advance originalEpisodes', async () => {
+    (
+      window as Window & { RUNTIME_CONFIG?: { STORAGE_TYPE: string } }
+    ).RUNTIME_CONFIG = { STORAGE_TYPE: 'redis' };
+    const advanced = {
+      source: 'main',
+      id: 'demo',
+      title: 'Demo',
+      cover: '',
+      year: '2026',
+      type: 'tv',
+      originalEpisodes: 9,
+      createdAt: 100,
+      updatedAt: 200,
+      enabled: true,
+    };
+    const fetchMock = (
+      global.fetch as jest.MockedFunction<typeof fetch>
+    ).mockResolvedValueOnce(mockResponse(advanced, 200));
+
+    await expect(
+      advanceWatchingFollowOriginalEpisodes('main', 'demo', 9),
+    ).resolves.toEqual(advanced);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/watching-follows/main/demo/original-episodes',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ originalEpisodes: 9 }),
       }),
     );
   });

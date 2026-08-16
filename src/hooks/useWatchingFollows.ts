@@ -9,6 +9,7 @@ import {
 import { useCallback, useState } from 'react';
 
 import {
+  advanceWatchingFollowOriginalEpisodes,
   deleteWatchingFollow,
   getWatchingFollows,
   isWatchingFollowActive,
@@ -170,6 +171,37 @@ export function useDeleteWatchingFollowMutation() {
   });
 }
 
+export function useAdvanceWatchingFollowOriginalEpisodesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      source,
+      id,
+      confirmedEpisode,
+    }: {
+      source: string;
+      id: string;
+      confirmedEpisode: number;
+    }) => advanceWatchingFollowOriginalEpisodes(source, id, confirmedEpisode),
+    onSuccess: (follow) => {
+      queryClient.setQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+        (previous = {}) => ({
+          ...previous,
+          [watchingFollowKey(follow.source, follow.id)]: follow,
+        }),
+      );
+    },
+    onSettled: () => {
+      // A manual baseline confirmation changes only WatchingFollow state, but
+      // NEW/+N, update reminders and Continue Watching badges all derive from
+      // Watching Updates, so invalidate both caches together.
+      void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+    },
+  });
+}
+
 export function useRefreshWatchingFollows() {
   const queryClient = useQueryClient();
   return () =>
@@ -183,6 +215,8 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
   const query = useWatchingFollowsQuery(options);
   const createMutation = useCreateWatchingFollowMutation();
   const deleteMutation = useDeleteWatchingFollowMutation();
+  const advanceOriginalEpisodesMutation =
+    useAdvanceWatchingFollowOriginalEpisodesMutation();
   const refresh = useRefreshWatchingFollows();
   const [pendingFollowKeys, setPendingFollowKeys] = useState<Set<string>>(
     () => new Set(),
@@ -231,6 +265,22 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
     [deleteMutation, setFollowPending],
   );
 
+  const confirmWatchedToLatest = useCallback(
+    async (source: string, id: string, latestEpisode: number) => {
+      setFollowPending(source, id, true);
+      try {
+        return await advanceOriginalEpisodesMutation.mutateAsync({
+          source,
+          id,
+          confirmedEpisode: latestEpisode,
+        });
+      } finally {
+        setFollowPending(source, id, false);
+      }
+    },
+    [advanceOriginalEpisodesMutation, setFollowPending],
+  );
+
   const isFollowPending = useCallback(
     (source: string, id: string) =>
       pendingFollowKeys.has(watchingFollowKey(source, id)),
@@ -247,6 +297,7 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
       isWatchingFollowActive(query.data ?? {}, source, id),
     createFollow,
     deleteFollow,
+    confirmWatchedToLatest,
     isFollowPending,
     refresh,
     isCreating: createMutation.isPending,

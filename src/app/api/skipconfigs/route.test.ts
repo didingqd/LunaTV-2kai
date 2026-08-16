@@ -26,7 +26,7 @@ jest.mock('@/lib/performance-monitor', () => ({
 import { POST } from './route';
 import { db } from '@/lib/db';
 
-const config = { enable: true, intro_time: 90, outro_time: -60 };
+const config = { enable: true, intro_time: 90, outro_time: 60 };
 
 describe('SkipConfig ContentIdentity API', () => {
   beforeEach(() => {
@@ -85,12 +85,30 @@ describe('SkipConfig ContentIdentity API', () => {
       config,
     );
   });
+
+  it('normalizes legacy negative outro_time before saving', async () => {
+    const response = await request(
+      'set',
+      buildSkipConfigKey('bangumi', '123'),
+      undefined,
+      { enable: true, intro_time: 90, outro_time: -60 },
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.setSkipConfig).toHaveBeenCalledWith(
+      'alice',
+      'bangumi',
+      '123',
+      config,
+    );
+  });
 });
 
 async function request(
   action: 'get' | 'set' | 'delete',
   key: string,
   identityKey?: string,
+  overrideConfig = config,
 ) {
   return POST(
     new NextRequest('http://localhost/api/skipconfigs', {
@@ -99,7 +117,7 @@ async function request(
       body: JSON.stringify({
         action,
         key,
-        config: action === 'set' ? config : undefined,
+        config: action === 'set' ? overrideConfig : undefined,
         identityKey,
       }),
     }),

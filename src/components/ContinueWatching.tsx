@@ -30,20 +30,23 @@ interface ContinueWatchingProps {
 
 // 🚀 优化方案6：使用React.memo防止不必要的重渲染
 function ContinueWatching({ className }: ContinueWatchingProps) {
-  const [requireClearConfirmation, setRequireClearConfirmation] = useState(false);
+  const [requireClearConfirmation, setRequireClearConfirmation] =
+    useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // 🚀 TanStack Query - 播放记录
-  const { data: playRecords = [], isLoading: loading } = useContinueWatchingQuery();
+  const { data: playRecords = [], isLoading: loading } =
+    useContinueWatchingQuery();
 
   // 🚀 TanStack Query - 观看更新（仅当有播放记录时才查询）
   const { data: watchingUpdates = null } = useWatchingUpdatesQuery({
-    enabled: !loading && playRecords.length > 0
+    enabled: !loading && playRecords.length > 0,
   });
   const {
     isFollowing,
     createFollow,
     deleteFollow,
+    confirmWatchedToLatest,
     isFollowPending,
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
@@ -54,7 +57,9 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
   // 读取清空确认设置
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedRequireClearConfirmation = localStorage.getItem('requireClearConfirmation');
+      const savedRequireClearConfirmation = localStorage.getItem(
+        'requireClearConfirmation',
+      );
       if (savedRequireClearConfirmation !== null) {
         setRequireClearConfirmation(JSON.parse(savedRequireClearConfirmation));
       }
@@ -78,7 +83,9 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
   };
 
   // 检查播放记录是否有新集数更新
-  const getNewEpisodesCount = (record: PlayRecord & { key: string }): number => {
+  const getNewEpisodesCount = (
+    record: PlayRecord & { key: string },
+  ): number => {
     if (!watchingUpdates || !watchingUpdates.updatedSeries) return 0;
 
     const { source, id } = parseKey(record.key);
@@ -89,12 +96,15 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
         series.hasNewEpisode && compareContentIdentity(series, { source, id }),
     );
 
-    return matchedSeries ? (matchedSeries.newEpisodes || 0) : 0;
+    return matchedSeries ? matchedSeries.newEpisodes || 0 : 0;
   };
 
   // 获取最新的总集数（用于显示，不修改原始数据）
-  const getLatestTotalEpisodes = (record: PlayRecord & { key: string }): number => {
-    if (!watchingUpdates || !watchingUpdates.updatedSeries) return record.total_episodes;
+  const getLatestTotalEpisodes = (
+    record: PlayRecord & { key: string },
+  ): number => {
+    if (!watchingUpdates || !watchingUpdates.updatedSeries)
+      return record.total_episodes;
 
     const { source, id } = parseKey(record.key);
 
@@ -138,10 +148,41 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
       title: detail.title || record.title,
       cover: detail.poster || record.cover,
       year: String(detail.year || record.year || ''),
-      type: detail.type_name || record.type || (originalEpisodes > 1 ? 'tv' : ''),
+      type:
+        detail.type_name || record.type || (originalEpisodes > 1 ? 'tv' : ''),
       originalEpisodes,
     });
     toast.success('已加追');
+  };
+
+  const handleMarkWatchedToLatest = async (
+    record: PlayRecord & { key: string },
+  ) => {
+    const { source, id } = parseKey(record.key);
+    if (!source || !id) return;
+
+    const matchedSeries = watchingUpdates?.updatedSeries?.find((series) =>
+      compareContentIdentity(series, { source, id }),
+    );
+    let latestEpisodes = matchedSeries?.latestEpisodes || 0;
+    if (latestEpisodes <= 0) {
+      const response = await fetch(
+        `/api/detail?source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}`,
+        { cache: 'no-store' },
+      );
+      if (!response.ok) throw new Error('详情获取失败，无法确认最新集数');
+      const detail = await response.json();
+      latestEpisodes = Array.isArray(detail.episodes)
+        ? detail.episodes.length
+        : 0;
+    }
+    if (latestEpisodes <= 0) throw new Error('详情缺少有效剧集信息');
+
+    // Manual confirmation advances only the WatchingFollow baseline. It does
+    // not update this PlayRecord, so Continue Watching keeps the saved episode
+    // while update badges disappear through the shared Watching Updates cache.
+    await confirmWatchedToLatest(source, id, latestEpisodes);
+    toast.success('已确认观看至最新');
   };
 
   // 处理清空所有记录
@@ -155,7 +196,11 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
   return (
     <section className={`mb-8 ${className || ''}`}>
       <div className='mb-4 flex items-center justify-between'>
-        <SectionTitle title="继续观看" icon={Clock} iconColor="text-green-500" />
+        <SectionTitle
+          title='继续观看'
+          icon={Clock}
+          iconColor='text-green-500'
+        />
         {!loading && playRecords.length > 0 && (
           <button
             className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-white hover:bg-red-600 dark:text-red-400 dark:hover:text-white dark:hover:bg-red-500 border border-red-300 dark:border-red-700 hover:border-red-600 dark:hover:border-red-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
@@ -177,11 +222,11 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
       {/* 确认对话框 */}
       <ConfirmDialog
         isOpen={showConfirmDialog}
-        title="确认清空"
+        title='确认清空'
         message={`确定要清空所有继续观看记录吗？\n\n这将删除 ${playRecords.length} 条播放记录，此操作无法撤销。`}
-        confirmText="确认清空"
-        cancelText="取消"
-        variant="danger"
+        confirmText='确认清空'
+        cancelText='取消'
+        variant='danger'
         onConfirm={handleClearAll}
         onCancel={() => setShowConfirmDialog(false)}
       />
@@ -206,7 +251,8 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
               const newEpisodesCount = getNewEpisodesCount(record);
               const latestTotalEpisodes = getLatestTotalEpisodes(record);
               // 优先使用播放记录中保存的 type，否则根据集数判断
-              const cardType = record.type || (latestTotalEpisodes > 1 ? 'tv' : '');
+              const cardType =
+                record.type || (latestTotalEpisodes > 1 ? 'tv' : '');
               return (
                 <div
                   key={record.key}
@@ -233,8 +279,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                         isFollowStateKnown ? isFollowing(source, id) : false
                       }
                       followLoading={
-                        !isFollowStateKnown ||
-                        isFollowPending(source, id)
+                        !isFollowStateKnown || isFollowPending(source, id)
                       }
                       onToggleFollow={
                         isFollowStateKnown
@@ -245,6 +290,20 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                                     ? error.message
                                     : '追更操作失败',
                                 ),
+                              );
+                            }
+                          : undefined
+                      }
+                      onMarkWatchedToLatest={
+                        isFollowStateKnown && isFollowing(source, id)
+                          ? () => {
+                              void handleMarkWatchedToLatest(record).catch(
+                                (error) =>
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : '确认失败',
+                                  ),
                               );
                             }
                           : undefined

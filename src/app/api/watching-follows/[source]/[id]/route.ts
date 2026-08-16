@@ -4,10 +4,7 @@ import { NextRequest } from 'next/server';
 
 import { db } from '@/lib/db';
 import { updateCheckService } from '@/lib/update-check-service';
-import {
-  updateWatchingFollow,
-  watchingFollowUpdateSchema,
-} from '@/lib/watching-follow';
+import { watchingFollowUpdateSchema } from '@/lib/watching-follow';
 
 import { noStoreJson, requireWatchingFollowUser } from '../../route-utils';
 
@@ -62,16 +59,22 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       );
     }
 
-    const existing = await db.getWatchingFollow(auth.username, source, id);
-    if (!existing) {
+    const follow = await db.updateWatchingFollow(
+      auth.username,
+      source,
+      id,
+      parsed.data,
+    );
+    if (!follow) {
       return noStoreJson(
         { error: 'WatchingFollow not found' },
         { status: 404 },
       );
     }
 
-    const follow = updateWatchingFollow(existing, parsed.data);
-    await db.saveWatchingFollow(auth.username, source, id, follow);
+    // Route-level validation still forbids originalEpisodes in ordinary PUT.
+    // The DB method also reads and writes in one queued operation so metadata
+    // changes cannot overwrite a baseline advanced by another request.
     await updateCheckService.onFollowUpdated(follow, auth.username);
 
     return noStoreJson(follow);

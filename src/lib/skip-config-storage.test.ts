@@ -1,7 +1,7 @@
 import { BaseRedisStorage } from './redis-base.db';
 import { buildSkipConfigKey } from './skip-config-identity';
 
-const enabled = { enable: true, intro_time: 90, outro_time: -60 };
+const enabled = { enable: true, intro_time: 90, outro_time: 60 };
 const disabled = { enable: false, intro_time: 0, outro_time: 0 };
 
 describe('Redis SkipConfig identity storage', () => {

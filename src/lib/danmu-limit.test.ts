@@ -11,6 +11,11 @@ import {
 describe('Danmu segment limit', () => {
   beforeEach(() => window.localStorage.clear());
 
+  it('uses 3000 when no saved limit exists', () => {
+    expect(DEFAULT_DANMU_SEGMENT_LIMIT).toBe(3000);
+    expect(loadDanmuSegmentLimit('missing-user')).toBe(3000);
+  });
+
   it('limits each 300-second segment independently', () => {
     const danmu = [
       item('s0-a', 0),
@@ -74,6 +79,23 @@ describe('Danmu segment limit', () => {
     expect(applyDanmuSegmentLimit(danmu, 0)).toEqual(danmu);
   });
 
+  it('applies the default 3000 limit per 300-second segment without mutating the source', () => {
+    const danmu = [
+      ...Array.from({ length: 3001 }, (_, index) =>
+        item(`s0-${index}`, index % 300),
+      ),
+      item('s1-only', 300),
+    ];
+
+    const limited = applyDanmuSegmentLimit(danmu, DEFAULT_DANMU_SEGMENT_LIMIT);
+
+    expect(danmu).toHaveLength(3002);
+    expect(limited).not.toBe(danmu);
+    expect(limited).toHaveLength(3001);
+    expect(limited.filter((entry) => entry.time < 300)).toHaveLength(3000);
+    expect(limited.filter((entry) => entry.time >= 300)).toHaveLength(1);
+  });
+
   it('sanitizes invalid values without replacing explicit 0', () => {
     expect(sanitizeDanmuSegmentLimit(0, 5000)).toBe(0);
     expect(sanitizeDanmuSegmentLimit('10000')).toBe(10000);
@@ -91,11 +113,20 @@ describe('Danmu segment limit', () => {
 
     expect(loadDanmuSegmentLimit('alice')).toBe(500);
     expect(loadDanmuSegmentLimit('bob')).toBe(0);
-    expect(loadDanmuSegmentLimit('charlie')).toBe(DEFAULT_DANMU_SEGMENT_LIMIT);
+    expect(loadDanmuSegmentLimit('charlie')).toBe(3000);
     expect(danmuSegmentLimitStorageKey(userA)).not.toBe(
       danmuSegmentLimitStorageKey(userB),
     );
   });
+
+  it.each([500, 1000, 5000])(
+    'preserves an explicitly saved limit of %d',
+    (limit) => {
+      saveDanmuSegmentLimit(limit, 'configured-user');
+
+      expect(loadDanmuSegmentLimit('configured-user')).toBe(limit);
+    },
+  );
 });
 
 function item(id: string, time: number) {

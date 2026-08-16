@@ -3635,21 +3635,22 @@ function PlayPageClient() {
       html: '设置片尾',
       icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
       tooltip:
-        config.outro_time >= 0
+        config.outro_time <= 0
           ? '设置片尾时间'
-          : `-${formatTime(-config.outro_time)}`,
+          : `-${formatTime(config.outro_time)}`,
       onClick: function () {
-        const outroTime =
-          -(
-            artPlayerRef.current?.duration - artPlayerRef.current?.currentTime
-          ) || 0;
-        if (outroTime < 0) {
+        const duration = Number(artPlayerRef.current?.duration) || 0;
+        const currentTime = Number(artPlayerRef.current?.currentTime) || 0;
+        // API 共享模型的 outro_time 表示“距片尾多少秒”，因此播放页只在
+        // 显示时加负号，不再把负数作为持久化语义写回后端。
+        const outroTime = Math.max(0, Math.floor(duration - currentTime));
+        if (outroTime > 0) {
           const nextConfig = {
             ...skipConfigRef.current,
             outro_time: outroTime,
           };
           handleSkipConfigChange(nextConfig);
-          return `-${formatTime(-outroTime)}`;
+          return `-${formatTime(outroTime)}`;
         }
       },
     });
@@ -3663,7 +3664,7 @@ function PlayPageClient() {
     if (!config.enable || duration <= 0) return null;
 
     const markerTime =
-      type === 'intro' ? config.intro_time : duration + config.outro_time;
+      type === 'intro' ? config.intro_time : duration - config.outro_time;
 
     if (markerTime <= 0 || markerTime >= duration) return null;
     return Math.min(100, Math.max(0, (markerTime / duration) * 100));
@@ -3703,7 +3704,7 @@ function PlayPageClient() {
       marker.title =
         type === 'intro'
           ? `片头跳转点 ${formatTime(config.intro_time)}`
-          : `片尾跳转点 -${formatTime(-config.outro_time)}`;
+          : `片尾跳转点 -${formatTime(config.outro_time)}`;
       marker.setAttribute('aria-label', marker.title);
     });
   };
@@ -3788,8 +3789,8 @@ function PlayPageClient() {
 
     // 更新片尾跳过提示；真正的跳过动作仍在下方节流执行
     const outroJumpTime =
-      skipConfigRef.current.outro_time < 0 && duration > 0
-        ? duration + skipConfigRef.current.outro_time
+      skipConfigRef.current.outro_time > 0 && duration > 0
+        ? duration - skipConfigRef.current.outro_time
         : null;
 
     if (outroJumpTime === null) {
@@ -6343,27 +6344,30 @@ function PlayPageClient() {
               },
             },
             {
-              // 🔧 修改点：复刻 LunaTV 的设置片尾菜单项，以距离结尾的负数秒保存
+              // 🔧 修改点：片尾配置对外统一为“距结尾的正数秒”，菜单仅在展示
+              // 上保留 -00:xx 的用户提示，避免污染 /api/skipconfigs 共享模型。
               name: '设置片尾',
               html: '设置片尾',
               icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
               tooltip:
-                skipConfigRef.current.outro_time >= 0
+                skipConfigRef.current.outro_time <= 0
                   ? '设置片尾时间'
-                  : `-${formatTime(-skipConfigRef.current.outro_time)}`,
+                  : `-${formatTime(skipConfigRef.current.outro_time)}`,
               onClick: function () {
-                const outroTime =
-                  -(
-                    artPlayerRef.current?.duration -
-                    artPlayerRef.current?.currentTime
-                  ) || 0;
-                if (outroTime < 0) {
+                const duration = Number(artPlayerRef.current?.duration) || 0;
+                const currentTime =
+                  Number(artPlayerRef.current?.currentTime) || 0;
+                const outroTime = Math.max(
+                  0,
+                  Math.floor(duration - currentTime),
+                );
+                if (outroTime > 0) {
                   const nextConfig = {
                     ...skipConfigRef.current,
                     outro_time: outroTime,
                   };
                   handleSkipConfigChange(nextConfig);
-                  return `-${formatTime(-outroTime)}`;
+                  return `-${formatTime(outroTime)}`;
                 }
               },
             },

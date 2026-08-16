@@ -1,4 +1,5 @@
 import {
+  advanceWatchingFollowOriginalEpisodes,
   assertWatchingFollowCanBeStored,
   createWatchingFollow,
   migrateStoredWatchingFollow,
@@ -23,7 +24,7 @@ const createInput = {
 };
 
 describe('WatchingFollow domain', () => {
-  it('创建时原样保存客户端提交的 originalEpisodes 快照', () => {
+  it('创建时保存客户端提交的 originalEpisodes 确认基线', () => {
     const parsed = watchingFollowCreateSchema.parse(createInput);
     const follow = createWatchingFollow(parsed, 9999);
 
@@ -48,6 +49,20 @@ describe('WatchingFollow domain', () => {
     expect(result.originalEpisodes).toBe(12);
     expect(result.createdAt).toBe(1000);
     expect(result.updatedAt).toBe(2000);
+  });
+
+  it('通过专用入口单调推进 originalEpisodes', () => {
+    const existing = createWatchingFollow(
+      watchingFollowCreateSchema.parse(createInput),
+    );
+
+    const advanced = advanceWatchingFollowOriginalEpisodes(existing, 18, 2000);
+    const stale = advanceWatchingFollowOriginalEpisodes(advanced, 6, 3000);
+
+    expect(advanced.originalEpisodes).toBe(18);
+    expect(advanced.updatedAt).toBe(2000);
+    expect(stale.originalEpisodes).toBe(18);
+    expect(stale.updatedAt).toBe(2000);
   });
 
   it('拒绝通过更新输入提交 originalEpisodes', () => {
@@ -78,7 +93,7 @@ describe('WatchingFollow domain', () => {
     expect(result.success).toBe(false);
   });
 
-  it('存储守卫拒绝覆盖已有 originalEpisodes', () => {
+  it('存储守卫拒绝普通写入覆盖已有 originalEpisodes', () => {
     const existing = createWatchingFollow(
       watchingFollowCreateSchema.parse(createInput),
     );
