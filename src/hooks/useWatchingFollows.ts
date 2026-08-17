@@ -1,12 +1,13 @@
 'use client';
 
 import {
+  type QueryClient,
   queryOptions,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 import {
   advanceWatchingFollowOriginalEpisodes,
@@ -25,7 +26,155 @@ import type { WatchingFollow } from '@/lib/types';
 
 export const watchingFollowsQueryKey = ['watchingFollows'] as const;
 
-const activeCreateOperations = new Map<string, Promise<WatchingFollow>>();
+type FollowOperationKind = 'create' | 'delete';
+
+type FollowIntent = {
+  kind: FollowOperationKind;
+  version: number;
+};
+
+type FollowMutationContext = FollowIntent & {
+  key: string;
+  previous: Record<string, WatchingFollow>;
+};
+
+const activeFollowOperations = new Map<
+  string,
+  { kind: FollowOperationKind; promise: Promise<unknown> }
+>();
+const followOperationTails = new Map<string, Promise<unknown>>();
+const latestFollowIntents = new Map<string, FollowIntent>();
+const rollbackSnapshots = new Map<string, Record<string, WatchingFollow>>();
+const pendingFollowCounts = new Map<string, number>();
+const pendingFollowListeners = new Set<() => void>();
+let followIntentVersion = 0;
+let pendingFollowSnapshotVersion = 0;
+
+function nextFollowIntent(
+  key: string,
+  kind: FollowOperationKind,
+): FollowIntent {
+  const intent = { kind, version: ++followIntentVersion };
+  latestFollowIntents.set(key, intent);
+  return intent;
+}
+
+function isLatestFollowIntent(context?: FollowMutationContext): boolean {
+  if (!context) return false;
+  const latest = latestFollowIntents.get(context.key);
+  return latest?.kind === context.kind && latest.version === context.version;
+}
+
+function operationSnapshotKey(key: string, kind: FollowOperationKind): string {
+  return `${kind}:${key}`;
+}
+
+function getRollbackSnapshot(
+  key: string,
+  kind: FollowOperationKind,
+  previous?: Record<string, WatchingFollow>,
+) {
+  const snapshotKey = operationSnapshotKey(key, kind);
+  const existing = rollbackSnapshots.get(snapshotKey);
+  if (existing) return existing;
+  const snapshot = previous ? { ...previous } : {};
+  rollbackSnapshots.set(snapshotKey, snapshot);
+  return snapshot;
+}
+
+function clearRollbackSnapshot(key: string, kind: FollowOperationKind) {
+  rollbackSnapshots.delete(operationSnapshotKey(key, kind));
+}
+
+function runFollowOperation<T>(
+  key: string,
+  kind: FollowOperationKind,
+  operation: (queuedBehindAnotherOperation: boolean) => Promise<T>,
+): Promise<T> {
+  const active = activeFollowOperations.get(key);
+  if (active?.kind === kind) return active.promise as Promise<T>;
+
+  const previous = followOperationTails.get(key);
+  const queuedBehindAnotherOperation = previous !== undefined;
+  const waitForPrevious = previous?.catch(() => undefined) ?? Promise.resolve();
+  const promise = waitForPrevious.then(() =>
+    operation(queuedBehindAnotherOperation),
+  );
+  const tail = promise.catch(() => undefined);
+
+  activeFollowOperations.set(key, { kind, promise });
+  followOperationTails.set(key, tail);
+
+  void promise
+    .finally(() => {
+      const current = activeFollowOperations.get(key);
+      if (current?.promise === promise) activeFollowOperations.delete(key);
+      if (followOperationTails.get(key) === tail)
+        followOperationTails.delete(key);
+      clearRollbackSnapshot(key, kind);
+    })
+    .catch(() => undefined);
+
+  return promise;
+}
+
+function subscribePendingFollows(listener: () => void) {
+  pendingFollowListeners.add(listener);
+  return () => {
+    pendingFollowListeners.delete(listener);
+  };
+}
+
+function emitPendingFollowChange() {
+  pendingFollowSnapshotVersion += 1;
+  pendingFollowListeners.forEach((listener) => listener());
+}
+
+function getPendingFollowSnapshot() {
+  return pendingFollowSnapshotVersion;
+}
+
+function setGlobalFollowPending(source: string, id: string, pending: boolean) {
+  const key = watchingFollowKey(source, id);
+  const current = pendingFollowCounts.get(key) ?? 0;
+  const next = pending ? current + 1 : Math.max(0, current - 1);
+
+  if (next === current) return;
+  if (next === 0) pendingFollowCounts.delete(key);
+  else pendingFollowCounts.set(key, next);
+  emitPendingFollowChange();
+}
+
+function isGlobalFollowPending(source: string, id: string): boolean {
+  return pendingFollowCounts.has(watchingFollowKey(source, id));
+}
+
+function createOptimisticWatchingFollow(
+  input: CreateWatchingFollowInput,
+  previous?: Record<string, WatchingFollow>,
+): WatchingFollow {
+  const existing = previous?.[watchingFollowKey(input.source, input.id)];
+  const now = Date.now();
+  return {
+    source: input.source,
+    id: input.id,
+    title: input.title,
+    cover: input.cover,
+    year: input.year,
+    type: input.type,
+    originalEpisodes: input.originalEpisodes,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    enabled: input.enabled ?? true,
+  };
+}
+
+function invalidateWatchingUpdatesWithoutRefetch(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({
+    queryKey: ['watchingUpdates'],
+    refetchType: 'none',
+  });
+}
 
 export const watchingFollowsQueryOptions = queryOptions({
   queryKey: watchingFollowsQueryKey,
@@ -74,17 +223,7 @@ export function useCreateWatchingFollowMutation() {
   return useMutation({
     mutationFn: async (input: CreateWatchingFollowInput) => {
       const key = watchingFollowKey(input.source, input.id);
-      const active = activeCreateOperations.get(key);
-      if (active) return active;
-
-      const operation = (async () => {
-        const currentFollows = await queryClient.fetchQuery({
-          ...watchingFollowsQueryOptions,
-          staleTime: 0,
-        });
-        const current = currentFollows[key];
-        if (current?.enabled) return current;
-
+      return runFollowOperation(key, 'create', async (queued) => {
         const playRecords = await getAllPlayRecords(true);
         if (!playRecords[key]) {
           throw new WatchingFollowApiError(
@@ -92,7 +231,16 @@ export function useCreateWatchingFollowMutation() {
             409,
           );
         }
-        if (current) {
+
+        const currentFollows =
+          rollbackSnapshots.get(operationSnapshotKey(key, 'create')) ??
+          queryClient.getQueryData<Record<string, WatchingFollow>>(
+            watchingFollowsQueryKey,
+          ) ??
+          {};
+        const current = currentFollows[key];
+        if (!queued && current?.enabled) return current;
+        if (!queued && current) {
           return putWatchingFollow(input.source, input.id, { enabled: true });
         }
 
@@ -111,16 +259,31 @@ export function useCreateWatchingFollowMutation() {
           }
           throw error;
         }
-      })();
-
-      activeCreateOperations.set(key, operation);
-      try {
-        return await operation;
-      } finally {
-        activeCreateOperations.delete(key);
-      }
+      });
     },
-    onSuccess: (follow) => {
+    onMutate: async (input) => {
+      const key = watchingFollowKey(input.source, input.id);
+      const intent = nextFollowIntent(key, 'create');
+
+      await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
+      const previous = queryClient.getQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+      );
+      const rollback = getRollbackSnapshot(key, 'create', previous);
+      const optimistic = createOptimisticWatchingFollow(input, rollback);
+
+      queryClient.setQueryData<Record<string, WatchingFollow>>(
+        watchingFollowsQueryKey,
+        (current = {}) => ({
+          ...current,
+          [key]: optimistic,
+        }),
+      );
+
+      return { key, kind: 'create' as const, ...intent, previous: rollback };
+    },
+    onSuccess: (follow, _variables, context) => {
+      if (!isLatestFollowIntent(context)) return;
       queryClient.setQueryData<Record<string, WatchingFollow>>(
         watchingFollowsQueryKey,
         (previous = {}) => ({
@@ -129,9 +292,14 @@ export function useCreateWatchingFollowMutation() {
         }),
       );
     },
-    onSettled: () => {
+    onError: (_error, _variables, context) => {
+      if (!isLatestFollowIntent(context)) return;
+      queryClient.setQueryData(watchingFollowsQueryKey, context.previous);
+    },
+    onSettled: (_data, _error, _variables, context) => {
+      if (!isLatestFollowIntent(context)) return;
       void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
-      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+      invalidateWatchingUpdatesWithoutRefetch(queryClient);
     },
   });
 }
@@ -140,12 +308,18 @@ export function useDeleteWatchingFollowMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ source, id }: { source: string; id: string }) =>
-      deleteWatchingFollow(source, id),
+      runFollowOperation(watchingFollowKey(source, id), 'delete', () =>
+        deleteWatchingFollow(source, id),
+      ),
     onMutate: async ({ source, id }) => {
+      const key = watchingFollowKey(source, id);
+      const intent = nextFollowIntent(key, 'delete');
+
       await queryClient.cancelQueries({ queryKey: watchingFollowsQueryKey });
       const previous = queryClient.getQueryData<Record<string, WatchingFollow>>(
         watchingFollowsQueryKey,
       );
+      const rollback = getRollbackSnapshot(key, 'delete', previous);
       queryClient.setQueryData<Record<string, WatchingFollow>>(
         watchingFollowsQueryKey,
         (current = {}) => {
@@ -157,16 +331,16 @@ export function useDeleteWatchingFollowMutation() {
           return next;
         },
       );
-      return { previous };
+      return { key, kind: 'delete' as const, ...intent, previous: rollback };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(watchingFollowsQueryKey, context.previous);
-      }
+      if (!isLatestFollowIntent(context)) return;
+      queryClient.setQueryData(watchingFollowsQueryKey, context.previous);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, _variables, context) => {
+      if (!isLatestFollowIntent(context)) return;
       void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
-      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+      invalidateWatchingUpdatesWithoutRefetch(queryClient);
     },
   });
 }
@@ -197,7 +371,7 @@ export function useAdvanceWatchingFollowOriginalEpisodesMutation() {
       // NEW/+N, update reminders and Continue Watching badges all derive from
       // Watching Updates, so invalidate both caches together.
       void queryClient.invalidateQueries({ queryKey: watchingFollowsQueryKey });
-      void queryClient.invalidateQueries({ queryKey: ['watchingUpdates'] });
+      invalidateWatchingUpdatesWithoutRefetch(queryClient);
     },
   });
 }
@@ -218,8 +392,10 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
   const advanceOriginalEpisodesMutation =
     useAdvanceWatchingFollowOriginalEpisodesMutation();
   const refresh = useRefreshWatchingFollows();
-  const [pendingFollowKeys, setPendingFollowKeys] = useState<Set<string>>(
-    () => new Set(),
+  const pendingSnapshot = useSyncExternalStore(
+    subscribePendingFollows,
+    getPendingFollowSnapshot,
+    getPendingFollowSnapshot,
   );
   const list = Object.values(query.data ?? {})
     .filter((follow) => follow.enabled)
@@ -227,16 +403,7 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
 
   const setFollowPending = useCallback(
     (source: string, id: string, pending: boolean) => {
-      const key = watchingFollowKey(source, id);
-      setPendingFollowKeys((current) => {
-        if (pending && current.has(key)) return current;
-        if (!pending && !current.has(key)) return current;
-
-        const next = new Set(current);
-        if (pending) next.add(key);
-        else next.delete(key);
-        return next;
-      });
+      setGlobalFollowPending(source, id, pending);
     },
     [],
   );
@@ -282,9 +449,8 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
   );
 
   const isFollowPending = useCallback(
-    (source: string, id: string) =>
-      pendingFollowKeys.has(watchingFollowKey(source, id)),
-    [pendingFollowKeys],
+    (source: string, id: string) => isGlobalFollowPending(source, id),
+    [pendingSnapshot],
   );
 
   return {
