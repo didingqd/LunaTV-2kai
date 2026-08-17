@@ -17,7 +17,10 @@ import {
   useContinueWatchingQuery,
   useWatchingUpdatesQuery,
 } from '@/hooks/useContinueWatchingQueries';
-import { useWatchingFollows } from '@/hooks/useWatchingFollows';
+import {
+  getWatchingFollowBaselineMenuState,
+  useWatchingFollows,
+} from '@/hooks/useWatchingFollows';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import SectionTitle from '@/components/SectionTitle';
@@ -43,6 +46,7 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
     enabled: !loading && playRecords.length > 0,
   });
   const {
+    follows,
     isFollowing,
     createFollow,
     deleteFollow,
@@ -250,6 +254,13 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
               const { source, id } = parseKey(record.key);
               const newEpisodesCount = getNewEpisodesCount(record);
               const latestTotalEpisodes = getLatestTotalEpisodes(record);
+              const followBaselineMenuState =
+                getWatchingFollowBaselineMenuState(
+                  follows,
+                  source,
+                  id,
+                  latestTotalEpisodes,
+                );
               // 优先使用播放记录中保存的 type，否则根据集数判断
               const cardType =
                 record.type || (latestTotalEpisodes > 1 ? 'tv' : '');
@@ -294,17 +305,22 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                             }
                           : undefined
                       }
-                      onMarkWatchedToLatest={
-                        isFollowStateKnown && isFollowing(source, id)
-                          ? () => {
-                              void handleMarkWatchedToLatest(record).catch(
-                                (error) =>
-                                  toast.error(
-                                    error instanceof Error
-                                      ? error.message
-                                      : '确认失败',
-                                  ),
-                              );
+                      markWatchedToLatestAction={
+                        followBaselineMenuState
+                          ? {
+                              title: followBaselineMenuState.title,
+                              isAlreadyAtLatest:
+                                followBaselineMenuState.isAlreadyAtLatest,
+                              onClick: () => {
+                                void handleMarkWatchedToLatest(record).catch(
+                                  (error) =>
+                                    toast.error(
+                                      error instanceof Error
+                                        ? error.message
+                                        : '确认失败',
+                                    ),
+                                );
+                              },
                             }
                           : undefined
                       }

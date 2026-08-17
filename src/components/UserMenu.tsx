@@ -78,7 +78,10 @@ import {
   useWatchingUpdatesQuery,
   useRefreshWatchingUpdates,
 } from '@/hooks/useWatchingUpdates';
-import { useWatchingFollows } from '@/hooks/useWatchingFollows';
+import {
+  getWatchingFollowBaselineMenuState,
+  useWatchingFollows,
+} from '@/hooks/useWatchingFollows';
 import { useSourcesQuery } from '@/hooks/useSourcesQuery';
 
 interface AuthInfo {
@@ -260,6 +263,7 @@ export const UserMenu: React.FC = () => {
   // WatchingFollow 在远端与 localStorage 模式下使用同一查询入口。
   const {
     list: watchingFollows,
+    follows,
     isFollowing,
     createFollow,
     deleteFollow,
@@ -543,6 +547,24 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  const handleMarkWatchingFollowWatchedToLatest = async (
+    source: string,
+    id: string,
+    latestEpisodes: number,
+  ) => {
+    if (!source || !id || latestEpisodes <= 0) return;
+
+    try {
+      // 追更页和追更列表的菜单只推进 WatchingFollow baseline。
+      // latestEpisodes 来自当前 Watching Updates / WatchingFollows 面板数据，
+      // 不在长按菜单里重新请求详情，也不修改 PlayRecord。
+      await confirmWatchedToLatest(source, id, latestEpisodes);
+      toast.success('已确认观看至最新');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '确认失败');
+    }
+  };
+
   // 计算播放进度百分比
   const getProgress = (record: PlayRecord) => {
     if (record.total_time === 0) return 0;
@@ -564,6 +586,21 @@ export const UserMenu: React.FC = () => {
     );
 
     return matchedSeries ? matchedSeries.newEpisodes || 0 : 0;
+  };
+
+  const getLatestTotalEpisodes = (
+    record: PlayRecord & { key: string },
+  ): number => {
+    const { source, id } = parseKey(record.key);
+    const followSource = resolveSourceKey(source);
+    const matchedSeries = watchingUpdates?.updatedSeries?.find((series) =>
+      compareContentIdentity(series, { source: followSource, id }),
+    );
+
+    // UserMenu 的继续观看弹窗和首页 Continue Watching 共用同一状态语义：
+    // 菜单只读取 Watching Updates 中可验证的 latestEpisodes，找不到时才回退
+    // 到 PlayRecord 保存的总集数；它不修改播放记录，也不自行写入 baseline。
+    return matchedSeries?.latestEpisodes || record.total_episodes;
   };
 
   const handleChangePassword = () => {
@@ -1277,34 +1314,66 @@ export const UserMenu: React.FC = () => {
                       <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
                         {watchingUpdates.updatedSeries
                           .filter((series) => series.hasNewEpisode)
-                          .map((series, index) => (
-                            <div
-                              key={`new-${series.title}_${series.year}_${index}`}
-                              className={WATCHING_UPDATE_CARD_SHELL_CLASS}
-                            >
+                          .map((series, index) => {
+                            const latestEpisodes =
+                              series.latestEpisodes || series.totalEpisodes;
+                            const followBaselineMenuState =
+                              getWatchingFollowBaselineMenuState(
+                                follows,
+                                series.sourceKey,
+                                series.videoId,
+                                latestEpisodes,
+                              );
+
+                            return (
                               <div
-                                className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
+                                key={`new-${series.title}_${series.year}_${index}`}
+                                className={WATCHING_UPDATE_CARD_SHELL_CLASS}
                               >
-                                <VideoCard
-                                  title={series.title}
-                                  poster={series.cover}
-                                  year={series.year}
-                                  source={series.sourceKey}
-                                  source_name={series.source_name}
-                                  episodes={series.totalEpisodes}
-                                  currentEpisode={series.currentEpisode}
-                                  id={series.videoId}
-                                  onDelete={undefined}
-                                  type={series.totalEpisodes > 1 ? 'tv' : ''}
-                                  from='playrecord'
-                                />
+                                <div
+                                  className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
+                                >
+                                  <VideoCard
+                                    title={series.title}
+                                    poster={series.cover}
+                                    year={series.year}
+                                    source={series.sourceKey}
+                                    source_name={series.source_name}
+                                    episodes={latestEpisodes}
+                                    currentEpisode={series.currentEpisode}
+                                    id={series.videoId}
+                                    onDelete={undefined}
+                                    type={series.totalEpisodes > 1 ? 'tv' : ''}
+                                    from='playrecord'
+                                    followLoading={isFollowPending(
+                                      series.sourceKey,
+                                      series.videoId,
+                                    )}
+                                    markWatchedToLatestAction={
+                                      followBaselineMenuState
+                                        ? {
+                                            title:
+                                              followBaselineMenuState.title,
+                                            isAlreadyAtLatest:
+                                              followBaselineMenuState.isAlreadyAtLatest,
+                                            onClick: () =>
+                                              handleMarkWatchingFollowWatchedToLatest(
+                                                series.sourceKey,
+                                                series.videoId,
+                                                latestEpisodes,
+                                              ),
+                                          }
+                                        : undefined
+                                    }
+                                  />
+                                </div>
+                                {/* 新集数徽章 - Netflix 统一风格 */}
+                                <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                                  +{series.newEpisodes}
+                                </div>
                               </div>
-                              {/* 新集数徽章 - Netflix 统一风格 */}
-                              <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
-                                +{series.newEpisodes}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                       </div>
                     </div>
                   )}
@@ -1340,6 +1409,15 @@ export const UserMenu: React.FC = () => {
                   const update = watchingUpdates?.updatedSeries.find((series) =>
                     compareContentIdentity(series, follow),
                   );
+                  const latestEpisodes =
+                    update?.latestEpisodes ?? follow.originalEpisodes;
+                  const followBaselineMenuState =
+                    getWatchingFollowBaselineMenuState(
+                      follows,
+                      follow.source,
+                      follow.id,
+                      latestEpisodes,
+                    );
 
                   return (
                     <div
@@ -1357,9 +1435,7 @@ export const UserMenu: React.FC = () => {
                             watchingFollowSourceNames.get(follow.source) ||
                             follow.source
                           }
-                          episodes={
-                            update?.latestEpisodes ?? follow.originalEpisodes
-                          }
+                          episodes={latestEpisodes}
                           currentEpisode={update?.currentEpisode}
                           from='follow'
                           type={follow.type || ''}
@@ -1369,6 +1445,21 @@ export const UserMenu: React.FC = () => {
                           )}
                           onDelete={() =>
                             void deleteFollow(follow.source, follow.id)
+                          }
+                          markWatchedToLatestAction={
+                            followBaselineMenuState
+                              ? {
+                                  title: followBaselineMenuState.title,
+                                  isAlreadyAtLatest:
+                                    followBaselineMenuState.isAlreadyAtLatest,
+                                  onClick: () =>
+                                    handleMarkWatchingFollowWatchedToLatest(
+                                      follow.source,
+                                      follow.id,
+                                      latestEpisodes,
+                                    ),
+                                }
+                              : undefined
                           }
                         />
                       </div>
@@ -1451,6 +1542,14 @@ export const UserMenu: React.FC = () => {
               const { source, id } = parseKey(record.key);
               const followSource = resolveSourceKey(source);
               const newEpisodesCount = getNewEpisodesCount(record);
+              const latestTotalEpisodes = getLatestTotalEpisodes(record);
+              const followBaselineMenuState =
+                getWatchingFollowBaselineMenuState(
+                  follows,
+                  followSource,
+                  id,
+                  latestTotalEpisodes,
+                );
               return (
                 <div key={record.key} className='relative group/card'>
                   <div className='relative group-hover/card:z-5 transition-all duration-300'>
@@ -1462,7 +1561,7 @@ export const UserMenu: React.FC = () => {
                       source={source}
                       source_name={record.source_name}
                       progress={getProgress(record)}
-                      episodes={record.total_episodes}
+                      episodes={latestTotalEpisodes}
                       currentEpisode={record.index}
                       query={record.search_title}
                       from='playrecord'
@@ -1481,10 +1580,17 @@ export const UserMenu: React.FC = () => {
                           ? () => handleToggleContinueWatchingFollow(record)
                           : undefined
                       }
-                      onMarkWatchedToLatest={
-                        isFollowStateKnown && isFollowing(followSource, id)
-                          ? () =>
-                              handleMarkContinueWatchingWatchedToLatest(record)
+                      markWatchedToLatestAction={
+                        followBaselineMenuState
+                          ? {
+                              title: followBaselineMenuState.title,
+                              isAlreadyAtLatest:
+                                followBaselineMenuState.isAlreadyAtLatest,
+                              onClick: () =>
+                                handleMarkContinueWatchingWatchedToLatest(
+                                  record,
+                                ),
+                            }
                           : undefined
                       }
                     />

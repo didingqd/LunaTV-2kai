@@ -19,6 +19,7 @@ import {
   PlayStatsResult,
   Reminder,
   SkipConfig,
+  SkipConfigMeta,
   UserPlayStat,
   WatchingFollow,
 } from './types';
@@ -457,6 +458,7 @@ export abstract class BaseRedisStorage implements IStorage {
     await this.withRetry(() => this.client.del(this.reminderHashKey(userName))); // 删除提醒
     await this.withRetry(() => this.client.del(this.watchingFollowHashKey(userName)));
     await this.withRetry(() => this.client.del(this.skipHashKey(userName)));
+    await this.withRetry(() => this.client.del(this.skipMetaHashKey(userName)));
     await this.withRetry(() => this.client.del(this.episodeSkipHashKey(userName)));
 
     // 删除用户登入统计数据
@@ -706,6 +708,18 @@ export abstract class BaseRedisStorage implements IStorage {
     return `u:${user}:skip`; // 一个用户的所有跳过配置存在一个 Hash 中
   }
 
+  private skipMetaHashKey(user: string) {
+    return `u:${user}:skip:meta`;
+  }
+
+  private async touchSkipConfigMeta(userName: string): Promise<void> {
+    const metaKey = this.skipMetaHashKey(userName);
+    await this.withRetry(() => this.client.hIncrBy(metaKey, 'revision', 1));
+    await this.withRetry(() =>
+      this.client.hSet(metaKey, 'updatedAt', Date.now().toString())
+    );
+  }
+
   private skipField(source: string, id: string) {
     return buildSkipConfigKey(source, id);
   }
@@ -737,6 +751,7 @@ export abstract class BaseRedisStorage implements IStorage {
     await this.withRetry(() =>
       this.client.hSet(this.skipHashKey(userName), this.skipField(source, id), JSON.stringify(config))
     );
+    await this.touchSkipConfigMeta(userName);
   }
 
   async deleteSkipConfig(
@@ -746,10 +761,18 @@ export abstract class BaseRedisStorage implements IStorage {
   ): Promise<void> {
     const hashKey = this.skipHashKey(userName);
     const field = this.skipField(source, id);
-    await this.withRetry(() => this.client.hDel(hashKey, field));
+    const removed = await this.withRetry(() => this.client.hDel(hashKey, field));
     const legacyField = legacySkipConfigKey(source, id);
     if (legacyField && legacyField !== field) {
-      await this.withRetry(() => this.client.hDel(hashKey, legacyField));
+      const legacyRemoved = await this.withRetry(() =>
+        this.client.hDel(hashKey, legacyField)
+      );
+      if (legacyRemoved > 0) {
+        await this.touchSkipConfigMeta(userName);
+      }
+    }
+    if (removed > 0) {
+      await this.touchSkipConfigMeta(userName);
     }
   }
 
@@ -776,6 +799,30 @@ export abstract class BaseRedisStorage implements IStorage {
       }
     }
     return normalized.values;
+  }
+
+  async getSkipConfigsMeta(userName: string): Promise<SkipConfigMeta | null> {
+    const metaKey = this.skipMetaHashKey(userName);
+    const raw = await this.withRetry(() => this.client.hGetAll(metaKey));
+    if (raw && Object.keys(raw).length > 0) {
+      return {
+        revision: Number(raw.revision ?? 0),
+        updatedAt: Number(raw.updatedAt ?? 0),
+      };
+    }
+
+    const count = await this.withRetry(() => this.client.hLen(this.skipHashKey(userName)));
+    const baseline: SkipConfigMeta = {
+      revision: count > 0 ? 1 : 0,
+      updatedAt: count > 0 ? Date.now() : 0,
+    };
+    await this.withRetry(() =>
+      this.client.hSet(metaKey, {
+        revision: baseline.revision.toString(),
+        updatedAt: baseline.updatedAt.toString(),
+      })
+    );
+    return baseline;
   }
 
   // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------

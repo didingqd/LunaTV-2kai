@@ -305,4 +305,35 @@ export function useWatchingFollows(options?: { enabled?: boolean }) {
   };
 }
 
+export type WatchingFollowBaselineMenuState = {
+  title: string;
+  isAlreadyAtLatest: boolean;
+};
+
+// Continue Watching 只需要一个纯展示状态：它不保存新字段，也不修改
+// baseline，只把 existing originalEpisodes 和 latestEpisodes 的关系翻译成
+// 菜单标题/图标语义。
+export function getWatchingFollowBaselineMenuState(
+  follows: Record<string, WatchingFollow>,
+  source: string,
+  id: string,
+  latestEpisodes: number,
+): WatchingFollowBaselineMenuState | null {
+  const normalizedLatest = Number.isFinite(latestEpisodes)
+    ? Math.floor(latestEpisodes)
+    : 0;
+  if (!source || !id || normalizedLatest <= 0) return null;
+
+  const follow = Object.values(follows).find(
+    (item) => item.enabled && compareContentIdentity(item, { source, id }),
+  );
+  if (!follow) return null;
+
+  const isAlreadyAtLatest = follow.originalEpisodes >= normalizedLatest;
+  return {
+    title: isAlreadyAtLatest ? '已观看至最新' : '标记为看至最新',
+    isAlreadyAtLatest,
+  };
+}
+
 export type { CreateWatchingFollowInput };

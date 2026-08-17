@@ -28,6 +28,7 @@ import {
   PlayStatsResult,
   Reminder,
   SkipConfig,
+  SkipConfigMeta,
   UserPlayStat,
   WatchingFollow,
 } from './types';
@@ -157,6 +158,12 @@ export class SqliteStorage implements IStorage {
         id TEXT NOT NULL,
         value TEXT NOT NULL,
         PRIMARY KEY (username, source, id)
+      );
+
+      CREATE TABLE IF NOT EXISTS skip_configs_meta (
+        username TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS episode_skip_configs (
@@ -756,6 +763,23 @@ export class SqliteStorage implements IStorage {
 
   // ==================== 跳过片头片尾配置 ====================
 
+  private touchSkipConfigMeta(userName: string): void {
+    const existing = this.db
+      .prepare(
+        'SELECT revision, updated_at FROM skip_configs_meta WHERE username = ?',
+      )
+      .get(userName) as
+      | { revision: number; updated_at: number }
+      | undefined;
+    const revision = (existing?.revision ?? 0) + 1;
+    const updatedAt = Math.max(Date.now(), (existing?.updated_at ?? 0) + 1);
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO skip_configs_meta (username, revision, updated_at) VALUES (?, ?, ?)',
+      )
+      .run(userName, revision, updatedAt);
+  }
+
   async getSkipConfig(
     userName: string,
     source: string,
@@ -791,11 +815,14 @@ export class SqliteStorage implements IStorage {
     config: SkipConfig,
   ): Promise<void> {
     const canonical = skipConfigStorageIdentity(source, id);
-    this.db
+    const result = this.db
       .prepare(
         'INSERT OR REPLACE INTO skip_configs (username, source, id, value) VALUES (?, ?, ?, ?)',
       )
       .run(userName, canonical.source, canonical.id, JSON.stringify(config));
+    if (result.changes > 0) {
+      this.touchSkipConfigMeta(userName);
+    }
   }
 
   async deleteSkipConfig(
@@ -804,17 +831,23 @@ export class SqliteStorage implements IStorage {
     id: string,
   ): Promise<void> {
     const canonical = skipConfigStorageIdentity(source, id);
-    this.db
+    const result = this.db
       .prepare(
         'DELETE FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
       )
       .run(userName, canonical.source, canonical.id);
+    if (result.changes > 0) {
+      this.touchSkipConfigMeta(userName);
+    }
     if (canonical.source !== source || canonical.id !== id) {
-      this.db
+      const legacyResult = this.db
         .prepare(
           'DELETE FROM skip_configs WHERE username = ? AND source = ? AND id = ?',
         )
         .run(userName, source, id);
+      if (legacyResult.changes > 0) {
+        this.touchSkipConfigMeta(userName);
+      }
     }
   }
 
@@ -848,6 +881,34 @@ export class SqliteStorage implements IStorage {
       }
     }
     return result;
+  }
+
+  async getSkipConfigsMeta(userName: string): Promise<SkipConfigMeta | null> {
+    const row = this.db
+      .prepare(
+        'SELECT revision, updated_at FROM skip_configs_meta WHERE username = ?',
+      )
+      .get(userName) as
+      | { revision: number; updated_at: number }
+      | undefined;
+    if (row) {
+      return { revision: row.revision, updatedAt: row.updated_at };
+    }
+
+    const countRow = this.db
+      .prepare('SELECT COUNT(*) AS count FROM skip_configs WHERE username = ?')
+      .get(userName) as { count: number } | undefined;
+    const hasConfigs = (countRow?.count ?? 0) > 0;
+    const baseline: SkipConfigMeta = {
+      revision: hasConfigs ? 1 : 0,
+      updatedAt: hasConfigs ? Date.now() : 0,
+    };
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO skip_configs_meta (username, revision, updated_at) VALUES (?, ?, ?)',
+      )
+      .run(userName, baseline.revision, baseline.updatedAt);
+    return baseline;
   }
 
   // ==================== 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）====================
@@ -960,6 +1021,7 @@ export class SqliteStorage implements IStorage {
       'watching_follows',
       'search_history',
       'skip_configs',
+      'skip_configs_meta',
       'episode_skip_configs',
       'admin_config',
       'cache',

@@ -7,6 +7,11 @@ export interface SkipConfig {
   outro_time: number; // 从视频结尾向前跳过多少秒（正数秒）
 }
 
+export interface SkipConfigMeta {
+  revision: number;
+  updatedAt: number;
+}
+
 // 崩溃日志数据结构
 export interface CrashLog {
   timestamp: string;
@@ -225,6 +230,7 @@ export interface IStorage {
   ): Promise<void>;
   deleteSkipConfig(userName: string, source: string, id: string): Promise<void>;
   getAllSkipConfigs(userName: string): Promise<{ [key: string]: SkipConfig }>;
+  getSkipConfigsMeta(userName: string): Promise<SkipConfigMeta | null>;
 
   // 数据清理相关
   clearAllData(): Promise<void>;

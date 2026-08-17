@@ -243,7 +243,8 @@ export async function POST(request: NextRequest) {
           resolved.id,
           normalizedConfig,
         );
-        const successResponse = { success: true };
+        const meta = await db.getSkipConfigsMeta(finalUsername);
+        const successResponse = { success: true, meta };
         const responseSize = Buffer.byteLength(
           JSON.stringify(successResponse),
           'utf8',
@@ -267,7 +268,32 @@ export async function POST(request: NextRequest) {
 
       case 'getAll': {
         const allConfigs = await db.getAllSkipConfigs(finalUsername);
-        const successResponse = { configs: allConfigs };
+        const meta = await db.getSkipConfigsMeta(finalUsername);
+        const successResponse = { configs: allConfigs, meta };
+        const responseSize = Buffer.byteLength(
+          JSON.stringify(successResponse),
+          'utf8',
+        );
+
+        recordRequest({
+          timestamp: startTime,
+          method: 'POST',
+          path: '/api/skipconfigs',
+          statusCode: 200,
+          duration: Date.now() - startTime,
+          memoryUsed:
+            (process.memoryUsage().heapUsed - startMemory) / 1024 / 1024,
+          dbQueries: getDbQueryCount(),
+          requestSize,
+          responseSize,
+        });
+
+        return NextResponse.json(successResponse);
+      }
+
+      case 'getMeta': {
+        const meta = await db.getSkipConfigsMeta(finalUsername);
+        const successResponse = { meta };
         const responseSize = Buffer.byteLength(
           JSON.stringify(successResponse),
           'utf8',
@@ -339,7 +365,8 @@ export async function POST(request: NextRequest) {
         }
 
         await db.deleteSkipConfig(finalUsername, resolved.source, resolved.id);
-        const successResponse = { success: true };
+        const meta = await db.getSkipConfigsMeta(finalUsername);
+        const successResponse = { success: true, meta };
         const responseSize = Buffer.byteLength(
           JSON.stringify(successResponse),
           'utf8',

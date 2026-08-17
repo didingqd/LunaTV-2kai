@@ -13,6 +13,7 @@ import {
   BellRing,
   MessageSquareText,
   Check,
+  Edit,
   Plus,
   Send,
 } from 'lucide-react';
@@ -81,7 +82,11 @@ export interface VideoCardProps {
   following?: boolean;
   followLoading?: boolean;
   onToggleFollow?: () => void | Promise<void>;
-  onMarkWatchedToLatest?: () => void | Promise<void>;
+  markWatchedToLatestAction?: {
+    title: string;
+    isAlreadyAtLatest: boolean;
+    onClick: () => void | Promise<void>;
+  };
   rate?: string;
   type?: string;
   isBangumi?: boolean;
@@ -125,7 +130,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       following = false,
       followLoading = false,
       onToggleFollow,
-      onMarkWatchedToLatest,
+      markWatchedToLatestAction,
       rate,
       type = '',
       isBangumi = false,
@@ -1060,19 +1065,25 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         });
       }
 
+      // Continue Watching and Watching Follow pages pass this action
+      // explicitly so the card can render the correct follow-confirmation
+      // affordance without exposing a global video menu item.
       if (
-        from === 'playrecord' &&
-        following &&
-        onMarkWatchedToLatest &&
+        (from === 'playrecord' || from === 'follow') &&
+        markWatchedToLatestAction &&
         actualSource &&
         actualId
       ) {
         actions.push({
           id: 'mark-watched-to-latest',
-          label: '已观看至最新',
-          icon: <Check size={20} />,
+          label: markWatchedToLatestAction.title,
+          icon: markWatchedToLatestAction.isAlreadyAtLatest ? (
+            <Check size={20} />
+          ) : (
+            <Edit size={20} />
+          ),
           onClick: () => {
-            void onMarkWatchedToLatest();
+            void markWatchedToLatestAction.onClick();
           },
           disabled: followLoading,
           color: 'default' as const,
@@ -1171,7 +1182,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       following,
       followLoading,
       onToggleFollow,
-      onMarkWatchedToLatest,
+      markWatchedToLatestAction,
       handleDeleteRecord,
       aiEnabled,
       actualTitle,

@@ -13,6 +13,7 @@ import {
   PlayStatsResult,
   Reminder,
   SkipConfig,
+  SkipConfigMeta,
   UserPlayStat,
   WatchingFollow,
 } from './types';
@@ -844,6 +845,14 @@ export class DbManager {
       );
     }
     return {};
+  }
+
+  async getSkipConfigsMeta(userName: string): Promise<SkipConfigMeta | null> {
+    incrementDbQuery();
+    if (typeof (this.storage as any).getSkipConfigsMeta === 'function') {
+      return (await (this.storage as any).getSkipConfigsMeta(userName)) ?? null;
+    }
+    return null;
   }
 
   // ---------- 剧集跳过配置（兼容旧接口命名，底层已收敛到 SkipConfig）----------

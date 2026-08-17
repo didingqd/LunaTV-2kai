@@ -11,6 +11,7 @@ jest.mock('@/lib/auth', () => ({
 jest.mock('@/lib/db', () => ({
   db: {
     getAllSkipConfigs: jest.fn(async () => ({})),
+    getSkipConfigsMeta: jest.fn(async () => ({ revision: 1, updatedAt: 1 })),
     getSkipConfig: jest.fn(),
     setSkipConfig: jest.fn(),
     deleteSkipConfig: jest.fn(),
@@ -102,10 +103,20 @@ describe('SkipConfig ContentIdentity API', () => {
       config,
     );
   });
+
+  it('returns skip config meta for getMeta requests', async () => {
+    const response = await request('getMeta', 'bangumi+123');
+
+    expect(response.status).toBe(200);
+    expect(db.getSkipConfigsMeta).toHaveBeenCalledWith('alice');
+    await expect(response.json()).resolves.toEqual({
+      meta: { revision: 1, updatedAt: 1 },
+    });
+  });
 });
 
 async function request(
-  action: 'get' | 'set' | 'delete',
+  action: 'get' | 'set' | 'delete' | 'getMeta',
   key: string,
   identityKey?: string,
   overrideConfig = config,

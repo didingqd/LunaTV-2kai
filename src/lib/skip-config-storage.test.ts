@@ -85,6 +85,12 @@ function createStorage(initial: Record<string, string> = {}) {
       const existed = values.delete(field);
       return existed ? 1 : 0;
     }),
+    hIncrBy: jest.fn(async (_hash: string, _field: string, increment: number) => {
+      // Skip config writes now update a Redis hash revision. The storage test
+      // keeps its assertions focused on identity fields, so the mock only needs
+      // to provide Redis-compatible numeric behavior for that metadata call.
+      return increment;
+    }),
     hGetAll: jest.fn(async () => Object.fromEntries(values)),
   };
   const storage = Object.create(BaseRedisStorage.prototype) as any;
