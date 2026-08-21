@@ -28,6 +28,8 @@ interface EpisodeSelectorProps {
   episodesPerPage?: number;
   /** 当前选中的集数（1 开始） */
   value?: number;
+  /** 已由追更状态计算出的新集数（1 开始） */
+  newEpisodeNumbers?: ReadonlySet<number>;
   /** 用户点击选集后的回调 */
   onChange?: (episodeNumber: number) => void;
   /** 换源相关 */
@@ -51,6 +53,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   episodes_titles,
   episodesPerPage = 50,
   value = 1,
+  newEpisodeNumbers,
   onChange,
   onSourceChange,
   currentSource,
@@ -573,6 +576,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       : 'bg-linear-to-r from-gray-200 to-gray-100 text-gray-700 hover:from-gray-300 hover:to-gray-200 hover:scale-105 hover:shadow-md dark:from-white/10 dark:to-white/5 dark:text-gray-300 dark:hover:from-white/20 dark:hover:to-white/15'
                     }`.trim()}
                 >
+                  {newEpisodeNumbers?.has(episodeNumber) && (
+                    <span
+                      aria-hidden='true'
+                      className='update-episode-pulse pointer-events-none absolute top-1 right-1.5 z-20 h-1.5 w-1.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50 sm:h-2 sm:w-2'
+                    />
+                  )}
                   {/* 激活态光晕效果 */}
                   {isActive && (
                     <div className='absolute inset-0 bg-linear-to-r from-green-400 via-emerald-400 to-teal-400 opacity-30 blur'></div>

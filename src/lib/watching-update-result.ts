@@ -53,6 +53,33 @@ export interface WatchingUpdateDetail {
   releaseDate?: unknown;
 }
 
+export function resolveNewEpisodeNumbers(
+  item:
+    | Pick<
+        WatchingUpdateItem,
+        'hasNewEpisode' | 'latestEpisodes' | 'newEpisodes'
+      >
+    | null
+    | undefined,
+  availableEpisodes: unknown,
+): ReadonlySet<number> {
+  const available = normalizeEpisodeCount(availableEpisodes);
+  if (!item?.hasNewEpisode || available <= 0) return new Set<number>();
+
+  const latest = normalizeEpisodeCount(item.latestEpisodes);
+  const newEpisodes = normalizeEpisodeCount(item.newEpisodes);
+  if (latest <= 0 || newEpisodes <= 0) return new Set<number>();
+
+  const count = Math.min(latest, newEpisodes);
+  const start = latest - count + 1;
+  const end = Math.min(available, latest);
+  if (end < start) return new Set<number>();
+
+  return new Set(
+    Array.from({ length: end - start + 1 }, (_, index) => start + index),
+  );
+}
+
 type WatchingUpdateRecord = PlayRecord & {
   source?: unknown;
   releaseDate?: unknown;

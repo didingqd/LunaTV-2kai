@@ -17,6 +17,7 @@ import { getSeekKeyboardDelta } from '@/lib/user-menu-indicator';
 import { useDanmu } from '@/hooks/useDanmu';
 import type { DanmuManualOverride } from '@/hooks/useDanmu';
 import { useWatchingFollows } from '@/hooks/useWatchingFollows';
+import { useWatchingUpdatesQuery } from '@/hooks/useWatchingUpdates';
 import DownloadEpisodeSelector from '@/components/download/DownloadEpisodeSelector';
 import DanmuManualMatchModal, {
   type DanmuManualSelection,
@@ -75,9 +76,11 @@ import {
 } from '@/lib/db.client';
 import {
   buildContentIdentityKey,
+  compareContentIdentity,
   resolveContentIdentity,
 } from '@/lib/content-identity';
 import { findResourceFavoriteReminderKey } from '@/lib/favorite-reminder-identity';
+import { resolveNewEpisodeNumbers } from '@/lib/watching-update-result';
 import {
   getDoubanDetails,
   getDoubanComments,
@@ -793,6 +796,9 @@ function PlayPageClient() {
     isFollowPending,
     isStateKnown: isFollowStateKnown,
   } = useWatchingFollows();
+  const { data: watchingUpdates } = useWatchingUpdatesQuery({
+    enabled: isFollowStateKnown,
+  });
 
   // 解析 source 参数以获取 embyKey（仅用于 API 调用）
   const parseSourceForApi = (
@@ -1406,6 +1412,15 @@ function PlayPageClient() {
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
   const activeResourceIdentity = getActiveResourceIdentity();
+  const currentWatchingUpdate = activeResourceIdentity
+    ? watchingUpdates?.updatedSeries.find((series) =>
+        compareContentIdentity(series, activeResourceIdentity),
+      )
+    : undefined;
+  const newEpisodeNumbers = resolveNewEpisodeNumbers(
+    currentWatchingUpdate,
+    totalEpisodes,
+  );
   const followingCurrentSource =
     !!activeResourceIdentity &&
     isFollowing(activeResourceIdentity.source, activeResourceIdentity.id);
@@ -8471,6 +8486,7 @@ function PlayPageClient() {
                   totalEpisodes={totalEpisodes}
                   episodes_titles={detail?.episodes_titles || []}
                   value={currentEpisodeIndex + 1}
+                  newEpisodeNumbers={newEpisodeNumbers}
                   onChange={handleEpisodeChange}
                   onSourceChange={handleSourceChange}
                   currentSource={currentSource}

@@ -2,11 +2,51 @@ import { watchingFollowKey } from './api/watching-follow';
 import {
   mapWatchingUpdateItem,
   normalizeWatchingUpdate,
+  resolveNewEpisodeNumbers,
 } from './watching-update-result';
 import type { WatchingUpdateCalculationResult } from './watching-update-calculation';
 import type { PlayRecord, WatchingFollow } from './types';
 
 describe('WatchingUpdate result mapping', () => {
+  it('expands the existing update state into the latest episode numbers', () => {
+    expect([
+      ...resolveNewEpisodeNumbers(
+        {
+          hasNewEpisode: true,
+          latestEpisodes: 12,
+          newEpisodes: 2,
+        },
+        12,
+      ),
+    ]).toEqual([11, 12]);
+  });
+
+  it('does not mark episodes when the existing state is not a new update', () => {
+    expect(
+      resolveNewEpisodeNumbers(
+        {
+          hasNewEpisode: false,
+          latestEpisodes: 12,
+          newEpisodes: 2,
+        },
+        12,
+      ).size,
+    ).toBe(0);
+  });
+
+  it('clips update episode numbers to the loaded episode list', () => {
+    expect([
+      ...resolveNewEpisodeNumbers(
+        {
+          hasNewEpisode: true,
+          latestEpisodes: 12,
+          newEpisodes: 2,
+        },
+        11,
+      ),
+    ]).toEqual([11]);
+  });
+
   it('maps completed and episode aliases from the existing calculation', () => {
     const item = mapWatchingUpdateItem({
       follow: createFollow(),
