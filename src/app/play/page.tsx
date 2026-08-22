@@ -8059,7 +8059,16 @@ function PlayPageClient() {
       portalContainer || artPlayerRef.current?.template?.$player;
     if (!playerRoot) return;
 
+    const clearMobileProgressHover = () => {
+      playerRoot.classList.remove('art-progress-hover');
+    };
+
     const handleTouchStart = (event: TouchEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('.art-progress')) {
+        clearMobileProgressHover();
+      }
+
       if (event.touches.length !== 1) {
         stopLockedLongPressRate();
         return;
@@ -8132,6 +8141,7 @@ function PlayPageClient() {
     };
 
     const handleTouchEnd = () => {
+      clearMobileProgressHover();
       stopLockedLongPressRate();
     };
 

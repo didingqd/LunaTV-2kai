@@ -9,6 +9,7 @@
   /* 主进度条：移动端默认隐藏桌面 hover 才显示的 thumb，触摸按住时再显示。 */
   .art-video-player.art-mobile {
     --art-indicator-scale: 0 !important;
+    --art-indicator-size: 8px !important;
   }
 
   .art-video-player.art-mobile
@@ -44,11 +45,11 @@
     transform: scale(1) !important;
   }
 
-  /* ArtPlayer 全屏默认将 thumb 提升到 20px，移动端统一回到普通尺寸。 */
+  /* ArtPlayer 全屏默认将 thumb 提升到 20px，移动端统一回到 8px。 */
   .art-video-player.art-mobile.art-fullscreen,
   .art-video-player.art-mobile.art-fullscreen-web,
   .art-video-player.art-mobile:fullscreen {
-    --art-indicator-size: 16px !important;
+    --art-indicator-size: 8px !important;
   }
 
   /* 网页全屏在移动端意义不大，隐藏以节省空间 */
