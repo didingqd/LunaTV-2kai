@@ -6,6 +6,51 @@
 
 /* ===== Medium Screen (Tablets & Mobile Landscape) ===== */
 @media (max-width: 768px) {
+  /* 主进度条：移动端默认隐藏桌面 hover 才显示的 thumb，触摸按住时再显示。 */
+  .art-video-player.art-mobile {
+    --art-indicator-scale: 0 !important;
+  }
+
+  .art-video-player.art-mobile
+    .art-bottom
+    .art-progress
+    .art-control-progress
+    .art-control-progress-inner {
+    height: 50% !important;
+  }
+
+  .art-video-player.art-mobile
+    .art-bottom
+    .art-progress
+    .art-control-progress
+    .art-control-progress-inner
+    .art-progress-indicator {
+    transform: scale(0) !important;
+  }
+
+  /* 复用进度条原生 active 状态，拖动期间保留可见反馈，touchend 后立即恢复。 */
+  .art-video-player.art-mobile
+    .art-bottom
+    .art-progress:active
+    .art-control-progress-inner {
+    height: 100% !important;
+  }
+
+  .art-video-player.art-mobile
+    .art-bottom
+    .art-progress:active
+    .art-control-progress-inner
+    .art-progress-indicator {
+    transform: scale(1) !important;
+  }
+
+  /* ArtPlayer 全屏默认将 thumb 提升到 20px，移动端统一回到普通尺寸。 */
+  .art-video-player.art-mobile.art-fullscreen,
+  .art-video-player.art-mobile.art-fullscreen-web,
+  .art-video-player.art-mobile:fullscreen {
+    --art-indicator-size: 16px !important;
+  }
+
   /* 网页全屏在移动端意义不大，隐藏以节省空间 */
   .art-control-fullscreenWeb {
     display: none !important;
