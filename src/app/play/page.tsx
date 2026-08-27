@@ -473,6 +473,9 @@ function PlayPageClient() {
     null,
   );
   const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
+  const [danmuSettingsPanelPosition, setDanmuSettingsPanelPosition] = useState<
+    { left: number; top: number } | undefined
+  >();
 
   // 🔧 修改点：复刻 LunaTV 跳过片头片尾配置状态，改为播放页菜单驱动的单视频配置
   const [skipConfig, setSkipConfig] = useState<{
@@ -6420,7 +6423,34 @@ function PlayPageClient() {
               tooltip: '打开弹幕设置面板',
               icon: '<text x="50%" y="50%" font-size="14" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">弹</text>',
               // 🎨 点击式按钮，打开美化的弹幕设置面板
-              onClick: function () {
+              onClick: function (_item: any, event: MouseEvent) {
+                const anchor = event?.currentTarget;
+                if (anchor instanceof HTMLElement) {
+                  const rect = anchor.getBoundingClientRect();
+                  const panelWidth =
+                    window.innerWidth >= 640
+                      ? 320
+                      : Math.max(0, window.innerWidth - 16);
+                  const panelMaxHeight = Math.min(
+                    520,
+                    Math.max(0, window.innerHeight - 32),
+                  );
+                  const left = Math.min(
+                    Math.max(8, rect.left),
+                    Math.max(8, window.innerWidth - panelWidth - 8),
+                  );
+                  const preferredTop = rect.top - panelMaxHeight - 12;
+                  const top =
+                    preferredTop >= 8
+                      ? preferredTop
+                      : Math.min(
+                          rect.bottom + 12,
+                          Math.max(8, window.innerHeight - panelMaxHeight - 8),
+                        );
+                  setDanmuSettingsPanelPosition({ left, top });
+                } else {
+                  setDanmuSettingsPanelPosition(undefined);
+                }
                 setIsDanmuSettingsPanelOpen(true);
                 // 关闭settings菜单
                 if (artPlayerRef.current) {
@@ -8651,6 +8681,9 @@ function PlayPageClient() {
                 <DanmuSettingsPanel
                   isOpen={isDanmuSettingsPanelOpen}
                   onClose={() => setIsDanmuSettingsPanelOpen(false)}
+                  panelPosition={
+                    isPlayerFullscreen ? undefined : danmuSettingsPanelPosition
+                  }
                   settings={{
                     enabled: externalDanmuEnabled, // 启用弹幕主开关
                     fontSize: parseInt(

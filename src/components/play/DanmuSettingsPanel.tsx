@@ -68,6 +68,8 @@ interface DanmuSettingsPanelProps {
   onManualMatch?: () => void;
   /** 清除手动匹配，恢复自动 */
   onClearManualMatch?: () => void;
+  /** 普通播放模式下相对于弹幕设置入口的屏幕坐标 */
+  panelPosition?: { left: number; top: number };
 }
 
 // ============================================================================
@@ -127,6 +129,7 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
   isManualOverridden = false,
   onManualMatch,
   onClearManualMatch,
+  panelPosition,
 }: DanmuSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -249,10 +252,16 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
 
   if (!isOpen) return null;
 
+  const isViewportAnchored = Boolean(panelPosition);
+
   return (
     <div
       ref={panelRef}
-      className={`absolute left-2 right-2 bottom-14 z-[2147483000] flex max-h-[calc(100%-4rem)] flex-col overflow-hidden transition-all sm:left-auto sm:right-4 sm:bottom-20 sm:w-80 sm:max-h-[calc(100%-6rem)] ${
+      className={`${
+        isViewportAnchored
+          ? 'fixed left-auto right-auto bottom-auto w-[calc(100vw-1rem)] max-h-[min(520px,calc(100dvh-2rem))] sm:w-80'
+          : 'absolute left-2 right-2 bottom-14 max-h-[calc(100%-4rem)] sm:left-auto sm:right-4 sm:bottom-20 sm:w-80 sm:max-h-[calc(100%-6rem)]'
+      } z-[2147483000] flex flex-col overflow-hidden transition-all ${
         prefersReducedMotion
           ? 'duration-0' // 无动画模式
           : 'duration-500' // Spring模拟动画
@@ -277,6 +286,12 @@ export const DanmuSettingsPanel = memo(function DanmuSettingsPanel({
         WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         borderRadius: '20px',
         border: '1px solid rgba(255, 255, 255, 0.15)',
+        ...(panelPosition
+          ? {
+              left: `${panelPosition.left}px`,
+              top: `${panelPosition.top}px`,
+            }
+          : {}),
       }}
       onClick={(e) => e.stopPropagation()}
     >
