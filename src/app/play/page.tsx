@@ -472,6 +472,7 @@ function PlayPageClient() {
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
     null,
   );
+  const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
 
   // 🔧 修改点：复刻 LunaTV 跳过片头片尾配置状态，改为播放页菜单驱动的单视频配置
   const [skipConfig, setSkipConfig] = useState<{
@@ -7572,6 +7573,7 @@ function PlayPageClient() {
 
         // 监听全屏事件，进入全屏后自动隐藏控制栏 + 显示标题层 + 应用透明度
         artPlayerRef.current.on('fullscreen', (isFullscreen: boolean) => {
+          setIsPlayerFullscreen(isFullscreen);
           const titleLayer = artPlayerRef.current?.layers['fullscreen-title'];
           if (titleLayer) {
             titleLayer.style.display = isFullscreen ? 'block' : 'none';
@@ -7593,6 +7595,7 @@ function PlayPageClient() {
 
         // 监听网页全屏事件，显示/隐藏标题层
         artPlayerRef.current.on('fullscreenWeb', (isFullscreenWeb: boolean) => {
+          setIsPlayerFullscreen(isFullscreenWeb);
           const titleLayer = artPlayerRef.current?.layers['fullscreen-title'];
           if (titleLayer) {
             titleLayer.style.display = isFullscreenWeb ? 'block' : 'none';
@@ -8626,7 +8629,11 @@ function PlayPageClient() {
 
         {/* 🎨 美化的弹幕设置面板 - Portal 到 ArtPlayer $player 支持全屏 */}
         {isDanmuSettingsPanelOpen &&
-          portalContainer &&
+          (isPlayerFullscreen
+            ? portalContainer
+            : typeof document !== 'undefined'
+              ? document.body
+              : null) &&
           createPortal(
             <div
               style={{
@@ -8795,7 +8802,7 @@ function PlayPageClient() {
                 />
               </div>
             </div>,
-            portalContainer,
+            isPlayerFullscreen ? portalContainer! : document.body,
           )}
 
         {/* 手动匹配弹幕弹窗 */}
@@ -8803,7 +8810,7 @@ function PlayPageClient() {
           isOpen={isDanmuManualModalOpen}
           defaultKeyword={videoTitle}
           currentEpisode={currentEpisodeIndex + 1}
-          portalContainer={portalContainer}
+          portalContainer={isPlayerFullscreen ? portalContainer : null}
           onClose={() => setIsDanmuManualModalOpen(false)}
           onApply={async (selection) => {
             setManualDanmuOverrides((prev) => ({

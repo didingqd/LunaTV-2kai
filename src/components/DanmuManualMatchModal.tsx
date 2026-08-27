@@ -55,9 +55,13 @@ export default function DanmuManualMatchModal({
   const [results, setResults] = useState<DanmuSearchAnimeItem[]>([]);
   const [selectedAnimeId, setSelectedAnimeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [applyingEpisodeId, setApplyingEpisodeId] = useState<number | null>(null);
+  const [applyingEpisodeId, setApplyingEpisodeId] = useState<number | null>(
+    null,
+  );
   const [episodeDescending, setEpisodeDescending] = useState(false);
-  const [episodeViewMode, setEpisodeViewMode] = useState<'list' | 'grid'>('list');
+  const [episodeViewMode, setEpisodeViewMode] = useState<'list' | 'grid'>(
+    'list',
+  );
 
   const selectedAnime = useMemo(
     () => results.find((item) => item.animeId === selectedAnimeId) || null,
@@ -157,11 +161,12 @@ export default function DanmuManualMatchModal({
 
   return createPortal(
     <>
-      <div className='fixed inset-0 z-[1008] bg-black/65 backdrop-blur-sm'
+      <div
+        className='fixed inset-0 z-[2147483646] bg-black/65 backdrop-blur-sm'
         onClick={onClose}
       />
       {/* Mobile: full-screen sheet / Desktop: centered dialog */}
-      <div className='fixed inset-0 z-[1009] flex flex-col bg-gray-950/95 dark:bg-slate-950/95 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:inset-auto md:left-1/2 md:top-1/2 md:max-h-[90vh] md:w-[min(96vw,1080px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border md:border-white/20 md:pb-0 md:pt-0 md:shadow-2xl'>
+      <div className='fixed inset-0 z-[2147483647] flex h-dvh min-h-0 max-h-dvh flex-col bg-gray-950/95 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] dark:bg-slate-950/95 md:inset-auto md:left-1/2 md:top-1/2 md:h-[90vh] md:max-h-[calc(100dvh-2rem)] md:w-[min(96vw,1080px)] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border md:border-white/20 md:pb-0 md:pt-0 md:shadow-2xl'>
         {/* Header */}
         <div className='flex shrink-0 items-center justify-between border-b border-white/10 px-[max(1rem,env(safe-area-inset-left))] py-3 sm:px-5'>
           <div>
@@ -218,11 +223,11 @@ export default function DanmuManualMatchModal({
         {/* Two-panel layout: Mobile stacked scroll / Desktop side-by-side */}
         <div className='min-h-0 flex-1 overflow-y-auto md:grid md:grid-cols-2 md:overflow-hidden'>
           {/* Left: Anime list */}
-          <div className='border-b border-white/10 md:border-b-0 md:border-r md:border-white/10 md:flex md:flex-col md:min-h-0'>
+          <div className='min-h-0 border-b border-white/10 md:flex md:min-h-0 md:flex-col md:border-b-0 md:border-r md:border-white/10'>
             <div className='border-b border-white/10 px-4 py-2 text-xs text-slate-400 sm:px-5'>
               搜索结果（选择正确番剧）
             </div>
-            <div className='p-3 sm:p-4 md:flex-1 md:overflow-y-auto'>
+            <div className='min-h-0 p-3 sm:p-4 md:flex-1 md:overflow-y-auto'>
               {searching && results.length === 0 ? (
                 <div className='rounded-lg border border-white/10 bg-white/5 p-4 text-center text-sm text-slate-300'>
                   正在搜索...
@@ -247,14 +252,19 @@ export default function DanmuManualMatchModal({
                       <div className='h-14 w-10 shrink-0 overflow-hidden rounded bg-slate-800/80'>
                         {anime.imageUrl ? (
                           <img
-                            src={anime.imageUrl.replace(/^http:\/\//, 'https://')}
+                            src={anime.imageUrl.replace(
+                              /^http:\/\//,
+                              'https://',
+                            )}
                             alt={anime.animeTitle}
                             className='h-full w-full object-cover'
                             onError={(e) => {
                               const target = e.currentTarget;
                               target.style.display = 'none';
                               if (target.nextElementSibling) {
-                                (target.nextElementSibling as HTMLElement).style.display = 'flex';
+                                (
+                                  target.nextElementSibling as HTMLElement
+                                ).style.display = 'flex';
                               }
                             }}
                           />
@@ -285,7 +295,7 @@ export default function DanmuManualMatchModal({
           </div>
 
           {/* Right: Episode list */}
-          <div className='md:flex md:min-h-0 md:flex-col'>
+          <div className='min-h-0 md:flex md:min-h-0 md:flex-col'>
             <div className='flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs text-slate-400 sm:px-5'>
               <span>
                 {selectedAnime
@@ -301,8 +311,18 @@ export default function DanmuManualMatchModal({
                     className='rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-green-400'
                     title={episodeDescending ? '切换正序' : '切换倒序'}
                   >
-                    <svg className='h-4 w-4' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' />
+                    <svg
+                      className='h-4 w-4'
+                      fill='none'
+                      stroke='currentColor'
+                      viewBox='0 0 24 24'
+                    >
+                      <path
+                        strokeLinecap='round'
+                        strokeLinejoin='round'
+                        strokeWidth='2'
+                        d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4'
+                      />
                     </svg>
                   </button>
                   {/* 视图切换按钮 */}
@@ -317,8 +337,18 @@ export default function DanmuManualMatchModal({
                           : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <svg className='h-3.5 w-3.5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                        <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01' />
+                      <svg
+                        className='h-3.5 w-3.5'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth='2'
+                          d='M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'
+                        />
                       </svg>
                     </button>
                     <button
@@ -331,15 +361,25 @@ export default function DanmuManualMatchModal({
                           : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <svg className='h-3.5 w-3.5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                        <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z' />
+                      <svg
+                        className='h-3.5 w-3.5'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth='2'
+                          d='M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z'
+                        />
                       </svg>
                     </button>
                   </div>
                 </div>
               )}
             </div>
-            <div className='p-3 sm:p-4 md:flex-1 md:overflow-y-auto'>
+            <div className='min-h-0 p-3 sm:p-4 md:flex-1 md:overflow-y-auto'>
               {!selectedAnime ? (
                 <div className='rounded-lg border border-dashed border-white/15 bg-white/5 p-4 text-center text-sm text-slate-300'>
                   请先选择左侧番剧
@@ -348,9 +388,15 @@ export default function DanmuManualMatchModal({
                 <>
                   {episodeViewMode === 'list' ? (
                     <div className='space-y-2'>
-                      {(episodeDescending ? [...selectedAnime.episodes].reverse() : selectedAnime.episodes).map((ep, index) => {
-                        const originalIndex = episodeDescending ? selectedAnime.episodes.length - 1 - index : index;
-                        const currentMark = originalIndex + 1 === currentEpisode;
+                      {(episodeDescending
+                        ? [...selectedAnime.episodes].reverse()
+                        : selectedAnime.episodes
+                      ).map((ep, index) => {
+                        const originalIndex = episodeDescending
+                          ? selectedAnime.episodes.length - 1 - index
+                          : index;
+                        const currentMark =
+                          originalIndex + 1 === currentEpisode;
                         const applying = applyingEpisodeId === ep.episodeId;
                         return (
                           <button
@@ -364,7 +410,9 @@ export default function DanmuManualMatchModal({
                                   animeId: selectedAnime.animeId,
                                   animeTitle: selectedAnime.animeTitle,
                                   episodeId: ep.episodeId,
-                                  episodeTitle: ep.episodeTitle || `第${originalIndex + 1}集`,
+                                  episodeTitle:
+                                    ep.episodeTitle ||
+                                    `第${originalIndex + 1}集`,
                                 });
                               } finally {
                                 setApplyingEpisodeId(null);
@@ -397,9 +445,15 @@ export default function DanmuManualMatchModal({
                     </div>
                   ) : (
                     <div className='grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3 lg:grid-cols-4'>
-                      {(episodeDescending ? [...selectedAnime.episodes].reverse() : selectedAnime.episodes).map((ep, index) => {
-                        const originalIndex = episodeDescending ? selectedAnime.episodes.length - 1 - index : index;
-                        const currentMark = originalIndex + 1 === currentEpisode;
+                      {(episodeDescending
+                        ? [...selectedAnime.episodes].reverse()
+                        : selectedAnime.episodes
+                      ).map((ep, index) => {
+                        const originalIndex = episodeDescending
+                          ? selectedAnime.episodes.length - 1 - index
+                          : index;
+                        const currentMark =
+                          originalIndex + 1 === currentEpisode;
                         const applying = applyingEpisodeId === ep.episodeId;
                         return (
                           <button
@@ -413,7 +467,9 @@ export default function DanmuManualMatchModal({
                                   animeId: selectedAnime.animeId,
                                   animeTitle: selectedAnime.animeTitle,
                                   episodeId: ep.episodeId,
-                                  episodeTitle: ep.episodeTitle || `第${originalIndex + 1}集`,
+                                  episodeTitle:
+                                    ep.episodeTitle ||
+                                    `第${originalIndex + 1}集`,
                                 });
                               } finally {
                                 setApplyingEpisodeId(null);
@@ -424,7 +480,9 @@ export default function DanmuManualMatchModal({
                                 ? 'bg-cyan-500 text-white shadow-md'
                                 : 'bg-white/5 text-slate-100 hover:bg-white/10 border border-white/10'
                             } ${applyingEpisodeId !== null ? 'cursor-not-allowed opacity-70' : ''}`}
-                            title={ep.episodeTitle || `第${originalIndex + 1}集`}
+                            title={
+                              ep.episodeTitle || `第${originalIndex + 1}集`
+                            }
                           >
                             <div className='truncate'>
                               {applying ? (
