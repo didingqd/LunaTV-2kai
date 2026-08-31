@@ -41,7 +41,17 @@ import type { PlayRecord } from '@/lib/types';
 import { getUserMenuIndicatorColor } from '@/lib/user-menu-indicator';
 import { CURRENT_VERSION } from '@/lib/version';
 import { UpdateStatus } from '@/lib/version_check';
+// 🚀 修改点：追更列表排序（与 APP 同款 5 种排序），作用于「我的追更」Tab
+import {
+  sortWatchingFollows,
+  watchingFollowsSortLabel,
+} from '@/lib/watching-follows-sort';
 import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
+// 🚀 修改点：追更提醒排序（与 APP 同款 4 种排序），作用于「更新提醒」Tab 新集更新区
+import {
+  sortWatchingUpdates,
+  watchingUpdatesSortLabel,
+} from '@/lib/watching-updates-sort';
 // 🚀 修改点：继续观看排序（与 APP 同款），弹窗与主页共享同一偏好
 import { useContinueWatchingSortSelection } from '@/hooks/useContinueWatchingSortSelection';
 import { useSourcesQuery } from '@/hooks/useSourcesQuery';
@@ -58,10 +68,14 @@ import {
   getWatchingFollowBaselineMenuState,
   useWatchingFollows,
 } from '@/hooks/useWatchingFollows';
+// 🚀 修改点：追更列表排序（与 APP 同款），作用于「我的追更」Tab
+import { useWatchingFollowsSortSelection } from '@/hooks/useWatchingFollowsSortSelection';
 import {
   useRefreshWatchingUpdates,
   useWatchingUpdatesQuery,
 } from '@/hooks/useWatchingUpdates';
+// 🚀 修改点：追更提醒排序（与 APP 同款），作用于「更新提醒」Tab 新集更新区
+import { useWatchingUpdatesSortSelection } from '@/hooks/useWatchingUpdatesSortSelection';
 
 import { useDownload } from '@/contexts/DownloadContext';
 
@@ -90,7 +104,11 @@ import {
   WATCHING_UPDATE_SECTION_HEADER_CLASS,
   WATCHING_UPDATE_SECTION_TITLE_CLASS,
 } from './watching-update-card-ui';
+// 🚀 修改点：追更列表排序面板（与 APP 同款）
+import WatchingFollowsSortPanel from './WatchingFollowsSortPanel';
 import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
+// 🚀 修改点：追更提醒排序面板（与 APP 同款）
+import WatchingUpdatesSortPanel from './WatchingUpdatesSortPanel';
 
 interface AuthInfo {
   username?: string;
@@ -284,6 +302,25 @@ export const UserMenu: React.FC = () => {
     [playRecords, continueWatchingSortSelection, watchingUpdates],
   );
 
+  // 🚀 修改点：追更提醒排序（与 APP 同款）
+  // 「更新提醒」Tab 的「新集更新」区按排序偏好排列（新上映区保持原有顺序，不参与排序）。
+  const [isWatchingUpdatesSortOpen, setIsWatchingUpdatesSortOpen] =
+    useState(false);
+  const {
+    selection: watchingUpdatesSortSelection,
+    selectType: selectWatchingUpdatesSortType,
+  } = useWatchingUpdatesSortSelection();
+  const sortedNewEpisodeSeries = useMemo(
+    () =>
+      sortWatchingUpdates(
+        (watchingUpdates?.updatedSeries ?? []).filter(
+          (series) => series.hasNewEpisode,
+        ),
+        watchingUpdatesSortSelection,
+      ),
+    [watchingUpdates, watchingUpdatesSortSelection],
+  );
+
   // 🚀 TanStack Query - 收藏列表
   const { data: favorites = [] } = useFavoritesQuery({
     enabled: dataQueryEnabled,
@@ -306,6 +343,24 @@ export const UserMenu: React.FC = () => {
   });
   const watchingFollowSourceNames = new Map(
     sources.map((source) => [source.key, source.name || source.key]),
+  );
+
+  // 🚀 修改点：追更列表排序（与 APP 同款）
+  // 「我的追更」Tab 按排序偏好排列；更新集数/更新时间取自追更检测结果。
+  const [isWatchingFollowsSortOpen, setIsWatchingFollowsSortOpen] =
+    useState(false);
+  const {
+    selection: watchingFollowsSortSelection,
+    selectType: selectWatchingFollowsSortType,
+  } = useWatchingFollowsSortSelection();
+  const sortedWatchingFollows = useMemo(
+    () =>
+      sortWatchingFollows(
+        watchingFollows,
+        watchingFollowsSortSelection,
+        watchingUpdates?.updatedSeries,
+      ),
+    [watchingFollows, watchingFollowsSortSelection, watchingUpdates],
   );
 
   // 🚀 TanStack Query - 修改密码
@@ -1327,84 +1382,91 @@ export const UserMenu: React.FC = () => {
                         <h4 className={WATCHING_UPDATE_SECTION_TITLE_CLASS}>
                           新集更新
                         </h4>
-                        <div className='flex items-center gap-1'>
-                          <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
-                          <span
-                            className={`${WATCHING_UPDATE_SECTION_COUNT_CLASS} text-red-500`}
+                        <div className='flex items-center gap-2'>
+                          <div className='flex items-center gap-1'>
+                            <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
+                            <span
+                              className={`${WATCHING_UPDATE_SECTION_COUNT_CLASS} text-red-500`}
+                            >
+                              {sortedNewEpisodeSeries.length}
+                              部剧集有更新
+                            </span>
+                          </div>
+                          {/* 🚀 修改点：追更提醒排序按钮（与 APP 同款 4 种排序） */}
+                          <button
+                            type='button'
+                            onClick={() => setIsWatchingUpdatesSortOpen(true)}
+                            className='inline-flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-blue-600 dark:hover:text-blue-400'
+                            aria-label='更新提醒排序'
                           >
-                            {
-                              watchingUpdates.updatedSeries.filter(
-                                (series) => series.hasNewEpisode,
-                              ).length
-                            }
-                            部剧集有更新
-                          </span>
+                            <ArrowUpDown className='h-3.5 w-3.5' />
+                            {watchingUpdatesSortLabel(
+                              watchingUpdatesSortSelection.type,
+                            )}
+                          </button>
                         </div>
                       </div>
 
                       <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
-                        {watchingUpdates.updatedSeries
-                          .filter((series) => series.hasNewEpisode)
-                          .map((series, index) => {
-                            const latestEpisodes =
-                              series.latestEpisodes || series.totalEpisodes;
-                            const followBaselineMenuState =
-                              getWatchingFollowBaselineMenuState(
-                                follows,
-                                series.sourceKey,
-                                series.videoId,
-                                latestEpisodes,
-                              );
-
-                            return (
-                              <div
-                                key={`new-${series.title}_${series.year}_${index}`}
-                                className={WATCHING_UPDATE_CARD_SHELL_CLASS}
-                              >
-                                <div
-                                  className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
-                                >
-                                  <VideoCard
-                                    title={series.title}
-                                    poster={series.cover}
-                                    year={series.year}
-                                    source={series.sourceKey}
-                                    source_name={series.source_name}
-                                    episodes={latestEpisodes}
-                                    currentEpisode={series.currentEpisode}
-                                    id={series.videoId}
-                                    onDelete={undefined}
-                                    type={series.totalEpisodes > 1 ? 'tv' : ''}
-                                    from='playrecord'
-                                    followLoading={isFollowPending(
-                                      series.sourceKey,
-                                      series.videoId,
-                                    )}
-                                    markWatchedToLatestAction={
-                                      followBaselineMenuState
-                                        ? {
-                                            title:
-                                              followBaselineMenuState.title,
-                                            isAlreadyAtLatest:
-                                              followBaselineMenuState.isAlreadyAtLatest,
-                                            onClick: () =>
-                                              handleMarkWatchingFollowWatchedToLatest(
-                                                series.sourceKey,
-                                                series.videoId,
-                                                latestEpisodes,
-                                              ),
-                                          }
-                                        : undefined
-                                    }
-                                  />
-                                </div>
-                                {/* 新集数徽章 - Netflix 统一风格 */}
-                                <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
-                                  +{series.newEpisodes}
-                                </div>
-                              </div>
+                        {sortedNewEpisodeSeries.map((series, index) => {
+                          const latestEpisodes =
+                            series.latestEpisodes || series.totalEpisodes;
+                          const followBaselineMenuState =
+                            getWatchingFollowBaselineMenuState(
+                              follows,
+                              series.sourceKey,
+                              series.videoId,
+                              latestEpisodes,
                             );
-                          })}
+
+                          return (
+                            <div
+                              key={`new-${series.title}_${series.year}_${index}`}
+                              className={WATCHING_UPDATE_CARD_SHELL_CLASS}
+                            >
+                              <div
+                                className={WATCHING_UPDATE_CARD_CONTENT_CLASS}
+                              >
+                                <VideoCard
+                                  title={series.title}
+                                  poster={series.cover}
+                                  year={series.year}
+                                  source={series.sourceKey}
+                                  source_name={series.source_name}
+                                  episodes={latestEpisodes}
+                                  currentEpisode={series.currentEpisode}
+                                  id={series.videoId}
+                                  onDelete={undefined}
+                                  type={series.totalEpisodes > 1 ? 'tv' : ''}
+                                  from='playrecord'
+                                  followLoading={isFollowPending(
+                                    series.sourceKey,
+                                    series.videoId,
+                                  )}
+                                  markWatchedToLatestAction={
+                                    followBaselineMenuState
+                                      ? {
+                                          title: followBaselineMenuState.title,
+                                          isAlreadyAtLatest:
+                                            followBaselineMenuState.isAlreadyAtLatest,
+                                          onClick: () =>
+                                            handleMarkWatchingFollowWatchedToLatest(
+                                              series.sourceKey,
+                                              series.videoId,
+                                              latestEpisodes,
+                                            ),
+                                        }
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                              {/* 新集数徽章 - Netflix 统一风格 */}
+                              <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                                +{series.newEpisodes}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1433,10 +1495,24 @@ export const UserMenu: React.FC = () => {
                     共 {watchingFollows.length} 项
                   </span>
                 )}
+                {/* 🚀 修改点：追更列表排序按钮（与 APP 同款 5 种排序） */}
+                {watchingFollows.length > 0 && (
+                  <button
+                    type='button'
+                    onClick={() => setIsWatchingFollowsSortOpen(true)}
+                    className='inline-flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-blue-600 dark:hover:text-blue-400'
+                    aria-label='追更列表排序'
+                  >
+                    <ArrowUpDown className='h-3.5 w-3.5' />
+                    {watchingFollowsSortLabel(
+                      watchingFollowsSortSelection.type,
+                    )}
+                  </button>
+                )}
               </div>
 
               <div className={WATCHING_UPDATE_CARD_GRID_CLASS}>
-                {watchingFollows.map((follow) => {
+                {sortedWatchingFollows.map((follow) => {
                   const update = watchingUpdates?.updatedSeries.find((series) =>
                     compareContentIdentity(series, follow),
                   );
@@ -1985,6 +2061,22 @@ export const UserMenu: React.FC = () => {
         selection={continueWatchingSortSelection}
         onSelect={selectContinueWatchingSortType}
         onClose={() => setIsContinueWatchingSortOpen(false)}
+      />
+
+      {/* 🚀 修改点：追更提醒排序面板（与 APP 同款，作用于「更新提醒」Tab 新集更新区） */}
+      <WatchingUpdatesSortPanel
+        isOpen={isWatchingUpdatesSortOpen}
+        selection={watchingUpdatesSortSelection}
+        onSelect={selectWatchingUpdatesSortType}
+        onClose={() => setIsWatchingUpdatesSortOpen(false)}
+      />
+
+      {/* 🚀 修改点：追更列表排序面板（与 APP 同款，作用于「我的追更」Tab） */}
+      <WatchingFollowsSortPanel
+        isOpen={isWatchingFollowsSortOpen}
+        selection={watchingFollowsSortSelection}
+        onSelect={selectWatchingFollowsSortType}
+        onClose={() => setIsWatchingFollowsSortOpen(false)}
       />
 
       {/* 使用 Portal 将我的收藏面板渲染到 document.body */}
