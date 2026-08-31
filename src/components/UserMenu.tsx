@@ -1737,6 +1737,17 @@ export const UserMenu: React.FC = () => {
             {favorites.map((favorite) => {
               const { source, id } = parseKey(favorite.key);
 
+              // 修改点：追更新集数 +N 徽章（与主页继续观看/收藏夹一致的口径）
+              const newEpisodesCount = (() => {
+                if (!watchingUpdates?.updatedSeries) return 0;
+                const matchedSeries = watchingUpdates.updatedSeries.find(
+                  (series) =>
+                    series.hasNewEpisode &&
+                    compareContentIdentity(series, { source, id }),
+                );
+                return matchedSeries ? matchedSeries.newEpisodes || 0 : 0;
+              })();
+
               // 智能计算即将上映状态
               let calculatedRemarks = favorite.remarks;
               let isNewRelease = false;
@@ -1767,26 +1778,34 @@ export const UserMenu: React.FC = () => {
               }
 
               return (
-                <div key={favorite.key} className='relative'>
-                  <VideoCard
-                    id={id}
-                    title={favorite.title}
-                    poster={favorite.cover}
-                    year={favorite.year}
-                    source={source}
-                    source_name={favorite.source_name}
-                    episodes={favorite.total_episodes}
-                    query={favorite.search_title}
-                    from='favorite'
-                    type={favorite.total_episodes > 1 ? 'tv' : ''}
-                    remarks={calculatedRemarks}
-                    releaseDate={favorite.releaseDate}
-                  />
+                <div key={favorite.key} className='relative group/card'>
+                  <div className='relative group-hover/card:z-5 transition-all duration-300'>
+                    <VideoCard
+                      id={id}
+                      title={favorite.title}
+                      poster={favorite.cover}
+                      year={favorite.year}
+                      source={source}
+                      source_name={favorite.source_name}
+                      episodes={favorite.total_episodes}
+                      query={favorite.search_title}
+                      from='favorite'
+                      type={favorite.total_episodes > 1 ? 'tv' : ''}
+                      remarks={calculatedRemarks}
+                      releaseDate={favorite.releaseDate}
+                    />
+                  </div>
                   {/* 收藏心形图标 - 隐藏，使用VideoCard内部的hover爱心 */}
                   {/* 新上映高亮标记 - Netflix 统一风格 - 7天内上映的显示 */}
                   {isNewRelease && (
                     <div className='absolute top-2 left-2 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-md shadow-lg animate-pulse z-40'>
                       新上映
+                    </div>
+                  )}
+                  {/* 新集数徽章 - Netflix 统一风格（修改点：追更 +N 标识，与继续观看一致） */}
+                  {newEpisodesCount > 0 && (
+                    <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                      +{newEpisodesCount}
                     </div>
                   )}
                 </div>

@@ -178,7 +178,9 @@ export function continueWatchingSortSelectionFromStorageValue(
 // 排序实现（还原 APP ContinueWatchingSortUseCase.sort）
 // ============================================================================
 
-interface UpdateSortInfo {
+// 修改点：导出 UpdateSortInfo 与 buildUpdateInfoMap，供收藏排序
+//（favorites-sort.ts）复用同一份「有新集数」判断与 identityKey 匹配逻辑。
+export interface UpdateSortInfo {
   detectedAt?: number;
   newEpisodes: number;
 }
@@ -188,7 +190,6 @@ interface IndexedRecord {
   /** 基线顺序（save_time 降序）中的下标，用于稳定兜底 */
   baselineIndex: number;
 }
-
 /**
  * 对继续观看记录排序。
  *
@@ -294,7 +295,11 @@ const zhCollator =
     ? new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' })
     : null;
 
-function compareSortValues(left: number | string, right: number | string) {
+// 修改点：导出字符串/数值比较器，收藏排序（favorites-sort.ts）复用同一中文排序口径
+export function compareSortValues(
+  left: number | string,
+  right: number | string,
+) {
   if (typeof left === 'number' && typeof right === 'number') {
     return left - right;
   }
@@ -305,7 +310,7 @@ function compareSortValues(left: number | string, right: number | string) {
 }
 
 /** 追更检测结果按 identityKey 建索引，只保留「有新集数」的项 */
-function buildUpdateInfoMap(
+export function buildUpdateInfoMap(
   updatedSeries?: readonly WatchingUpdateItem[] | null,
 ): Map<string, UpdateSortInfo> {
   const map = new Map<string, UpdateSortInfo>();

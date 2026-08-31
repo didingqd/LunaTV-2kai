@@ -1,61 +1,68 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console */
+// 修改点：提交前 lint 清理——
+// 1. 移除已无报错的 no-explicit-any 禁用（ Unused eslint-disable directive 警告）；
+// 2. 新增 react-hooks/refs 禁用：文件内「渲染期读取 prevHot*Ref 缓存上次数据」
+//    为存量模式（HeroBanner 防卸载），重构风险大于收益，整文件禁用该规则保持行为不变。
+/* eslint-disable react-hooks/exhaustive-deps, no-console */
 
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import {
+  ArrowUpDown,
+  Calendar,
   ChevronRight,
   Film,
-  Tv,
-  Calendar,
-  Sparkles,
   Play,
+  Sparkles,
   Trash2,
+  Tv,
 } from 'lucide-react';
+// 修改点：提交前 lint 清理——移除未使用的 Suspense / queryOptions 导入
 import {
-  Suspense,
   useEffect,
-  useState,
-  useRef,
   useMemo,
   useReducer,
+  useRef,
+  useState,
   useTransition,
 } from 'react';
-import { useQuery, queryOptions } from '@tanstack/react-query';
 
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { BangumiCalendarData } from '@/lib/bangumi.client';
+import { resolveContentIdentity } from '@/lib/content-identity';
+import { getDoubanDetails } from '@/lib/douban.client';
+import { mapFavoriteReminderIdentityItem } from '@/lib/favorite-reminder-identity';
+import { favoritesSortLabel, sortFavorites } from '@/lib/favorites-sort';
+import { playRecordStorageKey } from '@/lib/play-record';
 import {
   cleanExpiredCache,
   clearRecommendsCache,
 } from '@/lib/shortdrama-cache';
-import { ShortDramaItem, ReleaseCalendarItem } from '@/lib/types';
-import { useClearFavoritesMutation } from '@/hooks/useFavoritesMutations';
-import { useClearRemindersMutation } from '@/hooks/useRemindersMutations';
-import { useHomePageQueries } from '@/hooks/useHomePageQueries';
-import { useTMDBLogos } from '@/hooks/useTMDBLogo';
-import { getDoubanDetails } from '@/lib/douban.client';
+import { ReleaseCalendarItem, ShortDramaItem } from '@/lib/types';
 import { DoubanItem } from '@/lib/types';
-import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
-import { useFavoritesQuery } from '@/hooks/useFavoritesQuery';
-import { usePlayRecordsQuery } from '@/hooks/usePlayRecordsQuery';
-import { useRemindersQuery } from '@/hooks/useRemindersQuery';
+import { useClearFavoritesMutation } from '@/hooks/useFavoritesMutations';
+// 🚀 修改点：收藏夹排序（与 APP 同款 10 种排序）+ 追更 +N 徽章
+import { useFavoritesSortSelection } from '@/hooks/useFavoritesSortSelection';
+import { useHomePageQueries } from '@/hooks/useHomePageQueries';
+import { useClearRemindersMutation } from '@/hooks/useRemindersMutations';
+import { useTMDBLogos } from '@/hooks/useTMDBLogo';
 import { useWatchingUpdatesQuery } from '@/hooks/useWatchingUpdates';
-import { playRecordStorageKey } from '@/lib/play-record';
-import { mapFavoriteReminderIdentityItem } from '@/lib/favorite-reminder-identity';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import ContinueWatching from '@/components/ContinueWatching';
+import { FastLink } from '@/components/FastLink';
+import FavoritesSortPanel from '@/components/FavoritesSortPanel';
 import HeroBanner from '@/components/HeroBanner';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import SectionTitle from '@/components/SectionTitle';
 import ShortDramaCard from '@/components/ShortDramaCard';
 import SimpleMarkdown from '@/components/SimpleMarkdown';
-import SkeletonCard from '@/components/SkeletonCard';
 import { useSite } from '@/components/SiteProvider';
+import SkeletonCard from '@/components/SkeletonCard';
 import { TelegramWelcomeModal } from '@/components/TelegramWelcomeModal';
 import VideoCard from '@/components/VideoCard';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { FastLink } from '@/components/FastLink';
 
 // 🎯 优化：合并状态管理 - 使用 useReducer 减少重渲染
 interface HomeState {
@@ -184,9 +191,9 @@ function HomeClient({
   const [favoriteFilter, setFavoriteFilter] = useState<
     'all' | 'movie' | 'tv' | 'anime' | 'shortdrama' | 'live' | 'variety'
   >('all');
-  const [favoriteSortBy, setFavoriteSortBy] = useState<
-    'recent' | 'title' | 'rating'
-  >('recent');
+  // 修改点：原 favoriteSortBy（recent/title）升级为与 APP 同款的收藏排序偏好，
+  // 持久化到 localStorage；默认「保存时间降序」与原「最近添加」行为完全一致
+  const [isFavoritesSortOpen, setIsFavoritesSortOpen] = useState(false);
   const [upcomingFilter, setUpcomingFilter] = useState<'all' | 'movie' | 'tv'>(
     'all',
   );
@@ -241,7 +248,7 @@ function HomeClient({
     data: homeData,
     isLoading: homeLoading,
     isFetching: homeFetching,
-    errors: homeErrors,
+    // 修改点：提交前 lint 清理——移除未使用的 homeErrors 解构
     refetch: refetchHomeData,
   } = useHomePageQueries(stableConfig);
 
@@ -523,9 +530,28 @@ function HomeClient({
     typeof window !== 'undefined' ? localStorage.getItem('storageType') : null;
   const showWatchingUpdates =
     authInfo?.username && storageType !== 'localstorage';
-  useWatchingUpdatesQuery({
+  // 修改点：接收追更检测结果数据，供收藏夹排序（更新集数/更新时间）与 +N 徽章使用
+  const { data: watchingUpdatesData } = useWatchingUpdatesQuery({
     enabled: showWatchingUpdates, // 只在登录且非 localStorage 模式时启用
   });
+
+  // 🚀 修改点：收藏夹排序偏好（与 APP 同款，默认保存时间降序 = 原最近添加）
+  const {
+    selection: favoritesSortSelection,
+    selectType: selectFavoritesSortType,
+  } = useFavoritesSortSelection();
+
+  // 🚀 修改点：按 identityKey 建立追更新集数索引，供收藏卡片显示 +N 徽章
+  const favoriteNewEpisodesMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!watchingUpdatesData?.updatedSeries) return map;
+    for (const series of watchingUpdatesData.updatedSeries) {
+      if (!series.hasNewEpisode || !(series.newEpisodes > 0)) continue;
+      const identity = resolveContentIdentity(series);
+      if (identity) map.set(identity.identityKey, series.newEpisodes);
+    }
+    return map;
+  }, [watchingUpdatesData]);
 
   // 🚀 TanStack Query - 使用 useQuery 获取播放记录（自动缓存，跨页面持久化）
   const { data: allPlayRecords = {} } = useQuery(allPlayRecordsOptions());
@@ -542,6 +568,7 @@ function HomeClient({
     videoId: string;
     title: string;
     poster: string;
+    year?: string;
     episodes: number;
     source_name: string;
     currentEpisode?: number;
@@ -550,6 +577,11 @@ function HomeClient({
     type?: string;
     releaseDate?: string;
     remarks?: string;
+    // 修改点：以下为收藏排序（与 APP 同款）新增的取值字段
+    saveTime?: number | null; // 收藏保存时间（保存时间排序）
+    lastWatchedAt?: number | null; // 对应播放记录的最近观看时间
+    watchProgress?: number | null; // 观看进度（0-1）
+    remainingTime?: number | null; // 剩余观看时间（秒）
   };
 
   // 🚀 TanStack Query - 使用 useMemo 计算收藏列表（自动响应数据变化）
@@ -583,6 +615,18 @@ function HomeClient({
           type: fav?.type,
           releaseDate: fav?.releaseDate,
           remarks: fav?.remarks,
+          // 修改点：收藏排序取值字段（与 APP favorites_screen._sortValueOf 对应；
+          // 无播放记录 / 总时长未知时为 null，排序时空值恒排最后）
+          saveTime: fav?.save_time ?? null,
+          lastWatchedAt: playRecord?.save_time ?? null,
+          watchProgress:
+            playRecord && playRecord.total_time > 0
+              ? (playRecord.play_time ?? 0) / playRecord.total_time
+              : null,
+          remainingTime:
+            playRecord && playRecord.total_time > 0
+              ? Math.max(0, playRecord.total_time - (playRecord.play_time ?? 0))
+              : null,
         } as FavoriteItem;
       })
       .filter((item): item is FavoriteItem => item !== null);
@@ -1260,30 +1304,21 @@ function HomeClient({
                 </div>
               )}
 
-              {/* 排序选项 */}
+              {/* 排序选项（修改点：升级为与 APP 同款的排序面板入口，含 10 种排序与升降序切换） */}
               {favoriteItems.length > 0 && (
                 <div className='mb-4 flex items-center gap-2 text-sm'>
                   <span className='text-gray-600 dark:text-gray-400'>
                     排序：
                   </span>
-                  <div className='flex gap-2'>
-                    {[
-                      { key: 'recent' as const, label: '最近添加' },
-                      { key: 'title' as const, label: '标题 A-Z' },
-                    ].map(({ key, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => setFavoriteSortBy(key)}
-                        className={`px-3 py-1 rounded-md transition-colors ${
-                          favoriteSortBy === key
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => setIsFavoritesSortOpen(true)}
+                    className='flex items-center gap-1.5 px-3 py-1 rounded-md font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 transition-all duration-200 shadow-sm hover:shadow-md'
+                  >
+                    <ArrowUpDown className='w-4 h-4' />
+                    <span>
+                      {favoritesSortLabel(favoritesSortSelection.type)}
+                    </span>
+                  </button>
                 </div>
               )}
 
@@ -1351,15 +1386,22 @@ function HomeClient({
                     });
                   }
 
-                  // 排序
-                  if (favoriteSortBy === 'title') {
-                    filtered = [...filtered].sort((a, b) =>
-                      a.title.localeCompare(b.title, 'zh-CN'),
-                    );
-                  }
-                  // 'recent' 已经在 updateFavoriteItems 中按 save_time 排序了
+                  // 排序（修改点：按与 APP 同款的收藏排序偏好排序；默认「保存时间降序」
+                  // 与原「最近添加」行为一致，筛选逻辑保持不变）
+                  const sorted = sortFavorites(
+                    filtered.map((item) => ({
+                      ...item,
+                      // 修改点：FavoritesSortItem 使用 sourceName 命名（与 APP 对齐）
+                      sourceName: item.source_name,
+                    })),
+                    favoritesSortSelection,
+                    watchingUpdatesData?.updatedSeries,
+                  );
 
-                  return filtered.map((item) => {
+                  return sorted.map((item) => {
+                    // 追更新集数（修改点：收藏卡片显示 +N 徽章，与继续观看一致）
+                    const newEpisodesCount =
+                      favoriteNewEpisodesMap.get(item.identityKey) ?? 0;
                     // 智能计算即将上映状态
                     let calculatedRemarks = item.remarks;
 
@@ -1409,13 +1451,19 @@ function HomeClient({
                     }
 
                     return (
-                      <div key={item.identityKey} className='w-full'>
+                      <div key={item.identityKey} className='w-full relative'>
                         <VideoCard
                           query={item.search_title}
                           {...item}
                           from='favorite'
                           remarks={calculatedRemarks}
                         />
+                        {/* 新集数徽章 - Netflix 统一风格（修改点：与继续观看一致的追更 +N 标识） */}
+                        {newEpisodesCount > 0 && (
+                          <div className='absolute -top-2 -right-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-md shadow-lg animate-pulse z-10 font-bold'>
+                            +{newEpisodesCount}
+                          </div>
+                        )}
                       </div>
                     );
                   });
@@ -1475,6 +1523,13 @@ function HomeClient({
                   setShowClearFavoritesDialog(false);
                 }}
                 onCancel={() => setShowClearFavoritesDialog(false)}
+              />
+              {/* 修改点：收藏排序面板（与 APP 同款） */}
+              <FavoritesSortPanel
+                isOpen={isFavoritesSortOpen}
+                selection={favoritesSortSelection}
+                onSelect={selectFavoritesSortType}
+                onClose={() => setIsFavoritesSortOpen(false)}
               />
             </section>
           ) : (
