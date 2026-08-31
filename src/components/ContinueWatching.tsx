@@ -1,31 +1,37 @@
-/* eslint-disable no-console */
 'use client';
 
-import { Clock, Trash2 } from 'lucide-react';
-import { useEffect, useState, memo } from 'react';
+import { ArrowUpDown, Clock, Trash2 } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import type { PlayRecord } from '@/lib/db.client';
 import {
   compareContentIdentity,
   resolveContentIdentity,
 } from '@/lib/content-identity';
-// 🚀 TanStack Query Mutations
-import { useClearPlayRecordsMutation } from '@/hooks/usePlayRecordsMutations';
+import {
+  continueWatchingSortLabel,
+  sortContinueWatchingRecords,
+} from '@/lib/continue-watching-sort';
+import type { PlayRecord } from '@/lib/db.client';
 // 🚀 TanStack Query Queries
 import {
   useContinueWatchingQuery,
   useWatchingUpdatesQuery,
 } from '@/hooks/useContinueWatchingQueries';
+// 🚀 修改点：继续观看排序（与 APP 同款），与用户菜单弹窗共享同一偏好
+import { useContinueWatchingSortSelection } from '@/hooks/useContinueWatchingSortSelection';
+// 🚀 TanStack Query Mutations
+import { useClearPlayRecordsMutation } from '@/hooks/usePlayRecordsMutations';
 import {
   getWatchingFollowBaselineMenuState,
   useWatchingFollows,
 } from '@/hooks/useWatchingFollows';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import ContinueWatchingSortPanel from '@/components/ContinueWatchingSortPanel';
 import ScrollableRow from '@/components/ScrollableRow';
 import SectionTitle from '@/components/SectionTitle';
 import VideoCard from '@/components/VideoCard';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface ContinueWatchingProps {
   className?: string;
@@ -33,8 +39,18 @@ interface ContinueWatchingProps {
 
 // 🚀 优化方案6：使用React.memo防止不必要的重渲染
 function ContinueWatching({ className }: ContinueWatchingProps) {
-  const [requireClearConfirmation, setRequireClearConfirmation] =
-    useState(false);
+  // 修改点：读取清空确认设置从 useEffect+setState 改为惰性初始化
+  // （该值仅在点击回调中使用，不影响渲染输出，无 hydration 风险；
+  //   原实现中 setter 除初始化外从未被调用，因此不再保留）
+  const [requireClearConfirmation] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const savedRequireClearConfirmation = localStorage.getItem(
+      'requireClearConfirmation',
+    );
+    return savedRequireClearConfirmation !== null
+      ? JSON.parse(savedRequireClearConfirmation)
+      : false;
+  });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // 🚀 TanStack Query - 播放记录
@@ -45,6 +61,22 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
   const { data: watchingUpdates = null } = useWatchingUpdatesQuery({
     enabled: !loading && playRecords.length > 0,
   });
+
+  // 🚀 修改点：继续观看排序（与 APP 同款）
+  // 与用户菜单「继续观看」弹窗共享同一排序偏好，任一处修改，主页立即重排。
+  // 默认排序（最近观看 = save_time 降序）与原有行为完全一致。
+  const [isSortPanelOpen, setIsSortPanelOpen] = useState(false);
+  const { selection: sortSelection, selectType: selectSortType } =
+    useContinueWatchingSortSelection();
+  const sortedPlayRecords = useMemo(
+    () =>
+      sortContinueWatchingRecords(
+        playRecords,
+        sortSelection,
+        watchingUpdates?.updatedSeries,
+      ),
+    [playRecords, sortSelection, watchingUpdates],
+  );
   const {
     follows,
     isFollowing,
@@ -57,18 +89,6 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 🚀 TanStack Query - 使用 useMutation 管理清空播放记录操作
   const clearPlayRecordsMutation = useClearPlayRecordsMutation();
-
-  // 读取清空确认设置
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedRequireClearConfirmation = localStorage.getItem(
-        'requireClearConfirmation',
-      );
-      if (savedRequireClearConfirmation !== null) {
-        setRequireClearConfirmation(JSON.parse(savedRequireClearConfirmation));
-      }
-    }
-  }, []);
 
   // 如果没有播放记录，则不渲染组件
   if (!loading && playRecords.length === 0) {
@@ -206,20 +226,32 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
           iconColor='text-green-500'
         />
         {!loading && playRecords.length > 0 && (
-          <button
-            className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-white hover:bg-red-600 dark:text-red-400 dark:hover:text-white dark:hover:bg-red-500 border border-red-300 dark:border-red-700 hover:border-red-600 dark:hover:border-red-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
-            onClick={() => {
-              // 根据用户设置决定是否显示确认对话框
-              if (requireClearConfirmation) {
-                setShowConfirmDialog(true);
-              } else {
-                handleClearAll();
-              }
-            }}
-          >
-            <Trash2 className='w-4 h-4' />
-            <span>清空</span>
-          </button>
+          <div className='flex items-center gap-2'>
+            {/* 修改点：排序按钮（与 APP 同款排序），与用户菜单弹窗共享排序偏好 */}
+            <button
+              className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
+              onClick={() => setIsSortPanelOpen(true)}
+            >
+              <ArrowUpDown className='w-4 h-4' />
+              <span className='hidden sm:inline'>
+                {continueWatchingSortLabel(sortSelection.type)}
+              </span>
+            </button>
+            <button
+              className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 hover:text-white hover:bg-red-600 dark:text-red-400 dark:hover:text-white dark:hover:bg-red-500 border border-red-300 dark:border-red-700 hover:border-red-600 dark:hover:border-red-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
+              onClick={() => {
+                // 根据用户设置决定是否显示确认对话框
+                if (requireClearConfirmation) {
+                  setShowConfirmDialog(true);
+                } else {
+                  handleClearAll();
+                }
+              }}
+            >
+              <Trash2 className='w-4 h-4' />
+              <span>清空</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -233,6 +265,13 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
         variant='danger'
         onConfirm={handleClearAll}
         onCancel={() => setShowConfirmDialog(false)}
+      />
+      {/* 修改点：排序设置面板（与 APP 同款） */}
+      <ContinueWatchingSortPanel
+        isOpen={isSortPanelOpen}
+        selection={sortSelection}
+        onSelect={selectSortType}
+        onClose={() => setIsSortPanelOpen(false)}
       />
       <ScrollableRow>
         {loading
@@ -249,8 +288,8 @@ function ContinueWatching({ className }: ContinueWatchingProps) {
                 <div className='mt-1 h-3 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
               </div>
             ))
-          : // 显示真实数据
-            playRecords.map((record, index) => {
+          : // 显示真实数据（修改点：按共享排序偏好排序后的记录）
+            sortedPlayRecords.map((record, index) => {
               const { source, id } = parseKey(record.key);
               const newEpisodesCount = getNewEpisodesCount(record);
               const latestTotalEpisodes = getLatestTotalEpisodes(record);

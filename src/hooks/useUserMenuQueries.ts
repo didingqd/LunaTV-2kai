@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 import {
   queryOptions,
   useMutation,
@@ -53,7 +51,7 @@ export const embyConfigQueryOptions = queryOptions({
     }
     return { sources: [] };
   },
-  staleTime: 5 * 60 * 1000,  // 5 minutes - config rarely changes
+  staleTime: 5 * 60 * 1000, // 5 minutes - config rarely changes
   gcTime: 30 * 60 * 1000,
 });
 
@@ -152,7 +150,9 @@ export function useSaveEmbyConfigMutation() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: embyConfigQueryOptions.queryKey });
+      queryClient.invalidateQueries({
+        queryKey: embyConfigQueryOptions.queryKey,
+      });
     },
   });
 }
@@ -160,16 +160,17 @@ export function useSaveEmbyConfigMutation() {
 /**
  * Query options for watch room config
  */
-const watchRoomConfigOptions = () => queryOptions({
-  queryKey: ['watchRoomConfig'],
-  queryFn: async () => {
-    const response = await fetch('/api/watch-room/config');
-    const config = await response.json();
-    return config.enabled === true;
-  },
-  staleTime: 10 * 60 * 1000, // 10 minutes - config rarely changes
-  gcTime: 30 * 60 * 1000,
-});
+const watchRoomConfigOptions = () =>
+  queryOptions({
+    queryKey: ['watchRoomConfig'],
+    queryFn: async () => {
+      const response = await fetch('/api/watch-room/config');
+      const config = await response.json();
+      return config.enabled === true;
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes - config rarely changes
+    gcTime: 30 * 60 * 1000,
+  });
 
 /**
  * Fetch watch room config
@@ -181,19 +182,20 @@ export function useWatchRoomConfigQuery() {
 /**
  * Query options for server config
  */
-const serverConfigOptions = () => queryOptions({
-  queryKey: ['serverConfig'],
-  queryFn: async () => {
-    const response = await fetch('/api/server-config');
-    if (response.ok) {
-      const config = await response.json();
-      return { downloadEnabled: config.DownloadEnabled ?? true };
-    }
-    return { downloadEnabled: true };
-  },
-  staleTime: 10 * 60 * 1000, // 10 minutes
-  gcTime: 30 * 60 * 1000,
-});
+const serverConfigOptions = () =>
+  queryOptions({
+    queryKey: ['serverConfig'],
+    queryFn: async () => {
+      const response = await fetch('/api/server-config');
+      if (response.ok) {
+        const config = await response.json();
+        return { downloadEnabled: config.DownloadEnabled ?? true };
+      }
+      return { downloadEnabled: true };
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000,
+  });
 
 /**
  * Fetch server config (download enabled, etc.)
@@ -205,13 +207,14 @@ export function useServerConfigQuery() {
 /**
  * Query options for version check
  */
-const versionCheckOptions = () => queryOptions<UpdateStatus>({
-  queryKey: ['versionCheck'],
-  queryFn: () => checkForUpdates(),
-  staleTime: 30 * 60 * 1000, // 30 minutes - no need to check frequently
-  gcTime: 60 * 60 * 1000,
-  retry: 1,
-});
+const versionCheckOptions = () =>
+  queryOptions<UpdateStatus>({
+    queryKey: ['versionCheck'],
+    queryFn: () => checkForUpdates(),
+    staleTime: 30 * 60 * 1000, // 30 minutes - no need to check frequently
+    gcTime: 60 * 60 * 1000,
+    retry: 1,
+  });
 
 /**
  * Check for version updates
@@ -234,48 +237,61 @@ interface UsePlayRecordsQueryOptions {
 const playRecordsOptions = (
   enableFilter: boolean,
   minProgress: number,
-  maxProgress: number
-) => queryOptions({
-  queryKey: ['playRecords', 'userMenu', enableFilter, minProgress, maxProgress],
-  queryFn: async () => {
-    // 使用 fetch 直接获取，因为这里需要在 queryFn 内部调用
-    const response = await fetch('/api/playrecords');
-    if (!response.ok) {
-      throw new Error(`Failed to fetch play records: ${response.status}`);
-    }
-    const records = normalizePlayRecordKeys(
-      (await response.json()) as Record<string, PlayRecord>,
-    ).records;
+  maxProgress: number,
+) =>
+  queryOptions({
+    queryKey: [
+      'playRecords',
+      'userMenu',
+      enableFilter,
+      minProgress,
+      maxProgress,
+    ],
+    queryFn: async () => {
+      // 使用 fetch 直接获取，因为这里需要在 queryFn 内部调用
+      const response = await fetch('/api/playrecords');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch play records: ${response.status}`);
+      }
+      const records = normalizePlayRecordKeys(
+        (await response.json()) as Record<string, PlayRecord>,
+      ).records;
 
-    const recordsArray = Object.entries(records).map(([key, record]) => ({
-      ...record,
-      key,
-    }));
+      const recordsArray = Object.entries(records).map(([key, record]) => ({
+        ...record,
+        key,
+      }));
 
-    // Filter records that need continue watching
-    const validPlayRecords = recordsArray.filter(record => {
-      const progress = record.total_time === 0
-        ? 0
-        : (record.play_time / record.total_time) * 100;
+      // Filter records that need continue watching
+      const validPlayRecords = recordsArray.filter((record) => {
+        const progress =
+          record.total_time === 0
+            ? 0
+            : (record.play_time / record.total_time) * 100;
 
-      // Play time must exceed 2 minutes
-      if (record.play_time < 120) return false;
+        // Play time must exceed 2 minutes
+        if (record.play_time < 120) return false;
 
-      // If filter is disabled, show all records with > 2 min playtime
-      if (!enableFilter) return true;
+        // If filter is disabled, show all records with > 2 min playtime
+        if (!enableFilter) return true;
 
-      // Filter by user's custom progress range
-      return progress >= minProgress && progress <= maxProgress;
-    });
+        // Filter by user's custom progress range
+        return progress >= minProgress && progress <= maxProgress;
+      });
 
-    // Sort by last play time descending
-    const sortedRecords = validPlayRecords.sort((a, b) => b.save_time - a.save_time);
-    return sortedRecords.slice(0, 12); // Only take the latest 12
-  },
-  staleTime: 15 * 1000,
-  gcTime: 10 * 60 * 1000,
-  refetchOnMount: 'always',
-});
+      // Sort by last play time descending
+      const sortedRecords = validPlayRecords.sort(
+        (a, b) => b.save_time - a.save_time,
+      );
+      // 修改点：不再在此处截取前 12 条 —— 继续观看排序（与 APP 同款）需要在
+      // UserMenu 组件内先按共享排序偏好重排，再截取前 12 条，否则非默认排序时
+      // 会丢失「最近 12 条」之外的记录。默认排序下组件内的截取结果与原行为一致。
+      return sortedRecords;
+    },
+    staleTime: 15 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnMount: 'always',
+  });
 
 /**
  * Fetch play records with filtering
@@ -300,25 +316,26 @@ interface UseFavoritesQueryOptions {
  * Query options for favorites list
  * 使用新的 useFavoritesQuery 作为数据源
  */
-const favoritesOptions = () => queryOptions({
-  queryKey: ['favorites', 'userMenu'],
-  queryFn: async () => {
-    const response = await fetch('/api/favorites');
-    if (response.ok) {
-      const favoritesData = await response.json() as Record<string, any>;
-      const favoritesArray = Object.entries(favoritesData)
-        .map(([key, favorite]) =>
-          mapFavoriteReminderIdentityItem(key, favorite),
-        )
-        .filter((favorite) => favorite !== null);
-      // Sort by save time descending
-      return favoritesArray.sort((a, b) => b.save_time - a.save_time);
-    }
-    return [];
-  },
-  staleTime: 2 * 60 * 1000, // 2 minutes
-  gcTime: 10 * 60 * 1000,
-});
+const favoritesOptions = () =>
+  queryOptions({
+    queryKey: ['favorites', 'userMenu'],
+    queryFn: async () => {
+      const response = await fetch('/api/favorites');
+      if (response.ok) {
+        const favoritesData = (await response.json()) as Record<string, any>;
+        const favoritesArray = Object.entries(favoritesData)
+          .map(([key, favorite]) =>
+            mapFavoriteReminderIdentityItem(key, favorite),
+          )
+          .filter((favorite) => favorite !== null);
+        // Sort by save time descending
+        return favoritesArray.sort((a, b) => b.save_time - a.save_time);
+      }
+      return [];
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000,
+  });
 
 /**
  * Fetch favorites list

@@ -1,12 +1,13 @@
-/* eslint-disable no-console,@typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
+/* eslint-disable no-console */
 
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowUpDown,
   BarChart3,
   Bell,
   Calendar,
-  Check,
   Download,
   Heart,
   KeyRound,
@@ -21,31 +22,61 @@ import {
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { watchingFollowKey } from '@/lib/api/watching-follow';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
-import { getUserMenuIndicatorColor } from '@/lib/user-menu-indicator';
-import { watchingFollowKey } from '@/lib/api/watching-follow';
 import {
   compareContentIdentity,
   resolveContentIdentity,
 } from '@/lib/content-identity';
-import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
+import {
+  continueWatchingSortLabel,
+  sortContinueWatchingRecords,
+} from '@/lib/continue-watching-sort';
+import type { PlayRecord } from '@/lib/types';
+import { getUserMenuIndicatorColor } from '@/lib/user-menu-indicator';
 import { CURRENT_VERSION } from '@/lib/version';
 import { UpdateStatus } from '@/lib/version_check';
-import type { PlayRecord, Favorite } from '@/lib/types';
+import { WATCHING_UPDATES_QUERY_ROOT } from '@/lib/watching-updates-cache';
+// 🚀 修改点：继续观看排序（与 APP 同款），弹窗与主页共享同一偏好
+import { useContinueWatchingSortSelection } from '@/hooks/useContinueWatchingSortSelection';
+import { useSourcesQuery } from '@/hooks/useSourcesQuery';
+import {
+  useChangePasswordMutation,
+  useFavoritesQuery,
+  useInvalidateUserMenuData,
+  usePlayRecordsQuery,
+  useServerConfigQuery,
+  useVersionCheckQuery,
+  useWatchRoomConfigQuery,
+} from '@/hooks/useUserMenuQueries';
+import {
+  getWatchingFollowBaselineMenuState,
+  useWatchingFollows,
+} from '@/hooks/useWatchingFollows';
+import {
+  useRefreshWatchingUpdates,
+  useWatchingUpdatesQuery,
+} from '@/hooks/useWatchingUpdates';
 
 import { useDownload } from '@/contexts/DownloadContext';
 
-import { VersionPanel } from './VersionPanel';
+// 🚀 修改点：继续观看排序（与 APP 同款），弹窗与主页共享同一偏好
+import ContinueWatchingSortPanel from './ContinueWatchingSortPanel';
+import {
+  MOBILE_DIALOG_CONTENT_CLASS,
+  MOBILE_DIALOG_FRAME_CLASS,
+  MOBILE_DIALOG_HEADER_CLASS,
+} from './mobile-dialog-layout';
 import NotificationCenterPage from './NotificationCenterPage';
 import NotificationSettingsPage from './NotificationSettingsPage';
+import { SettingsPanel } from './SettingsPanel';
+import { VersionPanel } from './VersionPanel';
 import VideoCard from './VideoCard';
-import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
 import {
   WATCHING_UPDATE_CARD_CONTENT_CLASS,
   WATCHING_UPDATE_CARD_GRID_CLASS,
@@ -59,30 +90,7 @@ import {
   WATCHING_UPDATE_SECTION_HEADER_CLASS,
   WATCHING_UPDATE_SECTION_TITLE_CLASS,
 } from './watching-update-card-ui';
-import { SettingsPanel } from './SettingsPanel';
-import {
-  MOBILE_DIALOG_CONTENT_CLASS,
-  MOBILE_DIALOG_FRAME_CLASS,
-  MOBILE_DIALOG_HEADER_CLASS,
-} from './mobile-dialog-layout';
-import {
-  useWatchRoomConfigQuery,
-  useServerConfigQuery,
-  useVersionCheckQuery,
-  usePlayRecordsQuery,
-  useFavoritesQuery,
-  useChangePasswordMutation,
-  useInvalidateUserMenuData,
-} from '@/hooks/useUserMenuQueries';
-import {
-  useWatchingUpdatesQuery,
-  useRefreshWatchingUpdates,
-} from '@/hooks/useWatchingUpdates';
-import {
-  getWatchingFollowBaselineMenuState,
-  useWatchingFollows,
-} from '@/hooks/useWatchingFollows';
-import { useSourcesQuery } from '@/hooks/useSourcesQuery';
+import WatchingUpdateSettingsPage from './WatchingUpdateSettingsPage';
 
 interface AuthInfo {
   username?: string;
@@ -110,8 +118,9 @@ export const UserMenu: React.FC = () => {
   );
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [notificationUnread, setNotificationUnread] = useState(0);
-  const [storageType, setStorageType] = useState<string>(() => {
+  const [storageType] = useState<string>(() => {
     // 🔧 优化：直接从 RUNTIME_CONFIG 读取初始值，避免默认值导致的多次渲染
+    // 修改点：移除未使用的 setStorageType（eslint unused-vars）
     if (typeof window !== 'undefined') {
       return (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
     }
@@ -179,7 +188,8 @@ export const UserMenu: React.FC = () => {
   const { tasks, setShowDownloadPanel } = useDownload();
 
   // 🚀 TanStack Query - 数据失效工具
-  const { invalidatePlayRecords } = useInvalidateUserMenuData();
+  // 修改点：移除未使用的 invalidatePlayRecords 解构（eslint unused-vars）
+  useInvalidateUserMenuData();
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
@@ -254,6 +264,25 @@ export const UserMenu: React.FC = () => {
       minProgress: continueWatchingMinProgress,
       maxProgress: continueWatchingMaxProgress,
     });
+
+  // 🚀 修改点：继续观看排序（与 APP 同款）
+  // 弹窗与主页共享同一排序偏好；这里在组件内排序后再截取前 12 条，
+  // 保证排序能决定「哪 12 条」进入弹窗（原先是在 query 内先截 12 条再无排序）。
+  const [isContinueWatchingSortOpen, setIsContinueWatchingSortOpen] =
+    useState(false);
+  const {
+    selection: continueWatchingSortSelection,
+    selectType: selectContinueWatchingSortType,
+  } = useContinueWatchingSortSelection();
+  const continueWatchingRecords = useMemo(
+    () =>
+      sortContinueWatchingRecords(
+        playRecords,
+        continueWatchingSortSelection,
+        watchingUpdates?.updatedSeries,
+      ).slice(0, 12),
+    [playRecords, continueWatchingSortSelection, watchingUpdates],
+  );
 
   // 🚀 TanStack Query - 收藏列表
   const { data: favorites = [] } = useFavoritesQuery({
@@ -426,6 +455,8 @@ export const UserMenu: React.FC = () => {
 
   const handleCloseContinueWatching = () => {
     setIsContinueWatchingOpen(false);
+    // 修改点：关闭弹窗时一并收起排序面板，避免独立 Portal 残留
+    setIsContinueWatchingSortOpen(false);
   };
 
   const handleFavorites = () => {
@@ -776,9 +807,9 @@ export const UserMenu: React.FC = () => {
             >
               <PlayCircle className='w-4 h-4 text-gray-500 dark:text-gray-400' />
               <span className='font-medium'>继续观看</span>
-              {playRecords.length > 0 && (
+              {continueWatchingRecords.length > 0 && (
                 <span className='ml-auto text-xs text-gray-400'>
-                  {playRecords.length}
+                  {continueWatchingRecords.length}
                 </span>
               )}
             </button>
@@ -1528,17 +1559,31 @@ export const UserMenu: React.FC = () => {
               <PlayCircle className='w-6 h-6 text-blue-500' />
               继续观看
             </h3>
-            <button
-              onClick={handleCloseContinueWatching}
-              className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
-            >
-              <X className='w-5 h-5' />
-            </button>
+            <div className='flex items-center gap-1'>
+              {/* 修改点：排序按钮（与 APP 同款排序），当前排序方式作为提示 */}
+              <button
+                onClick={() => setIsContinueWatchingSortOpen(true)}
+                className='flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md'
+              >
+                <ArrowUpDown className='w-4 h-4' />
+                <span className='hidden sm:inline'>
+                  {continueWatchingSortLabel(
+                    continueWatchingSortSelection.type,
+                  )}
+                </span>
+              </button>
+              <button
+                onClick={handleCloseContinueWatching}
+                className='p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
           </div>
 
-          {/* 播放记录网格 */}
+          {/* 播放记录网格（修改点：使用共享排序后的记录） */}
           <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'>
-            {playRecords.map((record) => {
+            {continueWatchingRecords.map((record) => {
               const { source, id } = parseKey(record.key);
               const followSource = resolveSourceKey(source);
               const newEpisodesCount = getNewEpisodesCount(record);
@@ -1625,7 +1670,7 @@ export const UserMenu: React.FC = () => {
           </div>
 
           {/* 空状态 */}
-          {playRecords.length === 0 && (
+          {continueWatchingRecords.length === 0 && (
             <div className='text-center py-12'>
               <PlayCircle className='w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4' />
               <p className='text-gray-500 dark:text-gray-400 mb-2'>
@@ -1914,6 +1959,14 @@ export const UserMenu: React.FC = () => {
       {isContinueWatchingOpen &&
         mounted &&
         createPortal(continueWatchingPanel, document.body)}
+
+      {/* 修改点：继续观看排序面板（与 APP 同款，弹窗内打开，主页共用同一偏好） */}
+      <ContinueWatchingSortPanel
+        isOpen={isContinueWatchingSortOpen}
+        selection={continueWatchingSortSelection}
+        onSelect={selectContinueWatchingSortType}
+        onClose={() => setIsContinueWatchingSortOpen(false)}
+      />
 
       {/* 使用 Portal 将我的收藏面板渲染到 document.body */}
       {isFavoritesOpen &&
