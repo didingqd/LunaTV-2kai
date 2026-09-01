@@ -1680,10 +1680,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                 );
               })()}
 
-            {/* 评分徽章 - 动态颜色 - 🎯 使用容器查询替代媒体查询 */}
+            {/* 自定义备注徽章 - 动态颜色 - 🎯 使用容器查询替代媒体查询 */}
+            {/* 修改点：备注徽章由右下角移至底部左侧，避免遮挡右下角的删除/收藏按钮；左下已有状态徽章（已完结/上映状态）时再上移一行避免重叠 */}
             {customRemark && (
               <div
-                className='absolute bottom-2 right-2 max-w-[70%] truncate bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md shadow-lg text-white/85 text-[10px] font-medium transition-all duration-300 ease-out group-hover:scale-105 z-30'
+                className={`absolute left-2 ${
+                  remarks &&
+                  (isSeriesCompleted(remarks) || hasReleaseTag)
+                    ? 'bottom-8'
+                    : 'bottom-2'
+                } max-w-[70%] truncate bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-md shadow-lg text-white/85 text-[10px] font-medium transition-all duration-300 ease-out group-hover:scale-105 z-30`}
                 style={
                   {
                     WebkitUserSelect: 'none',
