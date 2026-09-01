@@ -8,7 +8,6 @@ import {
   Download,
   FileCheck,
   Lock,
-  Send,
   Upload,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -155,7 +154,6 @@ const DataMigration = ({ onRefreshConfig }: DataMigrationProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [isPushingRemarks, setIsPushingRemarks] = useState(false);
   const [alertModal, setAlertModal] = useState<{
     isOpen: boolean;
     type: 'success' | 'error' | 'warning';
@@ -249,41 +247,7 @@ const DataMigration = ({ onRefreshConfig }: DataMigrationProps) => {
     }
   };
 
-  const handlePushAllRemarks = async () => {
-    const ok = window.confirm(
-      '将当前管理员账号下的所有手动备注推送给所有用户，用户已有手动备注时不会覆盖。继续吗？',
-    );
-    if (!ok) return;
-
-    try {
-      setIsPushingRemarks(true);
-      const response = await fetch('/api/admin/remarks/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(result.error || `推送失败: ${response.status}`);
-      }
-
-      showAlert({
-        type: 'success',
-        title: '推送完成',
-        message: `共推送 ${result.sourceRecords || 0} 条备注，更新 ${result.updatedUsers || 0} 个用户，写入 ${result.insertedRecords || 0} 条记录。`,
-        timer: 3000,
-      });
-    } catch (error) {
-      showAlert({
-        type: 'error',
-        title: '推送失败',
-        message: error instanceof Error ? error.message : '推送过程中发生错误',
-      });
-    } finally {
-      setIsPushingRemarks(false);
-    }
-  };
+  // 修改点：isPushingRemarks 状态与 handlePushAllRemarks 已随备注推送卡片移至后台「站点配置」标签页
 
   // 文件选择处理
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -384,32 +348,7 @@ const DataMigration = ({ onRefreshConfig }: DataMigrationProps) => {
           </p>
         </div>
 
-        <div className='border border-gray-200 dark:border-gray-700 rounded-lg p-5 bg-white dark:bg-gray-800 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
-          <div className='flex items-start gap-3'>
-            <div className='w-8 h-8 rounded-lg bg-green-50 dark:bg-green-900/20 flex items-center justify-center shrink-0'>
-              <Send className='w-4 h-4 text-green-600 dark:text-green-400' />
-            </div>
-            <div>
-              <h3 className='font-semibold text-gray-900 dark:text-gray-100'>
-                备注推送
-              </h3>
-              <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
-                将当前管理员账号的所有手动备注推送给所有用户，用户已有手动备注时不会覆盖
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handlePushAllRemarks}
-            disabled={isPushingRemarks}
-            className={`px-4 py-2.5 rounded-lg font-medium transition-colors whitespace-nowrap ${
-              isPushingRemarks
-                ? 'bg-gray-100 dark:bg-gray-700 cursor-not-allowed text-gray-500 dark:text-gray-400'
-                : 'bg-green-600 hover:bg-green-700 text-white'
-            }`}
-          >
-            {isPushingRemarks ? '推送中...' : '一键推送全部备注'}
-          </button>
-        </div>
+        {/* 修改点：备注推送卡片已移至后台「站点配置」标签页，此处不再展示 */}
 
         {/* 主要操作区域 - 响应式布局 */}
         <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
