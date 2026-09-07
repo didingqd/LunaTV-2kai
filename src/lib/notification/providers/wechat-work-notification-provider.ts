@@ -31,6 +31,8 @@ function createWeChatWorkTestMessage(
           title: '测试番剧 A',
           fromEpisode: 12,
           toEpisode: 13,
+          // 修改点：测试通知样例带上资源站名称，与真实追更推送格式保持一致
+          sourceName: '如意资源',
         },
       ],
       updated: [
@@ -39,12 +41,16 @@ function createWeChatWorkTestMessage(
           title: '测试番剧 B',
           fromEpisode: 5,
           toEpisode: 6,
+          // 修改点：测试通知样例带上资源站名称，与真实追更推送格式保持一致
+          sourceName: '电影天堂',
         },
         {
           followId: 'wechat-work-test-c',
           title: '测试番剧 C',
           fromEpisode: 18,
           toEpisode: 20,
+          // 修改点：测试通知样例带上资源站名称，与真实追更推送格式保持一致
+          sourceName: '极速资源',
         },
       ],
       checkedAt: WECHAT_WORK_TEST_CHECKED_AT,
