@@ -1,3 +1,14 @@
+## [6.6.5] - 2026-09-07
+
+### Added
+
+- 📺 追更提醒推送显示资源站：推送消息中每个剧集名称后以括号附带资源站名称（如“海贼王（如意资源）”），无来源信息时保持原格式
+
+### Changed
+
+- 📦 依赖升级（同步上游 45bd6852..4253f09a）：hls.js 升级至 1.7.2、@tanstack/react-query 升级至 5.102.6、@tanstack/react-virtual 升级至 3.14.10、@mui/material 升级至 9.4.0
+- 📄 文档更新（同步上游）：更新 Cloudflare Worker 代理加速配置指南，补充 Bangumi/TMDB 代理、播放流三级 fallback、Emby 源跳过等说明
+
 ## [6.6.4] - 2026-06-14
 
 ### Added
