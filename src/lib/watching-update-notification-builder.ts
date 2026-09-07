@@ -1,6 +1,6 @@
 import {
-  notificationBuilderRegistry,
   type NotificationBuilder,
+  notificationBuilderRegistry,
 } from './notification/notification-builder';
 import { notificationEventRegistry } from './notification/notification-event-registry';
 import type {
@@ -225,12 +225,19 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
 
   private appendEpisodeChanges(
     sections: string[],
-    items: Array<{ title: string; fromEpisode: number; toEpisode: number }>,
+    items: Array<{
+      title: string;
+      fromEpisode: number;
+      toEpisode: number;
+      sourceName?: string;
+    }>,
   ): void {
     items.forEach((item, index) => {
       if (index > 0) sections.push('');
+      // 修改点：剧名后用括号追加资源站名称（如“海贼王（如意资源）”），无来源信息时保持原格式
+      const titleSuffix = item.sourceName ? `（${item.sourceName}）` : '';
       sections.push(
-        item.title,
+        `${item.title}${titleSuffix}`,
         `${item.fromEpisode} → ${item.toEpisode} 集（+${episodeDelta(item)}）`,
       );
     });
@@ -239,7 +246,12 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
   private appendUpdateSection(
     sections: string[],
     kind: WatchingUpdateSectionKind,
-    items: Array<{ title: string; fromEpisode: number; toEpisode: number }>,
+    items: Array<{
+      title: string;
+      fromEpisode: number;
+      toEpisode: number;
+      sourceName?: string;
+    }>,
   ): void {
     if (items.length === 0) return;
     sections.push(

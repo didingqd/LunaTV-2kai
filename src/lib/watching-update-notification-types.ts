@@ -21,6 +21,8 @@ export interface WatchingUpdateNotificationCandidate {
   fromEpisode: number;
   toEpisode: number;
   hasUpdate: boolean;
+  // 修改点：新增可选 sourceName，用于在推送消息中展示资源站名称（如“如意资源”）
+  sourceName?: string;
 }
 
 export interface WatchingUpdateChange {
@@ -28,6 +30,8 @@ export interface WatchingUpdateChange {
   title: string;
   fromEpisode: number;
   toEpisode: number;
+  // 修改点：新增可选 sourceName，用于在推送消息中展示资源站名称（如“如意资源”）
+  sourceName?: string;
 }
 
 export interface UpdateDiffAnalysis {

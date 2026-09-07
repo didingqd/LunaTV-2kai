@@ -179,4 +179,64 @@ describe('WatchingUpdateNotificationBuilder', () => {
       ),
     ).toBeNull();
   });
+
+  // 修改点：新增用例 —— 验证推送消息中剧名后会用括号追加资源站名称
+  it('appends the source name after the title in parentheses', () => {
+    expect(
+      builder.build(
+        {
+          newUpdates: [
+            {
+              followId: 'one-piece',
+              title: '海贼王',
+              fromEpisode: 12,
+              toEpisode: 14,
+              sourceName: '如意资源',
+            },
+          ],
+          updated: [
+            {
+              followId: 'bleach',
+              title: '死神',
+              fromEpisode: 5,
+              toEpisode: 8,
+              sourceName: '电影天堂',
+            },
+          ],
+        },
+        checkedAt,
+        'Asia/Shanghai',
+      ),
+    ).toEqual({
+      title: '更新提醒',
+      content:
+        '更新提醒\n\n🆕 新更新（1）\n\n海贼王（如意资源）\n12 → 14 集（+2）\n\n✅ 已更新（1）\n\n死神（电影天堂）\n5 → 8 集（+3）',
+      displayTime: '2026-08-01 18:30:00',
+    });
+  });
+
+  // 修改点：新增用例 —— 验证无来源信息时保持原有消息格式
+  it('keeps the original format when source name is missing', () => {
+    expect(
+      builder.build(
+        {
+          newUpdates: [
+            {
+              followId: 'one-piece',
+              title: '海贼王',
+              fromEpisode: 12,
+              toEpisode: 14,
+            },
+          ],
+          updated: [],
+        },
+        checkedAt,
+        'Asia/Shanghai',
+      ),
+    ).toEqual({
+      title: '更新提醒',
+      content: '更新提醒\n\n🆕 新更新（1）\n\n海贼王\n12 → 14 集（+2）',
+      displayTime: '2026-08-01 18:30:00',
+    });
+  });
 });

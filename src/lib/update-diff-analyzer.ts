@@ -1,7 +1,7 @@
 import type {
-  UpdateDiffAnalysis,
   NotificationHistory,
   NotificationSnapshot,
+  UpdateDiffAnalysis,
   WatchingUpdateChange,
   WatchingUpdateNotificationCandidate,
   WatchingUpdateNotificationState,
@@ -113,12 +113,18 @@ function candidateMap(
     const fromEpisode = normalizeBaselineEpisode(candidate.fromEpisode);
     const toEpisode = normalizeEpisode(candidate.toEpisode);
     if (!followId || !title || toEpisode <= 0) continue;
+    // 修改点：归一化时保留资源站名称（空字符串归为 undefined），避免推送消息丢失来源信息
+    const sourceName =
+      typeof candidate.sourceName === 'string' && candidate.sourceName.trim()
+        ? candidate.sourceName.trim()
+        : undefined;
     const normalized = {
       followId,
       title,
       fromEpisode,
       toEpisode,
       hasUpdate: candidate.hasUpdate === true,
+      sourceName,
     };
     const existing = values.get(followId);
     if (!existing || normalized.toEpisode >= existing.toEpisode) {
@@ -186,6 +192,8 @@ export class UpdateDiffAnalyzer {
         title: candidate.title,
         fromEpisode: candidate.fromEpisode,
         toEpisode: candidate.toEpisode,
+        // 修改点：新更新条目携带资源站名称，供推送消息展示
+        sourceName: candidate.sourceName,
       };
       newUpdates.push(change);
       if (candidate.hasUpdate) {
@@ -229,6 +237,8 @@ export class UpdateDiffAnalyzer {
                 title: candidate.title,
                 fromEpisode: candidate.fromEpisode,
                 toEpisode: candidate.toEpisode,
+                // 修改点：已更新条目同样携带资源站名称，供推送消息展示
+                sourceName: candidate.sourceName,
               },
             ]
           : [],

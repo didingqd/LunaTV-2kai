@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+// 修改点：按项目惯例禁用 no-console（文件内原有的更新检查错误日志需要保留）
 import { getConfig } from './config';
 import { db } from './db';
 import { notificationDispatcher } from './notification/notification-dispatcher';
@@ -142,6 +144,8 @@ export function toNotificationCandidate(result: UpdateResult) {
           fromEpisode,
           toEpisode,
           hasUpdate: result.hasUpdate,
+          // 修改点：透传资源站名称（优先显示名 sourceName，缺失时回退资源站标识 source）
+          sourceName: result.metadata?.sourceName || result.source,
         },
       ]
     : [];
