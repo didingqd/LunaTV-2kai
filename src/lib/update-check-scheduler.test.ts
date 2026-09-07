@@ -11,8 +11,8 @@ import type {
 } from './notification/notification-types';
 import { UpdateCheckJobRunner } from './scheduler/update-check-job-runner';
 import {
-  CachedWatchingUpdateNotificationStateRepository,
   CachedUpdateCheckTaskRepository,
+  CachedWatchingUpdateNotificationStateRepository,
   type UpdateCheckScheduleTaskRepository,
   type UpdateCheckTaskRepository,
   type WatchingUpdateNotificationStateRepository,
@@ -597,6 +597,8 @@ describe('UpdateCheckScheduler', () => {
             title: 'Demo Show',
             fromEpisode: 12,
             toEpisode: 14,
+            // 修改点：断言包含追更推送新增的资源站名称字段
+            sourceName: 'Source A',
           },
         ],
         updated: [],
@@ -789,6 +791,8 @@ describe('UpdateCheckScheduler', () => {
             title: 'Demo Show',
             fromEpisode: 10,
             toEpisode: 12,
+            // 修改点：断言包含追更推送新增的资源站名称字段
+            sourceName: 'Source A',
           },
         ],
         checkedAt: runAt,
