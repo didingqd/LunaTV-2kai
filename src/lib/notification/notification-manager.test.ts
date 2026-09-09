@@ -1,12 +1,19 @@
 ﻿/** @jest-environment node */
 
-import { NotificationManager } from './notification-manager';
-import { NotificationProviderRegistry } from './notification-provider-registry';
-import type { NotificationProvider } from './notification-provider';
 import type { NotificationSendLogEntry } from './notification-log-types';
-import type { UserNotificationChannelConfig } from './notification-settings-repository';
+import { NotificationManager } from './notification-manager';
+import type { NotificationProvider } from './notification-provider';
+import { NotificationProviderRegistry } from './notification-provider-registry';
 import { clearNotificationDedupeStateForTests } from './notification-send-control';
-import type { NotificationPayload } from './notification-types';
+import type { UserNotificationChannelConfig } from './notification-settings-repository';
+import {
+  NOTIFICATION_TEMPLATE_CONFIG_KEY,
+  notificationTemplateVariableRegistry,
+} from './notification-template';
+import type {
+  NotificationMessage,
+  NotificationPayload,
+} from './notification-types';
 
 const FOUND_EVENT = 'test.event';
 const FAILED_EVENT = 'test.failed';
@@ -41,6 +48,10 @@ function payload(
 describe('NotificationManager', () => {
   beforeEach(() => {
     clearNotificationDedupeStateForTests();
+  });
+
+  afterEach(() => {
+    notificationTemplateVariableRegistry.clearForTests();
   });
 
   it('sends events through the provider selected by registry type', async () => {
@@ -417,6 +428,51 @@ describe('NotificationManager', () => {
     await manager.notify({ ...debugEvent, id: 'event-2' });
 
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  // 修改点：新增用例 —— 渠道配置了内容模板时，provider 收到按模板重渲染的消息
+  it('renders the channel content template before sending', async () => {
+    const send = jest.fn(async () => undefined);
+    const registry = new NotificationProviderRegistry();
+    registry.register(createProvider('fake', send));
+    const templateChannel = channel({
+      config: { [NOTIFICATION_TEMPLATE_CONFIG_KEY]: '【{{title}}】' },
+    });
+    const plainChannel = channel({
+      id: 'channel-2',
+      config: {},
+    });
+    const manager = new NotificationManager(
+      {
+        getSubscribedChannelConfigs: jest.fn(async () => [
+          templateChannel,
+          plainChannel,
+        ]),
+      },
+      registry,
+      () => 'generated-event-id',
+    );
+
+    notificationTemplateVariableRegistry.register(FOUND_EVENT, {
+      variables: [{ name: 'title', description: '标题', sample: '示例' }],
+      defaultTemplate: '{{title}}',
+      resolve: (message: NotificationMessage) => ({ title: message.title }),
+    });
+
+    await manager.notify(payload());
+
+    // 模板渠道收到重渲染后的内容；未配置模板的渠道收到原始消息
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ content: '【Title】', body: '【Title】' }),
+      templateChannel,
+    );
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ content: '' }),
+      plainChannel,
+    );
   });
 });
 

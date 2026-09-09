@@ -5,15 +5,19 @@ import { randomUUID } from 'crypto';
 import { notificationProviderRegistry } from './notification-provider-bootstrap';
 import type { NotificationProviderRegistry } from './notification-provider-registry';
 import {
-  NotificationChannelType,
   getDefaultSubscribedEvents,
-  notificationSettingsRepository,
   type NormalizedUserNotificationSettings,
-  type NotificationSubscription,
+  NotificationChannelType,
+  notificationSettingsRepository,
   type NotificationSettingsRepositoryContract,
+  type NotificationSubscription,
   type UserNotificationChannelConfig,
   type UserNotificationSettings,
 } from './notification-settings-repository';
+import {
+  getValidatedNotificationTemplate,
+  NOTIFICATION_TEMPLATE_CONFIG_KEY,
+} from './notification-template';
 import type {
   NotificationMessage,
   NotificationPayload,
@@ -199,12 +203,21 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
       throw new Error('INVALID_NOTIFICATION_CHANNEL_CONFIG');
     }
 
+    // 修改点：config 合并时单独处理通知内容模板 key —— 显式传空串表示清除模板
+    // （恢复默认）。普通 spread 合并无法用空值覆盖旧值，需先删除再合并。
+    const mergedConfig = { ...existing.config, ...patch.config };
+    if (
+      patch.config &&
+      NOTIFICATION_TEMPLATE_CONFIG_KEY in patch.config &&
+      !getValidatedNotificationTemplate(patch.config)
+    ) {
+      delete mergedConfig[NOTIFICATION_TEMPLATE_CONFIG_KEY];
+    }
+
     const next = this.normalizeChannelInput({
       ...existing,
       ...patch,
-      config: patch.config
-        ? { ...existing.config, ...patch.config }
-        : existing.config,
+      config: patch.config ? mergedConfig : existing.config,
       subscribedEvents: patch.subscribedEvents ?? existing.subscribedEvents,
     });
 
@@ -252,9 +265,12 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
       channels: settings.channels.map((channel) => ({
         ...channel,
         subscribedEvents: [...channel.subscribedEvents],
-        config: this.registry
-          .get(channel.type)
-          ?.maskConfig?.(channel.config) ?? { ...channel.config },
+        config: this.mergeContentTemplate(
+          this.registry.get(channel.type)?.maskConfig?.(channel.config) ?? {
+            ...channel.config,
+          },
+          channel.config,
+        ),
       })),
     };
   }
@@ -271,15 +287,33 @@ export class NotificationSettingsService implements NotificationManagerSettingsS
     const provider = this.registry.get(input.type);
     if (!provider) throw new Error('UNSUPPORTED_NOTIFICATION_CHANNEL_TYPE');
     const config = provider.validateConfig(input.config ?? {});
-
+    // 修改点：provider.validateConfig 只保留自身 schema 字段，会丢弃通知内容模板；
+    // 在此显式合并回来（空串不写 key，表示使用默认模板）
+    const contentTemplate = getValidatedNotificationTemplate(
+      input.config ?? {},
+    );
     return {
       id: input.id,
       type: input.type,
       name: input.name?.trim() || provider.getDisplayName(),
       enabled: input.enabled,
       subscribedEvents: normalizeSubscribedEvents(input.subscribedEvents),
-      config,
+      config: contentTemplate
+        ? { ...config, [NOTIFICATION_TEMPLATE_CONFIG_KEY]: contentTemplate }
+        : config,
     };
+  }
+
+  // 修改点：toPublicSettings 中 provider.maskConfig 同样会丢弃模板 key，
+  // 从原始配置把模板合并回公开配置，保证编辑弹窗能回显
+  private mergeContentTemplate(
+    maskedConfig: Record<string, unknown>,
+    originalConfig: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const contentTemplate = getValidatedNotificationTemplate(originalConfig);
+    return contentTemplate
+      ? { ...maskedConfig, [NOTIFICATION_TEMPLATE_CONFIG_KEY]: contentTemplate }
+      : maskedConfig;
   }
 }
 

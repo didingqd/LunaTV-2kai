@@ -3,6 +3,10 @@ import {
   notificationBuilderRegistry,
 } from './notification/notification-builder';
 import { notificationEventRegistry } from './notification/notification-event-registry';
+import {
+  notificationTemplateVariableRegistry,
+  renderNotificationTemplate,
+} from './notification/notification-template';
 import type {
   NotificationMessage,
   NotificationPayload,
@@ -61,6 +65,77 @@ export type WatchingUpdateFailedNotificationPayload = NotificationPayload & {
   targetUser: string;
   data: WatchingUpdateFailedNotificationPayloadData;
 };
+
+// 修改点：追更通知的默认内容模板 —— 渲染结果与原硬编码格式逐字一致。
+// 标题行（🆕 新更新 / ✅ 已更新）为模板文字可自由编辑；数量与剧集条目为变量；
+// {{#newUpdates}}...{{/newUpdates}} 条件区块保证该类更新为空时整段（含标题行）不显示。
+export const DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE = [
+  '{{title}}',
+  '{{#newUpdates}}',
+  '',
+  '🆕 新更新（{{newCount}}）',
+  '',
+  '{{newUpdates}}',
+  '{{/newUpdates}}',
+  '{{#updated}}',
+  '',
+  '✅ 已更新（{{updatedCount}}）',
+  '',
+  '{{updated}}',
+  '{{/updated}}',
+].join('\n');
+
+// 修改点：模板变量元数据（描述 + 示例值 + 点击插入的完整块），供通知渠道编辑弹窗展示与预览。
+// 列表类变量（newUpdates / updated）的 snippet 是含标题行与条件区块的完整段落，点击即填入整块。
+export const WATCHING_UPDATE_TEMPLATE_VARIABLES = [
+  {
+    name: 'title',
+    description: '通知标题',
+    sample: '更新提醒',
+  },
+  {
+    name: 'newCount',
+    description: '新更新的剧集数量',
+    sample: '1',
+  },
+  {
+    name: 'newUpdates',
+    description: '新更新剧集的完整段落（标题 + 条目），点击填入整块',
+    sample: '海贼王（如意资源）\n12 → 14 集（+2）',
+    snippet: [
+      '{{#newUpdates}}',
+      '',
+      '🆕 新更新（{{newCount}}）',
+      '',
+      '{{newUpdates}}',
+      '{{/newUpdates}}',
+    ].join('\n'),
+  },
+  {
+    name: 'updatedCount',
+    description: '已更新的剧集数量',
+    sample: '2',
+  },
+  {
+    name: 'updated',
+    description: '已更新剧集的完整段落（标题 + 条目），点击填入整块',
+    sample:
+      '死神（电影天堂）\n5 → 8 集（+3）\n\n九门（极速资源）\n6 → 8 集（+2）',
+    snippet: [
+      '{{#updated}}',
+      '',
+      '✅ 已更新（{{updatedCount}}）',
+      '',
+      '{{updated}}',
+      '{{/updated}}',
+    ].join('\n'),
+  },
+  {
+    name: 'displayTime',
+    description: '检查时间（如 2026-08-02 12:30:01）',
+    sample: '2026-08-02 12:30:01',
+  },
+] as const;
 
 export function createWatchingUpdateFoundPayload(input: {
   userId: string;
@@ -142,6 +217,48 @@ function isWatchingUpdatePayload(
   );
 }
 
+// 修改点：把单个剧集条目渲染成“剧名（资源站）\nfrom → to 集（+delta）”字符串
+function renderWatchingUpdateItem(item: {
+  title: string;
+  fromEpisode: number;
+  toEpisode: number;
+  sourceName?: string;
+}): string {
+  // 剧名后用括号追加资源站名称（如“海贼王（如意资源）”），无来源信息时保持原格式
+  const titleSuffix = item.sourceName ? `（${item.sourceName}）` : '';
+  return `${item.title}${titleSuffix}\n${item.fromEpisode} → ${item.toEpisode} 集（+${episodeDelta(item)}）`;
+}
+
+// 修改点：把一组条目渲染为空行分隔的条目串（作为模板变量 newUpdates / updated 的值）
+function renderWatchingUpdateItems(
+  items: Array<{
+    title: string;
+    fromEpisode: number;
+    toEpisode: number;
+    sourceName?: string;
+  }>,
+): string {
+  return items.map(renderWatchingUpdateItem).join('\n\n');
+}
+
+// 修改点：按默认模板 + 变量渲染追更通知内容（渲染结果与原硬编码格式逐字一致）
+function renderWatchingUpdateContent(input: {
+  title: string;
+  newUpdates: WatchingUpdateChange[];
+  updated: WatchingUpdateChange[];
+  displayTime: string;
+}): string {
+  const sortedNewUpdates = sortNewUpdatesForDisplay(input.newUpdates);
+  return renderNotificationTemplate(DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE, {
+    title: input.title,
+    newCount: String(sortedNewUpdates.length),
+    newUpdates: renderWatchingUpdateItems(sortedNewUpdates),
+    updatedCount: String(input.updated.length),
+    updated: renderWatchingUpdateItems(input.updated),
+    displayTime: input.displayTime,
+  });
+}
+
 export class WatchingUpdateNotificationBuilder implements NotificationBuilder<WatchingUpdateNotificationPayload> {
   build(payload: WatchingUpdateNotificationPayload): NotificationMessage;
   build(
@@ -210,69 +327,24 @@ export class WatchingUpdateNotificationBuilder implements NotificationBuilder<Wa
       return null;
     }
 
-    const sections = ['更新提醒'];
-    const newUpdates = sortNewUpdatesForDisplay(analysis.newUpdates);
-
-    this.appendUpdateSection(sections, 'new', newUpdates);
-    this.appendUpdateSection(sections, 'updated', analysis.updated);
+    // 修改点：内容改由默认模板渲染（标题行字面文字 + 数量/条目变量），输出与原格式逐字一致
+    const content = renderWatchingUpdateContent({
+      title: '更新提醒',
+      newUpdates: analysis.newUpdates,
+      updated: analysis.updated,
+      displayTime,
+    });
 
     return {
       title: '更新提醒',
-      content: sections.join('\n'),
+      content,
       displayTime,
     };
   }
-
-  private appendEpisodeChanges(
-    sections: string[],
-    items: Array<{
-      title: string;
-      fromEpisode: number;
-      toEpisode: number;
-      sourceName?: string;
-    }>,
-  ): void {
-    items.forEach((item, index) => {
-      if (index > 0) sections.push('');
-      // 修改点：剧名后用括号追加资源站名称（如“海贼王（如意资源）”），无来源信息时保持原格式
-      const titleSuffix = item.sourceName ? `（${item.sourceName}）` : '';
-      sections.push(
-        `${item.title}${titleSuffix}`,
-        `${item.fromEpisode} → ${item.toEpisode} 集（+${episodeDelta(item)}）`,
-      );
-    });
-  }
-
-  private appendUpdateSection(
-    sections: string[],
-    kind: WatchingUpdateSectionKind,
-    items: Array<{
-      title: string;
-      fromEpisode: number;
-      toEpisode: number;
-      sourceName?: string;
-    }>,
-  ): void {
-    if (items.length === 0) return;
-    sections.push(
-      '',
-      formatWatchingUpdateSectionHeading(kind, items.length),
-      '',
-    );
-    this.appendEpisodeChanges(sections, items);
-  }
 }
 
-type WatchingUpdateSectionKind = 'new' | 'updated';
-
-function formatWatchingUpdateSectionHeading(
-  kind: WatchingUpdateSectionKind,
-  count: number,
-): string {
-  return `${kind === 'new' ? '🆕' : '✅'} ${
-    kind === 'new' ? '新更新' : '已更新'
-  }（${count}）`;
-}
+// 修改点：区块标题行（🆕 新更新（N）等）改由默认模板的字面文字渲染，
+// 原 formatWatchingUpdateSectionHeading 已随之移除
 
 function episodeDelta(item: {
   fromEpisode: number;
@@ -319,6 +391,52 @@ function compareDisplayTitle(
   return left.title.localeCompare(right.title, 'zh-CN');
 }
 
+// 修改点：从消息 payload 提取数据并生成模板变量值（供渠道自定义模板渲染使用）
+function resolveWatchingUpdateTemplateVariables(
+  message: NotificationMessage,
+): Record<string, string> {
+  const payload = (message.payload ?? {}) as Record<string, unknown>;
+  const newUpdates = Array.isArray(payload.newUpdates)
+    ? payload.newUpdates.filter(isWatchingUpdateChange)
+    : [];
+  const updated = Array.isArray(payload.updated)
+    ? payload.updated.filter(isWatchingUpdateChange)
+    : [];
+  const displayTime =
+    typeof payload.displayTime === 'string' ? payload.displayTime : '';
+
+  const sortedNewUpdates = sortNewUpdatesForDisplay(newUpdates);
+  return {
+    title: message.title,
+    newCount: String(sortedNewUpdates.length),
+    newUpdates: renderWatchingUpdateItems(sortedNewUpdates),
+    updatedCount: String(updated.length),
+    updated: renderWatchingUpdateItems(updated),
+    displayTime,
+  };
+}
+
+function isWatchingUpdateChange(value: unknown): value is WatchingUpdateChange {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.title === 'string' &&
+    typeof item.fromEpisode === 'number' &&
+    typeof item.toEpisode === 'number'
+  );
+}
+
+// 修改点：导出 resolver 构造函数，注册与测试/二次注册共用同一份定义
+export function buildWatchingUpdateTemplateResolver() {
+  return {
+    variables: WATCHING_UPDATE_TEMPLATE_VARIABLES.map((variable) => ({
+      ...variable,
+    })),
+    defaultTemplate: DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE,
+    resolve: resolveWatchingUpdateTemplateVariables,
+  };
+}
+
 export const watchingUpdateNotificationBuilder =
   new WatchingUpdateNotificationBuilder();
 
@@ -345,6 +463,11 @@ export function registerWatchingUpdateNotificationBuilder(): void {
   notificationBuilderRegistry.register(
     WATCHING_UPDATE_FOUND_EVENT_TYPE,
     watchingUpdateNotificationBuilder,
+  );
+  // 修改点：同步注册模板变量解析器，通知渠道编辑的自定义模板按此渲染内容
+  notificationTemplateVariableRegistry.register(
+    WATCHING_UPDATE_FOUND_EVENT_TYPE,
+    buildWatchingUpdateTemplateResolver(),
   );
   watchingUpdateNotificationBuilderRegistered = true;
 }

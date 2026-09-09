@@ -5,6 +5,15 @@ import { createPortal } from 'react-dom';
 
 import { NOTIFICATION_EVENT_METAS } from '@/lib/notification-event-bootstrap';
 
+import type {
+  ChannelFormState,
+  ChannelModalStep,
+  NotificationTemplateVariableGroupUI,
+} from './notification-settings-types';
+import { NotificationConfigSection } from './NotificationConfigSection';
+import { NotificationEventSelector } from './NotificationEventSelector';
+import { NotificationProviderPicker } from './NotificationProviderPicker';
+import { NotificationTemplateSection } from './NotificationTemplateSection';
 import {
   MOBILE_DIALOG_CONTENT_CLASS,
   MOBILE_DIALOG_FRAME_CLASS,
@@ -14,19 +23,14 @@ import {
   NOTIFICATION_DELIVERY_STATUS_LABELS,
   type NotificationProviderMeta,
 } from '../notification-settings-provider-ui';
-import { NotificationConfigSection } from './NotificationConfigSection';
-import { NotificationEventSelector } from './NotificationEventSelector';
-import { NotificationProviderPicker } from './NotificationProviderPicker';
-import type {
-  ChannelFormState,
-  ChannelModalStep,
-} from './notification-settings-types';
 
 interface NotificationChannelModalProps {
   step: ChannelModalStep | null;
   form: ChannelFormState | null;
   provider: NotificationProviderMeta | null;
   creatableProviders: NotificationProviderMeta[];
+  // 修改点：按事件分组的内容模板变量元数据，用于渲染模板编辑区
+  templateVariableGroups: NotificationTemplateVariableGroupUI[];
   saving: boolean;
   valid: boolean;
   onClose: () => void;
@@ -45,6 +49,7 @@ export function NotificationChannelModal({
   form,
   provider,
   creatableProviders,
+  templateVariableGroups,
   saving,
   valid,
   onClose,
@@ -143,6 +148,24 @@ export function NotificationChannelModal({
                 provider={provider}
                 onChange={onChangeForm}
               />
+
+              {/* 修改点：订阅事件中有已注册模板变量的事件时，显示通知内容模板编辑区 */}
+              {(() => {
+                const templateGroup = form.subscribedEvents
+                  .map((eventType) =>
+                    templateVariableGroups.find(
+                      (group) => group.eventType === eventType,
+                    ),
+                  )
+                  .find(Boolean);
+                return templateGroup ? (
+                  <NotificationTemplateSection
+                    form={form}
+                    templateVariables={templateGroup}
+                    onChange={onChangeForm}
+                  />
+                ) : null;
+              })()}
 
               <NotificationEventSelector
                 events={NOTIFICATION_EVENT_METAS}

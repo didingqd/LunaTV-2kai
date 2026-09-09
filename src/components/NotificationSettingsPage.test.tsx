@@ -559,6 +559,151 @@ describe('NotificationSettingsPage', () => {
     );
   });
 
+  // 修改点：新增用例 —— 编辑渠道弹窗展示通知内容模板编辑区，可修改并随渠道保存
+  it('edits and saves the channel content template in the channel modal', async () => {
+    // 修改点：providers 响应带模板变量元数据，渠道订阅了追更事件时应出现模板编辑区
+    const templateVariables = [
+      {
+        eventType: 'watching.update_found',
+        label: '追更更新',
+        defaultTemplate: [
+          '{{title}}',
+          '{{#newUpdates}}',
+          '',
+          '🆕 新更新（{{newCount}}）',
+          '',
+          '{{newUpdates}}',
+          '{{/newUpdates}}',
+        ].join('\n'),
+        variables: [
+          { name: 'title', description: '通知标题', sample: '更新提醒' },
+          { name: 'newCount', description: '新更新的剧集数量', sample: '1' },
+          {
+            name: 'newUpdates',
+            description: '新更新剧集的完整段落',
+            sample: '海贼王（如意资源）\n12 → 14 集（+2）',
+            snippet: [
+              '{{#newUpdates}}',
+              '',
+              '🆕 新更新（{{newCount}}）',
+              '',
+              '{{newUpdates}}',
+              '{{/newUpdates}}',
+            ].join('\n'),
+          },
+        ],
+      },
+    ];
+    const fetchMock = jest.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === providersEndpoint) {
+          return Promise.resolve(
+            jsonResponse({ providers, templateVariables }),
+          );
+        }
+        if (
+          url === `${settingsEndpoint}/channels/wc-1` &&
+          init?.method === 'PATCH'
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              settings: {
+                ...baseSettings,
+                channels: baseSettings.channels.map((channel) =>
+                  channel.id === 'wc-1'
+                    ? {
+                        ...channel,
+                        config: {
+                          ...channel.config,
+                          contentTemplate: '自定义模板 {{newCount}}',
+                        },
+                      }
+                    : channel,
+                ),
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ settings: baseSettings }));
+      },
+    );
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    await screen.findByText('外部企业微信');
+    const channelCard = getCardByChannelName('外部企业微信');
+    fireEvent.click(channelCard.getByRole('button', { name: '编辑' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '编辑通知渠道' });
+    const form = within(dialog);
+
+    // 模板编辑区：标题 + 变量标签 + 预览
+    expect(
+      form.getByRole('heading', { name: '通知内容模板' }),
+    ).toBeInTheDocument();
+    expect(
+      form.getByRole('button', { name: '恢复默认模板' }),
+    ).toBeInTheDocument();
+    expect(form.getByTitle('通知标题').textContent).toBe('{{title}}');
+    const templateField = form.getByLabelText('通知内容模板');
+    expect(templateField).toHaveValue(templateVariables[0].defaultTemplate);
+
+    // 点击变量标签在光标处插入变量
+    fireEvent.click(form.getByTitle('通知标题'));
+    // 修改 textarea 内容并保存
+    fireEvent.change(templateField, {
+      target: { value: '自定义模板 {{newCount}}' },
+    });
+    fireEvent.click(form.getByRole('button', { name: '保存渠道' }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === `${settingsEndpoint}/channels/wc-1` &&
+            (init as RequestInit | undefined)?.method === 'PATCH',
+        ),
+      ).toBe(true),
+    );
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        url === `${settingsEndpoint}/channels/wc-1` &&
+        (init as RequestInit | undefined)?.method === 'PATCH',
+    );
+    expect(JSON.parse((updateCall?.[1] as RequestInit).body as string)).toEqual(
+      {
+        name: '外部企业微信',
+        subscribedEvents: ['watching.update_found'],
+        config: { contentTemplate: '自定义模板 {{newCount}}' },
+      },
+    );
+  });
+
+  // 修改点：新增用例 —— providers 响应无 templateVariables 时（旧后端）不渲染模板编辑区
+  it('hides the template section when the provider response has no template variables', async () => {
+    const fetchMock = jest.fn((input: RequestInfo | URL) => {
+      if (String(input) === providersEndpoint) {
+        return Promise.resolve(jsonResponse({ providers }));
+      }
+      return Promise.resolve(jsonResponse({ settings: baseSettings }));
+    });
+    setFetch(fetchMock);
+
+    render(<NotificationSettingsPage />);
+
+    await screen.findByText('外部企业微信');
+    const channelCard = getCardByChannelName('外部企业微信');
+    fireEvent.click(channelCard.getByRole('button', { name: '编辑' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '编辑通知渠道' });
+    const form = within(dialog);
+    expect(
+      form.queryByRole('heading', { name: '通知内容模板' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('opens notification logs and renders failed reasons', async () => {
     const fetchMock = jest.fn((input: RequestInfo | URL) => {
       const url = String(input);

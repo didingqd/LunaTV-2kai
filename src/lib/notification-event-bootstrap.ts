@@ -1,9 +1,10 @@
+import { notificationEventRegistry } from './notification/notification-event-metadata';
 import {
   APPLICATION_NOTIFICATION_EVENT_METAS,
   DEFAULT_APPLICATION_NOTIFICATION_SUBSCRIBED_EVENTS,
   NOTIFICATION_TEST_EVENT_TYPE,
 } from './notification-event-definitions';
-import { notificationEventRegistry } from './notification/notification-event-metadata';
+import { registerWatchingUpdateNotificationBuilder } from './watching-update-notification-builder';
 import {
   WATCHING_UPDATE_FAILED_EVENT_TYPE,
   WATCHING_UPDATE_FOUND_EVENT_TYPE,
@@ -36,6 +37,9 @@ export function registerApplicationNotificationEvents(): void {
     }
     return patches;
   });
+  // 修改点：同步注册追更事件的内容模板变量解析器（幂等），
+  // 保证通知设置 API / 编辑弹窗在无调度器的请求里也能拿到模板变量元数据
+  registerWatchingUpdateNotificationBuilder();
   registered = true;
 }
 

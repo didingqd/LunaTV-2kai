@@ -6,15 +6,16 @@
 import { randomUUID } from 'crypto';
 
 import {
-  notificationBuilderRegistry,
   normalizeNotificationPayload,
   type NotificationBuilderRegistry,
+  notificationBuilderRegistry,
 } from './notification-builder';
-import { notificationProviderRegistry } from './notification-provider-bootstrap';
+import { notificationEventToPayload } from './notification-event-adapter';
 import {
-  notificationSendLogRepository,
   type NotificationSendLogRepository,
+  notificationSendLogRepository,
 } from './notification-log-repository';
+import { notificationProviderRegistry } from './notification-provider-bootstrap';
 import type { NotificationProviderRegistry } from './notification-provider-registry';
 import {
   sanitizeNotificationErrorMessage,
@@ -22,16 +23,16 @@ import {
   shouldSkipDuplicateNotificationEvent,
 } from './notification-send-control';
 import {
-  notificationSettingsService,
   type NotificationManagerSettingsService,
+  notificationSettingsService,
 } from './notification-settings-service';
+import { applyChannelContentTemplate } from './notification-template';
 import type {
   NotificationDispatchError,
   NotificationDispatchResult,
   NotificationEvent,
   NotificationPayload,
 } from './notification-types';
-import { notificationEventToPayload } from './notification-event-adapter';
 
 function toDispatchError(
   channel: string,
@@ -117,7 +118,10 @@ export class NotificationManager {
       }
 
       try {
-        await sendProviderWithRetry(provider, message, channel, {
+        // 修改点：按渠道配置渲染通知内容模板；渠道未配置自定义模板时原样返回，
+        // 既有发送行为完全不变
+        const channelMessage = applyChannelContentTemplate(message, channel);
+        await sendProviderWithRetry(provider, channelMessage, channel, {
           maxAttempts: this.options.maxAttempts,
           retryDelayMs: this.options.retryDelayMs,
           timeoutMs: this.options.timeoutMs,
@@ -155,6 +159,8 @@ export class NotificationManager {
         createdAt: (this.options.now ?? Date.now)(),
       });
     } catch (logError) {
+      // 修改点：日志写入失败仅告警不中断通知发送；补充 disable 以通过 max-warnings=0 的提交钩子
+      // eslint-disable-next-line no-console
       console.warn('Failed to write notification send log', logError);
     }
   }

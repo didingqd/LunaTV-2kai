@@ -9,6 +9,7 @@ import type {
   NotificationProviderConfigSchema,
 } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
+import { applyChannelContentTemplate } from '../notification-template';
 import type { NotificationMessage } from '../notification-types';
 import {
   createWatchingUpdateFoundPayload,
@@ -74,11 +75,15 @@ export class WeChatWorkNotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
+    // 修改点：测试通知先按渠道配置渲染内容模板，发送测试即可看到自定义模板效果
     await this.send(
-      createWeChatWorkTestMessage(
-        typeof channelConfig.config.userId === 'string'
-          ? channelConfig.config.userId
-          : undefined,
+      applyChannelContentTemplate(
+        createWeChatWorkTestMessage(
+          typeof channelConfig.config.userId === 'string'
+            ? channelConfig.config.userId
+            : undefined,
+        ),
+        channelConfig,
       ),
       channelConfig,
     );

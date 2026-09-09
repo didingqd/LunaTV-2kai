@@ -13,6 +13,7 @@ jest.mock('@/lib/notification/notification-provider-bootstrap', () => ({
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { notificationProviderRegistry } from '@/lib/notification/notification-provider-bootstrap';
+
 import { GET } from './route';
 
 const getAuth = getAuthInfoFromCookie as jest.Mock;
@@ -77,6 +78,19 @@ describe('user notification providers API', () => {
             canSend: true,
           }),
         }),
+      ],
+      // 修改点：响应附带按事件分组的内容模板变量元数据（追更事件已注册解析器）
+      templateVariables: [
+        {
+          eventType: 'watching.update_found',
+          label: '追更更新',
+          defaultTemplate: expect.any(String),
+          variables: expect.arrayContaining([
+            expect.objectContaining({ name: 'title' }),
+            expect.objectContaining({ name: 'newUpdates' }),
+            expect.objectContaining({ name: 'updatedCount' }),
+          ]),
+        },
       ],
     });
   });

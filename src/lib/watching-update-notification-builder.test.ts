@@ -1,6 +1,15 @@
 import {
+  applyChannelContentTemplate,
+  NOTIFICATION_TEMPLATE_CONFIG_KEY,
+  notificationTemplateVariableRegistry,
+} from './notification/notification-template';
+import {
+  buildWatchingUpdateTemplateResolver,
   createWatchingUpdateFoundPayload,
+  DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE,
+  registerWatchingUpdateNotificationBuilder,
   WatchingUpdateNotificationBuilder,
+  watchingUpdateNotificationBuilder,
 } from './watching-update-notification-builder';
 
 describe('WatchingUpdateNotificationBuilder', () => {
@@ -237,6 +246,131 @@ describe('WatchingUpdateNotificationBuilder', () => {
       title: '更新提醒',
       content: '更新提醒\n\n🆕 新更新（1）\n\n海贼王\n12 → 14 集（+2）',
       displayTime: '2026-08-01 18:30:00',
+    });
+  });
+
+  // 修改点：新增用例 —— 渠道配置自定义模板时按模板重渲染通知内容
+  describe('channel content template', () => {
+    beforeEach(() => {
+      registerWatchingUpdateNotificationBuilder();
+    });
+
+    afterEach(() => {
+      // 修改点：clear 后幂等 guard 仍在，beforeEach 的 register 不会重新注册，
+      // 因此 afterEach 需要直接写回全局注册表，保证后续 describe 不受影响
+      notificationTemplateVariableRegistry.register(
+        'watching.update_found',
+        buildWatchingUpdateTemplateResolver(),
+      );
+    });
+
+    it('registers template variables for the watching update event', () => {
+      const resolver = notificationTemplateVariableRegistry.get(
+        'watching.update_found',
+      );
+      expect(resolver).not.toBeNull();
+      expect(resolver?.defaultTemplate).toBe(
+        DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE,
+      );
+      const variableNames = resolver?.variables.map(
+        (variable) => variable.name,
+      );
+      expect(variableNames).toEqual(
+        expect.arrayContaining([
+          'title',
+          'newCount',
+          'newUpdates',
+          'updatedCount',
+          'updated',
+          'displayTime',
+        ]),
+      );
+    });
+
+    it('renders a custom template with counts, items and conditional blocks', () => {
+      const message = watchingUpdateNotificationBuilder.build(
+        createWatchingUpdateFoundPayload({
+          userId: 'alice',
+          newUpdates: [
+            {
+              followId: 'one-piece',
+              title: '海贼王',
+              fromEpisode: 12,
+              toEpisode: 14,
+              sourceName: '如意资源',
+            },
+          ],
+          updated: [],
+          checkedAt,
+          timezone: 'Asia/Shanghai',
+          displayTime: '2026-08-01 18:30:00',
+        }),
+      );
+
+      // 修改点：自定义模板 —— 段落标题改为自由文字，数量与条目使用变量
+      const customTemplate = [
+        '{{title}}',
+        '{{#newUpdates}}',
+        '',
+        '🔥 新番（{{newCount}}）',
+        '',
+        '{{newUpdates}}',
+        '{{/newUpdates}}',
+        '{{#updated}}',
+        '',
+        '📺 追更（{{updatedCount}}）',
+        '',
+        '{{updated}}',
+        '{{/updated}}',
+      ].join('\n');
+
+      const result = applyChannelContentTemplate(message, {
+        config: { [NOTIFICATION_TEMPLATE_CONFIG_KEY]: customTemplate },
+      });
+
+      expect(result).not.toBe(message);
+      expect(result.content).toBe(
+        '更新提醒\n\n🔥 新番（1）\n\n海贼王（如意资源）\n12 → 14 集（+2）',
+      );
+      expect(result.title).toBe('更新提醒');
+    });
+
+    it('resolves variables from the message payload', () => {
+      const message = watchingUpdateNotificationBuilder.build(
+        createWatchingUpdateFoundPayload({
+          userId: 'alice',
+          newUpdates: [
+            {
+              followId: 'one-piece',
+              title: '海贼王',
+              fromEpisode: 12,
+              toEpisode: 14,
+              sourceName: '如意资源',
+            },
+          ],
+          updated: [
+            {
+              followId: 'bleach',
+              title: '死神',
+              fromEpisode: 5,
+              toEpisode: 8,
+              sourceName: '电影天堂',
+            },
+          ],
+          checkedAt,
+          timezone: 'Asia/Shanghai',
+          displayTime: '2026-08-01 18:30:00',
+        }),
+      );
+
+      const result = applyChannelContentTemplate(message, {
+        config: {
+          [NOTIFICATION_TEMPLATE_CONFIG_KEY]:
+            '共 {{newCount}}+{{updatedCount}} 条（{{displayTime}}）',
+        },
+      });
+
+      expect(result.content).toBe('共 1+1 条（2026-08-01 18:30:00）');
     });
   });
 });

@@ -1,5 +1,7 @@
 /** @jest-environment node */
 
+import { registerWatchingUpdateNotificationBuilder } from '@/lib/watching-update-notification-builder';
+
 import { WeChatWorkNotificationProvider } from './wechat-work-notification-provider';
 
 const originalFetch = global.fetch;
@@ -37,6 +39,44 @@ describe('WeChatWorkNotificationProvider', () => {
     );
     expect(body.markdown.content).not.toContain('测试通知');
   });
+
+  // 修改点：新增用例 —— 渠道配置自定义内容模板时，测试通知按模板渲染后再发送
+  it('renders the channel content template for test messages', async () => {
+    // 模板渲染依赖追更事件的变量解析器注册（test() 的消息类型为 watching.update_found）
+    registerWatchingUpdateNotificationBuilder();
+
+    const fetchMock = jest.fn(
+      async () =>
+        new Response(JSON.stringify({ errcode: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    setFetch(fetchMock);
+
+    const customTemplate = [
+      '{{title}}',
+      '{{#newUpdates}}',
+      '',
+      '🔥 新番（{{newCount}}）',
+      '',
+      '{{newUpdates}}',
+      '{{/newUpdates}}',
+    ].join('\n');
+    await new WeChatWorkNotificationProvider().test(
+      channel({ contentTemplate: customTemplate }),
+    );
+
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [
+      RequestInfo | URL,
+      RequestInit,
+    ];
+    const body = JSON.parse(String(requestInit.body));
+    // 自定义模板内容无法走企微 markdown 富文本解析，走普通 markdown 回退分支
+    expect(body.markdown.content).toBe(
+      '### 更新提醒\n更新提醒\n\n🔥 新番（1）\n\n测试番剧 A（如意资源）\n12 → 13 集（+1）\n时间：2026-08-02 12:30:01',
+    );
+  });
 });
 
 function setFetch(fetchMock: jest.Mock) {
@@ -47,7 +87,7 @@ function setFetch(fetchMock: jest.Mock) {
   });
 }
 
-function channel() {
+function channel(overrides: Record<string, unknown> = {}) {
   return {
     id: 'wc-1',
     type: 'wechat_work',
@@ -57,6 +97,7 @@ function channel() {
     config: {
       webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
       userId: 'alice',
+      ...overrides,
     },
   };
 }

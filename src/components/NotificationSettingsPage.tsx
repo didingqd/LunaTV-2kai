@@ -19,19 +19,20 @@ import {
   NOTIFICATION_TEST_EVENT_TYPE,
 } from '@/lib/notification-event-bootstrap';
 
-import { NotificationChannelList } from './notification/NotificationChannelList';
-import { NotificationChannelModal } from './notification/NotificationChannelModal';
-import { NotificationToggleSwitch } from './notification/NotificationToggleSwitch';
 import type {
   ChannelFormState,
   ChannelModalStep,
   NotificationChannelConfig,
   NotificationSettings,
+  NotificationTemplateVariableGroupUI,
 } from './notification/notification-settings-types';
+import { NotificationChannelList } from './notification/NotificationChannelList';
+import { NotificationChannelModal } from './notification/NotificationChannelModal';
+import { NotificationToggleSwitch } from './notification/NotificationToggleSwitch';
 import {
   type BackendNotificationProviderMeta,
-  type NotificationProviderMeta,
   mergeNotificationProviderMeta,
+  type NotificationProviderMeta,
 } from './notification-settings-provider-ui';
 
 interface SettingsResponse {
@@ -40,6 +41,8 @@ interface SettingsResponse {
 
 interface ProvidersResponse {
   providers: BackendNotificationProviderMeta[];
+  // 修改点：可选字段 —— 旧版本后端/mock 未返回时按空数组处理，保持向后兼容
+  templateVariables?: NotificationTemplateVariableGroupUI[];
 }
 
 interface NotificationLogItem {
@@ -151,7 +154,28 @@ function normalizeConfigForForm(
   );
 }
 
-function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
+const NOTIFICATION_TEMPLATE_CONFIG_KEY = 'contentTemplate';
+
+// 修改点：取表单订阅事件中第一个注册了模板变量的事件分组，用于确定默认模板
+function findTemplateGroupForEvents(
+  subscribedEvents: string[],
+  groups: NotificationTemplateVariableGroupUI[],
+): NotificationTemplateVariableGroupUI | null {
+  for (const eventType of subscribedEvents) {
+    const group = groups.find((item) => item.eventType === eventType);
+    if (group) return group;
+  }
+  return null;
+}
+
+function buildCreateForm(
+  provider: NotificationProviderMeta,
+  templateVariableGroups: NotificationTemplateVariableGroupUI[],
+): ChannelFormState {
+  const templateGroup = findTemplateGroupForEvents(
+    DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS,
+    templateVariableGroups,
+  );
   return {
     mode: 'create',
     providerType: provider.type,
@@ -159,6 +183,10 @@ function buildCreateForm(provider: NotificationProviderMeta): ChannelFormState {
     subscribedEvents: [...DEFAULT_NOTIFICATION_SUBSCRIBED_EVENTS],
     config: { ...provider.defaultConfig },
     originalConfig: {},
+    // 修改点：新建渠道默认使用该事件的默认模板
+    contentTemplate: templateGroup?.defaultTemplate ?? '',
+    defaultContentTemplate: templateGroup?.defaultTemplate ?? '',
+    originalContentTemplate: '',
   };
 }
 
@@ -185,8 +213,20 @@ function buildEditForm(
   channel: NotificationChannelConfig,
   _settings: NotificationSettings,
   provider: NotificationProviderMeta,
+  templateVariableGroups: NotificationTemplateVariableGroupUI[],
 ): ChannelFormState {
   const config = normalizeConfigForForm(provider, channel.config);
+  // 修改点：编辑表单回显渠道已保存的内容模板（未配置时显示默认模板）
+  const templateGroup = findTemplateGroupForEvents(
+    getCompatibleSubscribedEvents(channel),
+    templateVariableGroups,
+  );
+  const defaultContentTemplate = templateGroup?.defaultTemplate ?? '';
+  const savedTemplate =
+    typeof channel.config?.[NOTIFICATION_TEMPLATE_CONFIG_KEY] === 'string'
+      ? (channel.config[NOTIFICATION_TEMPLATE_CONFIG_KEY] as string)
+      : '';
+  const contentTemplate = savedTemplate || defaultContentTemplate;
   return {
     mode: 'edit',
     channelId: channel.id,
@@ -195,6 +235,9 @@ function buildEditForm(
     subscribedEvents: getCompatibleSubscribedEvents(channel),
     config,
     originalConfig: config,
+    contentTemplate,
+    defaultContentTemplate,
+    originalContentTemplate: savedTemplate,
   };
 }
 
@@ -261,6 +304,10 @@ export default function NotificationSettingsPage({
 } = {}) {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [providers, setProviders] = useState<NotificationProviderMeta[]>([]);
+  // 修改点：按事件分组的模板变量元数据，渠道编辑弹窗据此渲染模板编辑区
+  const [templateVariableGroups, setTemplateVariableGroups] = useState<
+    NotificationTemplateVariableGroupUI[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [channelSavingId, setChannelSavingId] = useState<string | null>(null);
@@ -350,6 +397,7 @@ export default function NotificationSettingsPage({
       ]);
       setSettings(settingsData.settings);
       setProviders(providersData.providers.map(mergeNotificationProviderMeta));
+      setTemplateVariableGroups(providersData.templateVariables ?? []);
       closeChannelModal();
       setBatchMode(false);
       setSelectedChannelIds([]);
@@ -444,10 +492,24 @@ export default function NotificationSettingsPage({
         name: form.name.trim(),
         subscribedEvents: form.subscribedEvents,
       };
+      // 修改点：模板与原始保存值比较 —— 与默认模板相同或清空时存空串（表示使用默认），
+      // edit 时与原始保存值不同（含修改、清除恢复默认）即随请求发送，后端对空串清除旧值；
+      // create 时仅在该渠道订阅了带模板变量的事件时发送
+      const nextTemplate =
+        form.contentTemplate.trim() === form.defaultContentTemplate
+          ? ''
+          : form.contentTemplate.trim();
+      const templateChanged =
+        form.mode === 'create'
+          ? nextTemplate !== '' && form.defaultContentTemplate !== ''
+          : nextTemplate !== form.originalContentTemplate;
+      if (templateChanged) {
+        configPatch[NOTIFICATION_TEMPLATE_CONFIG_KEY] = nextTemplate;
+      }
       if (form.mode === 'create') {
         body.type = form.providerType;
         body.config = configPatch;
-      } else if (hasConfigPatch(form, formProvider)) {
+      } else if (hasConfigPatch(form, formProvider) || templateChanged) {
         body.config = configPatch;
       }
 
@@ -587,7 +649,7 @@ export default function NotificationSettingsPage({
   const openCreateForm = (providerType: string) => {
     const provider = providerByType.get(providerType);
     if (!provider?.capabilities.canCreate) return;
-    setForm(buildCreateForm(provider));
+    setForm(buildCreateForm(provider, templateVariableGroups));
     setChannelModalStep('config');
   };
 
@@ -595,7 +657,7 @@ export default function NotificationSettingsPage({
     if (!settings) return;
     const provider = providerByType.get(channel.type);
     if (!provider?.capabilities.canEdit) return;
-    setForm(buildEditForm(channel, settings, provider));
+    setForm(buildEditForm(channel, settings, provider, templateVariableGroups));
     setChannelModalStep('config');
     setMessage(null);
     setError(null);
@@ -941,6 +1003,7 @@ export default function NotificationSettingsPage({
         form={form}
         provider={formProvider}
         creatableProviders={creatableProviders}
+        templateVariableGroups={templateVariableGroups}
         saving={saving}
         valid={form ? isFormValid(form, formProvider) : false}
         onClose={closeChannelModal}
@@ -951,17 +1014,26 @@ export default function NotificationSettingsPage({
         }}
         onChangeForm={setForm}
         onToggleEvent={(eventType) =>
-          setForm((current) =>
-            current
-              ? {
-                  ...current,
-                  subscribedEvents: toggleEventSubscription(
-                    current.subscribedEvents,
-                    eventType,
-                  ),
-                }
-              : current,
-          )
+          setForm((current) => {
+            if (!current) return current;
+            const next = {
+              ...current,
+              subscribedEvents: toggleEventSubscription(
+                current.subscribedEvents,
+                eventType,
+              ),
+            };
+            // 修改点：订阅事件变化后同步默认模板（取第一个注册了模板变量的事件），
+            // 避免取消订阅追更事件后模板编辑区仍引用旧事件的默认模板
+            const templateGroup = findTemplateGroupForEvents(
+              next.subscribedEvents,
+              templateVariableGroups,
+            );
+            return {
+              ...next,
+              defaultContentTemplate: templateGroup?.defaultTemplate ?? '',
+            };
+          })
         }
         onSave={() => void saveChannelForm()}
       />

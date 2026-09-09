@@ -5,13 +5,13 @@ import {
   Building2,
   Inbox,
   Link,
+  type LucideIcon,
   Mail,
   MessageCircle,
   MessageSquare,
   Radio,
   Send,
   Smartphone,
-  type LucideIcon,
 } from 'lucide-react';
 
 export type NotificationConfigFieldType = 'text' | 'password' | 'url';
@@ -43,6 +43,21 @@ export interface NotificationProviderCapabilitiesMeta {
   canSend: boolean;
 }
 
+// 修改点：按事件分组的内容模板变量元数据（由通知渠道 API 返回，可选）
+export interface NotificationTemplateVariableMetaUI {
+  name: string;
+  description: string;
+  sample: string;
+  snippet?: string;
+}
+
+export interface NotificationTemplateVariableGroupUI {
+  eventType: string;
+  label: string;
+  defaultTemplate: string;
+  variables: NotificationTemplateVariableMetaUI[];
+}
+
 export interface BackendNotificationProviderMeta {
   type: string;
   displayName: string;
@@ -54,6 +69,7 @@ export interface BackendNotificationProviderMeta {
   capabilities: NotificationProviderCapabilitiesMeta;
   deliveryStatus: NotificationProviderDeliveryStatus;
   healthStatus?: NotificationProviderHealthStatus;
+  templateVariables?: NotificationTemplateVariableGroupUI[];
 }
 
 export interface NotificationProviderMeta extends Omit<

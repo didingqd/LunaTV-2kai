@@ -281,6 +281,105 @@ describe('NotificationSettingsService', () => {
     });
   });
 
+  // 修改点：新增用例 —— 渠道配置的通知内容模板在 validate/mask 后必须保留
+  it('preserves the channel content template through create, update and masking', async () => {
+    const repository = new NotificationSettingsRepository(
+      new MemoryNotificationSettingsStore(),
+    );
+    const service = new NotificationSettingsService(repository, () => 9_000);
+    const customTemplate = '{{title}}\n\n共 {{newCount}} 条';
+
+    const created = await service.createChannel('alice', {
+      type: 'wechat_work',
+      name: '我的企业微信',
+      config: {
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        contentTemplate: customTemplate,
+      },
+    });
+    const channel = created.channels.find(
+      (item) => item.type === 'wechat_work',
+    );
+    // create：provider.validateConfig 只保留 schema 字段，模板需被显式合并保留
+    expect(channel?.config.contentTemplate).toBe(customTemplate);
+
+    // toPublicSettings：maskConfig 丢弃模板 key 后需从原始配置合并回显
+    const publicChannel = service
+      .toPublicSettings(created)
+      .channels.find((item) => item.type === 'wechat_work');
+    expect(publicChannel?.config.contentTemplate).toBe(customTemplate);
+    expect(publicChannel?.config.webhookUrl).toBe(
+      'https://qyapi.weixin.qq.com/****abcd',
+    );
+
+    // update：仅更新模板时也要保留
+    const updated = await service.updateChannel('alice', channel!.id, {
+      config: { contentTemplate: '{{title}}' },
+    });
+    expect(
+      updated.channels.find((item) => item.type === 'wechat_work')?.config
+        .contentTemplate,
+    ).toBe('{{title}}');
+
+    // 空串模板 = 使用默认，不应写入 key
+    const cleared = await service.updateChannel('alice', channel!.id, {
+      config: { contentTemplate: '   ' },
+    });
+    expect(
+      cleared.channels.find((item) => item.type === 'wechat_work')?.config
+        .contentTemplate,
+    ).toBeUndefined();
+  });
+
+  // 修改点：新增用例 —— PATCH 空串模板可清除已保存的模板（恢复默认）
+  it('clears a saved content template when patched with an empty string', async () => {
+    const repository = new NotificationSettingsRepository(
+      new MemoryNotificationSettingsStore(),
+    );
+    const service = new NotificationSettingsService(repository);
+
+    const created = await service.createChannel('alice', {
+      type: 'wechat_work',
+      name: '我的企业微信',
+      config: {
+        webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+        contentTemplate: '{{title}}',
+      },
+    });
+    const channel = created.channels.find(
+      (item) => item.type === 'wechat_work',
+    );
+    expect(channel?.config.contentTemplate).toBe('{{title}}');
+
+    const cleared = await service.updateChannel('alice', channel!.id, {
+      config: { contentTemplate: '' },
+    });
+    expect(
+      cleared.channels.find((item) => item.type === 'wechat_work')?.config
+        .contentTemplate,
+    ).toBeUndefined();
+  });
+
+  // 修改点：新增用例 —— 超长模板视为非法配置
+  it('rejects content templates exceeding the length limit', async () => {
+    const repository = new NotificationSettingsRepository(
+      new MemoryNotificationSettingsStore(),
+    );
+    const service = new NotificationSettingsService(repository);
+
+    await expect(
+      service.createChannel('alice', {
+        type: 'wechat_work',
+        name: '我的企业微信',
+        config: {
+          webhookUrl:
+            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcd',
+          contentTemplate: 'a'.repeat(2001),
+        },
+      }),
+    ).rejects.toThrow('INVALID_NOTIFICATION_CHANNEL_CONFIG');
+  });
+
   it('returns only enabled channel configs', async () => {
     const repository = new NotificationSettingsRepository(
       new MemoryNotificationSettingsStore(),
