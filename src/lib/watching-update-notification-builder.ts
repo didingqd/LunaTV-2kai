@@ -426,6 +426,56 @@ function isWatchingUpdateChange(value: unknown): value is WatchingUpdateChange {
   );
 }
 
+export const watchingUpdateNotificationBuilder =
+  new WatchingUpdateNotificationBuilder();
+
+// 修改点：测试通知样例数据 —— 所有渠道的"发送测试"共用，与真实追更推送格式保持一致
+const WATCHING_UPDATE_TEST_CHECKED_AT = Date.parse('2026-08-02T04:30:01.000Z');
+const WATCHING_UPDATE_TEST_TIMEZONE = 'Asia/Shanghai';
+const WATCHING_UPDATE_TEST_DISPLAY_TIME = '2026-08-02 12:30:01';
+
+// 修改点：构造追更测试样例消息（含资源站名称），供任意渠道的测试通知预览模板效果
+export function createWatchingUpdateTestMessage(
+  userId = 'notification-test',
+): NotificationMessage {
+  const message = watchingUpdateNotificationBuilder.build(
+    createWatchingUpdateFoundPayload({
+      userId,
+      newUpdates: [
+        {
+          followId: 'notification-test-a',
+          title: '测试番剧 A',
+          fromEpisode: 12,
+          toEpisode: 13,
+          sourceName: '如意资源',
+        },
+      ],
+      updated: [
+        {
+          followId: 'notification-test-b',
+          title: '测试番剧 B',
+          fromEpisode: 5,
+          toEpisode: 6,
+          sourceName: '电影天堂',
+        },
+        {
+          followId: 'notification-test-c',
+          title: '测试番剧 C',
+          fromEpisode: 18,
+          toEpisode: 20,
+          sourceName: '极速资源',
+        },
+      ],
+      checkedAt: WATCHING_UPDATE_TEST_CHECKED_AT,
+      timezone: WATCHING_UPDATE_TEST_TIMEZONE,
+      displayTime: WATCHING_UPDATE_TEST_DISPLAY_TIME,
+    }),
+  );
+
+  if (!message) throw new Error('INVALID_WATCHING_UPDATE_TEST_NOTIFICATION');
+  return message;
+}
+
 // 修改点：导出 resolver 构造函数，注册与测试/二次注册共用同一份定义
 export function buildWatchingUpdateTemplateResolver() {
   return {
@@ -434,11 +484,10 @@ export function buildWatchingUpdateTemplateResolver() {
     })),
     defaultTemplate: DEFAULT_WATCHING_UPDATE_CONTENT_TEMPLATE,
     resolve: resolveWatchingUpdateTemplateVariables,
+    // 修改点：渠道"发送测试"时生成追更样例消息，测试通知可预览模板渲染效果
+    createTestMessage: createWatchingUpdateTestMessage,
   };
 }
-
-export const watchingUpdateNotificationBuilder =
-  new WatchingUpdateNotificationBuilder();
 
 let watchingUpdateNotificationBuilderRegistered = false;
 

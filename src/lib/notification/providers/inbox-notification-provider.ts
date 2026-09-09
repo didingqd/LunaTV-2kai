@@ -2,12 +2,12 @@
 // NotificationProvider interface.  The storage/send implementation is preserved;
 // only the architecture boundary changes so managers can route events uniformly.
 
+import { createProviderTestMessage } from './notification-provider-utils';
 import { inboxNotificationChannel } from '../inbox-notification-channel';
 import type { NotificationProviderConfigSchema } from '../notification-provider';
 import type { NotificationProvider } from '../notification-provider';
 import type { UserNotificationChannelConfig } from '../notification-settings-repository';
 import type { NotificationMessage } from '../notification-types';
-import { createProviderTestMessage } from './notification-provider-utils';
 
 export class InboxNotificationProvider implements NotificationProvider {
   readonly type = 'inbox';
@@ -28,7 +28,11 @@ export class InboxNotificationProvider implements NotificationProvider {
         ? channelConfig.config.userId
         : '';
     if (!userId) throw new Error('Inbox notification test requires userId');
-    await this.send(createProviderTestMessage(userId), channelConfig);
+    // 修改点：传入渠道配置，测试通知按渠道订阅事件选样例并渲染内容模板
+    await this.send(
+      createProviderTestMessage(userId, channelConfig),
+      channelConfig,
+    );
   }
 
   validateConfig(_config: unknown): Record<string, unknown> {

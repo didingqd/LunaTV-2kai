@@ -1,10 +1,4 @@
-﻿import type {
-  NotificationProvider,
-  NotificationProviderConfigSchema,
-} from '../notification-provider';
-import type { UserNotificationChannelConfig } from '../notification-settings-repository';
-import type { NotificationMessage } from '../notification-types';
-import {
+﻿import {
   createProviderTestMessage,
   getChannelConfig,
   getNotificationContent,
@@ -12,6 +6,12 @@ import {
   maskConfigBySchema,
   throwOnUnsuccessfulResponse,
 } from './notification-provider-utils';
+import type {
+  NotificationProvider,
+  NotificationProviderConfigSchema,
+} from '../notification-provider';
+import type { UserNotificationChannelConfig } from '../notification-settings-repository';
+import type { NotificationMessage } from '../notification-types';
 
 const schema: NotificationProviderConfigSchema = {
   fields: [
@@ -39,7 +39,11 @@ export class ServerChan3NotificationProvider implements NotificationProvider {
   }
 
   async test(channelConfig: UserNotificationChannelConfig): Promise<void> {
-    await this.send(createProviderTestMessage(), channelConfig);
+    // 修改点：传入渠道配置，测试通知按渠道订阅事件选样例并渲染内容模板
+    await this.send(
+      createProviderTestMessage(undefined, channelConfig),
+      channelConfig,
+    );
   }
 
   validateConfig(config: unknown): Record<string, unknown> {

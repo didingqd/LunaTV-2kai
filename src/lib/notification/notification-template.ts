@@ -23,6 +23,9 @@ export interface NotificationTemplateResolver {
   variables: NotificationTemplateVariableMeta[];
   defaultTemplate: string;
   resolve(message: NotificationMessage): Record<string, string>;
+  // 修改点：可选的测试样例消息构造器 —— 渠道"发送测试"时用它生成带样例数据的
+  // 消息并按渠道模板渲染，使任意渠道的测试通知都能预览模板效果
+  createTestMessage?: (userId: string) => NotificationMessage;
 }
 
 export interface NotificationTemplateDescriptor {
