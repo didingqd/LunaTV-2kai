@@ -9,10 +9,7 @@ export default function artplayerPluginSeekButtons(option = {}) {
     let currentSeekTime = option.seekTime || 10;
     let currentMobileLayout = option.mobileLayout || 'both';
 
-    const {
-      seekTime = 10,
-      mobileLayout = 'both',
-    } = option;
+    const { seekTime = 10, mobileLayout = 'both' } = option;
 
     // 初始化当前值
     currentSeekTime = seekTime;
@@ -21,40 +18,55 @@ export default function artplayerPluginSeekButtons(option = {}) {
     // 检测屏幕宽度
     const isSmallScreen = () => window.innerWidth < 768;
 
-    const backwardIconPath = 'M16 4c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16h2.5c0 5.247 4.253 9.5 9.5 9.5s9.5-4.253 9.5-9.5S21.247 6.5 16 6.5c-2.858 0-5.42 1.265-7.176 3.265L12 13H4V5l2.94 2.94C9.303 5.39 12.453 4 16 4z';
-    const forwardIconPath = 'M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12h-2.5c0 5.247-4.253 9.5-9.5 9.5S6.5 21.247 6.5 16 10.753 6.5 16 6.5c2.858 0 5.42 1.265 7.176 3.265L20 13h8V5l-2.94 2.94C22.697 5.39 19.547 4 16 4z';
+    // 修改点：照抄 APP 端 PIP 快退/快进图标（PipActionsPlugin.buildSeekIcon）的画法，
+    // 由 108 设计稿坐标换算到 32 视图（×32/108）：
+    // - 320° 圆弧（线宽 2.96、圆头端点），弧末端收在「右中」（3 点钟位置）；
+    // - 箭头画在弧末端、指向该处切线方向（竖直向下）；
+    // - 快进（顺时针）箭头在右侧正中；快退为快进的水平镜像（逆时针），箭头落在
+    //   左侧正中（9 点钟位置），同样竖直向下。
+    const backwardIconSvg = `
+        <path d="M 6.24 24.19 A 12.74 12.74 0 1 0 3.26 16" fill="none" stroke="currentColor" stroke-width="2.96" stroke-linecap="round"/>
+        <path d="M 3.26 19.85 L 0 13.04 L 6.52 13.04 Z" fill="currentColor"/>
+      `;
+    const forwardIconSvg = `
+        <path d="M 25.76 24.19 A 12.74 12.74 0 1 1 28.74 16" fill="none" stroke="currentColor" stroke-width="2.96" stroke-linecap="round"/>
+        <path d="M 28.74 19.85 L 32 13.04 L 25.48 13.04 Z" fill="currentColor"/>
+      `;
 
-    // 生成图标的函数
-    const generateSeekIcon = (path, time) => `
+    // 生成图标的函数（修改点：注入整段 SVG 图形，圆弧用 stroke、箭头用 fill）
+    const generateSeekIcon = (iconSvg, time) => `
       <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
-        <path d="${path}" fill="currentColor"/>
+        ${iconSvg}
         <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${time}</text>
       </svg>
     `;
 
-    const generateBackwardIcon = (time) => generateSeekIcon(backwardIconPath, time);
+    // 修改点：引用照抄 APP 端的 SVG 图形片段（原为单个 path d 字符串）
+    const generateBackwardIcon = (time) =>
+      generateSeekIcon(backwardIconSvg, time);
 
-    const generateForwardIcon = (time) => generateSeekIcon(forwardIconPath, time);
+    const generateForwardIcon = (time) =>
+      generateSeekIcon(forwardIconSvg, time);
 
     const generateDualSeekIcon = (time) => `
       <svg viewBox="0 0 32 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
         <!-- 上方后退箭头 -->
         <g transform="translate(0, 2) scale(0.65)">
-          <path d="${backwardIconPath}" fill="currentColor"/>
+          ${backwardIconSvg}
           <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${time}</text>
         </g>
         <!-- 下方前进箭头 -->
         <g transform="translate(0, 30) scale(0.65)">
-          <path d="${forwardIconPath}" fill="currentColor"/>
+          ${forwardIconSvg}
           <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${time}</text>
         </g>
       </svg>
     `;
 
-    // SVG 图标 - 后退（YouTube风格：逆时针圆弧箭头 + 数字）
+    // SVG 图标 - 后退（修改点：逆时针圆弧，箭头在左侧中间朝下 + 数字）
     const backwardIcon = generateBackwardIcon(currentSeekTime);
 
-    // SVG 图标 - 前进（YouTube风格：顺时针圆弧箭头 + 数字）
+    // SVG 图标 - 前进（修改点：顺时针圆弧，箭头在右侧中间朝下 + 数字）
     const forwardIcon = generateForwardIcon(currentSeekTime);
 
     // 快进/快退功能
@@ -94,7 +106,10 @@ export default function artplayerPluginSeekButtons(option = {}) {
           };
         } else {
           // 双侧模式：显示单向箭头
-          const icon = side === 'left' ? generateBackwardIcon(currentSeekTime) : generateForwardIcon(currentSeekTime);
+          const icon =
+            side === 'left'
+              ? generateBackwardIcon(currentSeekTime)
+              : generateForwardIcon(currentSeekTime);
           button.innerHTML = icon;
           button.onclick = side === 'left' ? seekBackward : seekForward;
         }
@@ -123,8 +138,10 @@ export default function artplayerPluginSeekButtons(option = {}) {
         // 跟随控制栏的显示/隐藏状态（锁定时也隐藏）
         const updateButtonsVisibility = () => {
           const controlsVisible = art.controls.show && !art.isLock;
-          const allButtons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
-          allButtons.forEach(button => {
+          const allButtons = art.template.$player.querySelectorAll(
+            '.art-seek-floating-left, .art-seek-floating-right',
+          );
+          allButtons.forEach((button) => {
             if (controlsVisible) {
               button.style.opacity = '0.85';
               button.style.pointerEvents = 'auto';
@@ -184,25 +201,19 @@ export default function artplayerPluginSeekButtons(option = {}) {
           border-radius: 32px;
         }
 
-        /* 双侧模式：按钮在屏幕中间（Netflix风格） */
+        /* 双侧模式：按钮分别位于播放器左右两侧中间（修改点：原为屏幕居中 Netflix 风格） */
         body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-left {
-          left: 50%;
-          transform: translate(-100%, -50%);
-          margin-left: -40px;
+          left: 16px;
         }
 
         body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-right {
-          right: 50%;
-          transform: translate(100%, -50%);
-          margin-right: -40px;
+          right: 16px;
         }
 
-        body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-left:active {
-          transform: translate(-100%, -50%) scale(0.92);
-        }
-
+        /* 双侧模式 active 状态：保持垂直居中缩放 */
+        body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-left:active,
         body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-right:active {
-          transform: translate(100%, -50%) scale(0.92);
+          transform: translateY(-50%) scale(0.92);
         }
 
         /* 单侧模式：按钮在屏幕边缘 */
@@ -224,15 +235,15 @@ export default function artplayerPluginSeekButtons(option = {}) {
         }
 
         /* 全屏时调整位置和大小 */
-        /* 双侧模式全屏：保持中间位置，增大间距 */
+        /* 双侧模式全屏：保持左右两侧位置，稍微增大与边缘的距离（修改点：原为居中模式调整间距） */
         .art-fullscreen body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-left,
         .art-fullscreen-web body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-left {
-          margin-left: -60px;
+          left: 24px;
         }
 
         .art-fullscreen body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-right,
         .art-fullscreen-web body:not([data-seek-layout="left"]):not([data-seek-layout="right"]) .art-seek-floating-right {
-          margin-right: -60px;
+          right: 24px;
         }
 
         /* 单侧模式全屏：调整边缘位置 */
@@ -327,7 +338,7 @@ export default function artplayerPluginSeekButtons(option = {}) {
     return {
       name: 'artplayerPluginSeekButtons',
       config: (newOptions) => {
-        const oldSeekTime = currentSeekTime;
+        // 修改点：移除未使用的 oldSeekTime（pre-commit 严格 lint 警告）
         const oldMobileLayout = currentMobileLayout;
 
         // 更新配置
@@ -346,17 +357,24 @@ export default function artplayerPluginSeekButtons(option = {}) {
             backwardBtn.innerHTML = generateBackwardIcon(currentSeekTime);
             forwardBtn.innerHTML = generateForwardIcon(currentSeekTime);
             // 更新 tooltip（需要更新 DOM 属性）
-            backwardBtn.setAttribute('aria-label', `后退 ${currentSeekTime} 秒`);
+            backwardBtn.setAttribute(
+              'aria-label',
+              `后退 ${currentSeekTime} 秒`,
+            );
             forwardBtn.setAttribute('aria-label', `前进 ${currentSeekTime} 秒`);
           }
         } else {
           // 移动端：检查是否需要重建按钮
-          const layoutChanged = newOptions.mobileLayout !== undefined && oldMobileLayout !== currentMobileLayout;
+          const layoutChanged =
+            newOptions.mobileLayout !== undefined &&
+            oldMobileLayout !== currentMobileLayout;
 
           if (layoutChanged) {
             // 布局改变：需要重建按钮（数量和位置会变）
-            const oldButtons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
-            oldButtons.forEach(btn => btn.remove());
+            const oldButtons = art.template.$player.querySelectorAll(
+              '.art-seek-floating-left, .art-seek-floating-right',
+            );
+            oldButtons.forEach((btn) => btn.remove());
 
             // 更新 body 属性
             document.body.setAttribute('data-seek-layout', currentMobileLayout);
@@ -380,7 +398,10 @@ export default function artplayerPluginSeekButtons(option = {}) {
                 };
               } else {
                 // 双侧模式：显示单向箭头
-                const icon = side === 'left' ? generateBackwardIcon(currentSeekTime) : generateForwardIcon(currentSeekTime);
+                const icon =
+                  side === 'left'
+                    ? generateBackwardIcon(currentSeekTime)
+                    : generateForwardIcon(currentSeekTime);
                 button.innerHTML = icon;
                 button.onclick = side === 'left' ? seekBackward : seekForward;
               }
@@ -393,14 +414,19 @@ export default function artplayerPluginSeekButtons(option = {}) {
               art.template.$player.appendChild(leftButton);
               art.template.$player.appendChild(rightButton);
             } else {
-              const button = createFloatingButtonForUpdate(currentMobileLayout, true);
+              const button = createFloatingButtonForUpdate(
+                currentMobileLayout,
+                true,
+              );
               art.template.$player.appendChild(button);
             }
 
             // 重建后立即更新按钮可见性
             const controlsVisible = art.controls.show;
-            const newButtons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
-            newButtons.forEach(btn => {
+            const newButtons = art.template.$player.querySelectorAll(
+              '.art-seek-floating-left, .art-seek-floating-right',
+            );
+            newButtons.forEach((btn) => {
               if (controlsVisible) {
                 btn.style.opacity = '0.85';
                 btn.style.pointerEvents = 'auto';
@@ -411,11 +437,13 @@ export default function artplayerPluginSeekButtons(option = {}) {
             });
           } else if (newOptions.seekTime !== undefined) {
             // 只是秒数改变：只更新 innerHTML，不重建按钮
-            const buttons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
+            const buttons = art.template.$player.querySelectorAll(
+              '.art-seek-floating-left, .art-seek-floating-right',
+            );
 
             if (currentMobileLayout === 'both') {
               // 双侧模式：更新单向箭头
-              buttons.forEach(button => {
+              buttons.forEach((button) => {
                 if (button.classList.contains('art-seek-floating-left')) {
                   button.innerHTML = generateBackwardIcon(currentSeekTime);
                 } else {
@@ -424,7 +452,7 @@ export default function artplayerPluginSeekButtons(option = {}) {
               });
             } else {
               // 单侧模式：更新双向箭头（竖向排列）
-              buttons.forEach(button => {
+              buttons.forEach((button) => {
                 button.innerHTML = generateDualSeekIcon(currentSeekTime);
               });
             }
