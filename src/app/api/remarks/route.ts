@@ -11,14 +11,13 @@ import {
 } from '@/lib/performance-monitor';
 import {
   BANGUMI_DATE_ORIGIN,
-  MANUAL_ORIGIN,
   deleteRemarkEntries,
+  MANUAL_ORIGIN,
   normalizeOrigin,
   readRemarks,
   resolveRemarkEntry,
   resolveRemarkWriteKey,
   updateRemarks,
-  writeRemarks,
 } from '@/lib/video-remarks.server';
 
 export const runtime = 'nodejs';
@@ -251,8 +250,21 @@ export async function DELETE(request: NextRequest) {
 
     const source = request.nextUrl.searchParams.get('source')?.trim() || '';
     const id = request.nextUrl.searchParams.get('id')?.trim() || '';
+    // 【修复·删除被静默跳过】真实客户端（App 的 _deleteRemoteRecord 与 Web 的
+    // deleteVideoRemark）发 DELETE 时都不携带 updatedAt。旧实现回退到服务器时钟
+    // Date.now()，而记录里的 updatedAt 是保存时由「客户端时钟」写入的——这是
+    // 跨时钟域比较：只要客户端时钟超前（或服务器时钟落后）的时间差大于
+    // 「保存→删除」的间隔，existing.updatedAt > Date.now() 成立，删除被静默
+    // 跳过却仍返回 success:true。客户端随即清掉 pending delete，下一次同步又
+    // 把远端记录拉回本地，表现为「删除了但实际没有被删除」。
+    // 现在 last-write-wins 守卫只在调用方显式携带 updatedAt（其所见版本）时
+    // 生效；未携带或非法时视为无条件删除（+∞ 恒满足 <= 比较），与两条真实
+    // 客户端路径的语义一致。
     const updatedAtParam = request.nextUrl.searchParams.get('updatedAt');
-    const updatedAt = updatedAtParam ? Number(updatedAtParam) : Date.now();
+    const parsedUpdatedAt = updatedAtParam ? Number(updatedAtParam) : NaN;
+    const updatedAt = Number.isFinite(parsedUpdatedAt)
+      ? parsedUpdatedAt
+      : Number.POSITIVE_INFINITY;
 
     await updateRemarks(user.username, (remarks) => {
       if (source && id) {
