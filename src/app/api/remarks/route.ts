@@ -273,6 +273,24 @@ export async function DELETE(request: NextRequest) {
 
         if (!existing || existing.updatedAt <= updatedAt) {
           deleteRemarkEntries(remarks, source, id);
+          // 【新增·删除墓碑（tombstone）】只物理删除记录无法跨设备传播删除
+          // 意图：其他端（如网页浏览器 localStorage、另一台 App 设备）的本地
+          // 副本会在下一次同步时发现「本地有、远端没有」，按 local-wins 规则
+          // 把记录重新上传回服务器，表现为「删除了过一会儿又回来」。这里在
+          // 删除后写入一条空备注墓碑（remark:''，origin manual），时间戳取
+          // max(服务器时钟, 原记录 updatedAt+1)——必须大于被删记录的时间戳
+          // （该值来自客户端时钟，可能超前于服务器），否则墓碑在合并时赢不
+          // 过其他端的旧副本。各端合并逻辑按时间戳比较，墓碑获胜后本地副本
+          // 被覆盖为空、显示为无备注，且不满足 local-wins 条件而不再重传。
+          // 用户之后重新保存备注时，新记录时间戳更新，正常覆盖墓碑。
+          const tombstoneKey = resolveRemarkWriteKey(source, id);
+          if (existing && tombstoneKey) {
+            remarks[tombstoneKey] = {
+              remark: '',
+              updatedAt: Math.max(Date.now(), existing.updatedAt + 1),
+              origin: MANUAL_ORIGIN,
+            };
+          }
         }
         return;
       }

@@ -39,9 +39,10 @@ jest.mock('@/lib/performance-monitor', () => ({
   resetDbQueryCount: jest.fn(),
 }));
 
-import { DELETE, GET, POST } from './remarks/route';
-import { POST as PUSH } from './admin/remarks/push/route';
 import { db } from '@/lib/db';
+
+import { POST as PUSH } from './admin/remarks/push/route';
+import { DELETE, GET, POST } from './remarks/route';
 
 const cacheKey = 'user:alice:video_remarks';
 const bobCacheKey = 'user:bob:video_remarks';
@@ -127,7 +128,8 @@ describe('/api/remarks ContentIdentity compatibility', () => {
     await DELETE(
       new NextRequest(requestUrl(source, id, 30), { method: 'DELETE' }),
     );
-    expect(storedRemarks[canonicalKey]).toBeUndefined();
+    // 【删除墓碑配套】DELETE 现在留下空备注墓碑而非移除键。
+    expect(storedRemarks[canonicalKey]).toMatchObject({ remark: '' });
   });
 
   it('reads safe legacy data and persists canonical lazy migration', async () => {
@@ -166,8 +168,39 @@ describe('/api/remarks ContentIdentity compatibility', () => {
       new NextRequest(requestUrl('abc', '123', 10), { method: 'DELETE' }),
     );
 
-    expect(storedRemarks[canonicalKey]).toBeUndefined();
+    // 【删除墓碑配套】canonical 主键留下空备注墓碑，legacy 键被移除。
+    expect(storedRemarks[canonicalKey]).toMatchObject({ remark: '' });
     expect(storedRemarks.abc__123).toBeUndefined();
+    // 墓碑时间戳必须大于被删记录，否则跨端合并时赢不过旧副本。
+    expect(
+      (storedRemarks[canonicalKey]?.updatedAt ?? 0) > record.updatedAt,
+    ).toBe(true);
+  });
+
+  // 【回归·删除被静默跳过 + 墓碑兜底】真实客户端（App 的 _deleteRemoteRecord
+  // 与 Web 的 deleteVideoRemark）发 DELETE 时都不携带 updatedAt；记录的
+  // updatedAt 由客户端时钟写入、可能超前于服务器时钟。修复后：未携带
+  // updatedAt 视为无条件删除，且墓碑时间戳按 max(服务器时钟, 原记录+1)
+  // 兜底，保证即使原记录时间戳超前，墓碑也能在合并时获胜。
+  it('deletes without updatedAt and leaves a tombstone even when the record timestamp is ahead of the server clock', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    const futureRecord = {
+      remark: 'future',
+      updatedAt: Date.now() + 60_000,
+      origin: 'manual' as const,
+    };
+    setAliceRemarks({ [canonicalKey]: futureRecord });
+
+    const response = await DELETE(
+      new NextRequest(requestUrl('abc', '123'), { method: 'DELETE' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true });
+    expect(storedRemarks[canonicalKey]).toMatchObject({ remark: '' });
+    expect(
+      (storedRemarks[canonicalKey]?.updatedAt ?? 0) > futureRecord.updatedAt,
+    ).toBe(true);
   });
 
   it('does not migrate or delete ambiguous legacy data', async () => {
@@ -247,7 +280,10 @@ describe('/api/remarks ContentIdentity compatibility', () => {
     await DELETE(
       new NextRequest(requestUrl('abc', '123', 40), { method: 'DELETE' }),
     );
-    expect(Object.keys(cache.get(cacheKey) ?? {})).toHaveLength(0);
+    // 【删除墓碑配套】删除后剩一条空备注墓碑而非空 map。
+    expect(Object.values(cache.get(cacheKey) ?? {})).toMatchObject([
+      { remark: '' },
+    ]);
   });
 
   it('serializes concurrent writes so different remark keys are preserved', async () => {
