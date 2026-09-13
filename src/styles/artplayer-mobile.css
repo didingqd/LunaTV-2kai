@@ -52,8 +52,14 @@
     --art-indicator-size: 8px !important;
   }
 
-  /* 网页全屏在移动端意义不大，隐藏以节省空间 */
-  .art-control-fullscreenWeb {
+  /* 修改点：区分手机端与电脑端缩小窗口的情况（.art-mobile 是 ArtPlayer 按 UA 添加的类，不受窗口宽度影响）：
+     - 手机端：保持原行为，隐藏网页全屏按钮以节省空间；
+     - 电脑端缩小窗口：保留网页全屏按钮，改为隐藏画中画（小窗）按钮。 */
+  .art-video-player.art-mobile .art-control-fullscreenWeb {
+    display: none !important;
+  }
+
+  .art-video-player:not(.art-mobile) .art-control-pip {
     display: none !important;
   }
 
