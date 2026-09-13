@@ -261,4 +261,158 @@ describe('Video Remarks client identity', () => {
       }),
     );
   });
+
+  // 【墓碑重设计·新增·防复活核心契约】远端墓碑无条件获胜：本地旧副本即使
+  // 时间戳更大（客户端时钟超前）也不允许反超墓碑重传，「删除了过一会儿
+  // 又回来」的主路径被封死。
+  it('lets a remote tombstone win over a newer local copy without re-upload', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: 2,
+        legacy: {},
+        principals: {
+          alice: {
+            principal: 'alice',
+            data: {
+              [canonicalKey]: {
+                remark: 'stale local copy',
+                updatedAt: Date.now() + 60_000,
+                origin: 'manual',
+              },
+            },
+          },
+        },
+      }),
+    );
+    global.fetch = jest.fn(async () =>
+      response({
+        [canonicalKey]: {
+          remark: '',
+          updatedAt: Date.now(),
+          origin: 'manual',
+          deletedAt: Date.now(),
+        },
+      }),
+    );
+
+    const client = loadClient();
+    await client.syncVideoRemarks();
+
+    expect(client.getLocalVideoRemark('abc', '123')).toBe('');
+    // 只有 GET，没有任何 POST（旧副本不重传）。
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const data = readStoredEnvelope().principals.alice.data;
+    expect(data[canonicalKey]).toMatchObject({ deletedAt: expect.any(Number) });
+  });
+
+  // 【墓碑重设计·新增契约】删除走 POST 空 remark + manual origin 通道，
+  // 本地写墓碑并采纳服务端盖章的墓碑记录。
+  it('deletes through the POST tombstone channel and adopts the server stamp', async () => {
+    const client = loadClient();
+    await client.saveVideoRemark('abc', '123', 'to be deleted');
+    (global.fetch as jest.Mock).mockClear();
+    const serverStamp = Date.now() + 5000;
+    (global.fetch as jest.Mock).mockResolvedValue(
+      response({
+        success: true,
+        record: {
+          remark: '',
+          updatedAt: serverStamp,
+          origin: 'manual',
+          deletedAt: serverStamp,
+        },
+      }),
+    );
+
+    const deleted = await client.deleteVideoRemark('abc', '123');
+
+    expect(deleted).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/remarks',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"remark":""'),
+      }),
+    );
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    expect(
+      readStoredEnvelope().principals.alice.data[canonicalKey],
+    ).toMatchObject({
+      remark: '',
+      deletedAt: serverStamp,
+    });
+    expect(client.getLocalVideoRemark('abc', '123')).toBe('');
+  });
+
+  // 【墓碑重设计·新增契约】离线删除（POST 失败）保留本地墓碑；远端仍有
+  // 活记录时，下一次 sync 通过墓碑上传传播删除意图。
+  it('replays an offline delete as a tombstone upload while a live record exists remotely', async () => {
+    const client = loadClient();
+    await client.saveVideoRemark('abc', '123', 'to be deleted');
+    (global.fetch as jest.Mock).mockClear();
+    (global.fetch as jest.Mock)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(
+        response({
+          [buildContentIdentityKey('abc', '123')]: {
+            remark: 'to be deleted',
+            updatedAt: 100,
+            origin: 'manual',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(response({ record: null }));
+
+    await client.deleteVideoRemark('abc', '123');
+    expect(client.getLocalVideoRemark('abc', '123')).toBe('');
+
+    await client.syncVideoRemarks();
+
+    // GET + 墓碑 POST 重放，删除意图传播到服务端。
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      '/api/remarks',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"remark":""'),
+      }),
+    );
+  });
+
+  // 【墓碑重设计·新增契约】本地墓碑 + 远端缺失（记录已被服务端 GC）时不
+  // 重放墓碑，避免墓碑每轮 GC 后被重传重生、30 天保留期形同虚设。
+  it('does not replay a local tombstone when the remote record is gone', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: 2,
+        legacy: {},
+        principals: {
+          alice: {
+            principal: 'alice',
+            data: {
+              [canonicalKey]: {
+                remark: '',
+                updatedAt: 10,
+                origin: 'manual',
+                deletedAt: 10,
+              },
+            },
+          },
+        },
+      }),
+    );
+    global.fetch = jest.fn(async () => response({}));
+
+    const client = loadClient();
+    await client.syncVideoRemarks();
+
+    // 只有 GET，墓碑不重放。
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(client.getLocalVideoRemark('abc', '123')).toBe('');
+  });
 });

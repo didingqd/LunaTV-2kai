@@ -179,9 +179,9 @@ describe('/api/remarks ContentIdentity compatibility', () => {
 
   // 【回归·删除被静默跳过 + 墓碑兜底】真实客户端（App 的 _deleteRemoteRecord
   // 与 Web 的 deleteVideoRemark）发 DELETE 时都不携带 updatedAt；记录的
-  // updatedAt 由客户端时钟写入、可能超前于服务器时钟。修复后：未携带
-  // updatedAt 视为无条件删除，且墓碑时间戳按 max(服务器时钟, 原记录+1)
-  // 兜底，保证即使原记录时间戳超前，墓碑也能在合并时获胜。
+  // updatedAt 由客户端时钟写入、可能超前于服务器时钟。修复后：DELETE 无条件
+  // 删除，且墓碑时间戳按 max(服务器时钟, 原记录+1) 兜底，保证即使原记录
+  // 时间戳超前，墓碑也能在合并时获胜。
   it('deletes without updatedAt and leaves a tombstone even when the record timestamp is ahead of the server clock', async () => {
     const canonicalKey = buildContentIdentityKey('abc', '123');
     const futureRecord = {
@@ -198,9 +198,184 @@ describe('/api/remarks ContentIdentity compatibility', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ success: true });
     expect(storedRemarks[canonicalKey]).toMatchObject({ remark: '' });
+    // 【墓碑重设计】墓碑现在带显式 deletedAt 标记。
+    expect(storedRemarks[canonicalKey]?.deletedAt).toBeDefined();
     expect(
       (storedRemarks[canonicalKey]?.updatedAt ?? 0) > futureRecord.updatedAt,
     ).toBe(true);
+  });
+
+  // 【墓碑重设计·新增契约】POST 空 remark + manual origin = 删除墓碑通道：
+  // 写显式墓碑（deletedAt），时间戳由服务端时钟盖章（max(服务器时钟,
+  // 原记录+1)），不采纳客户端传入的 updatedAt。
+  it('stamps an explicit tombstone with the server clock on POST with an empty manual remark', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    const futureRecord = {
+      remark: 'old',
+      updatedAt: Date.now() + 60_000,
+      origin: 'manual' as const,
+    };
+    setAliceRemarks({ [canonicalKey]: futureRecord });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: '',
+          updatedAt: 1,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      success: boolean;
+      record: { remark: string; updatedAt: number; deletedAt?: number };
+    };
+    expect(body.success).toBe(true);
+    expect(body.record).toMatchObject({ remark: '' });
+    expect(body.record.deletedAt).toBeDefined();
+    expect(body.record.updatedAt).toBeGreaterThan(futureRecord.updatedAt);
+    expect(storedRemarks[canonicalKey]).toEqual(body.record);
+  });
+
+  // 【墓碑重设计·新增契约】POST 活记录由服务端时钟盖章：客户端传入的
+  // updatedAt 不再作为决胜依据（旧实现存客户端时间戳，跨时钟域比较导致
+  // 删除墓碑被超前的旧副本压住）。
+  it('stamps live POST writes with the server clock instead of the client timestamp', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    const before = Date.now();
+
+    await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: 'fresh',
+          updatedAt: 9_999_999_999_999,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    const stored = storedRemarks[canonicalKey];
+    expect(stored?.remark).toBe('fresh');
+    expect(stored?.deletedAt).toBeUndefined();
+    expect(stored?.updatedAt).toBeGreaterThanOrEqual(before);
+    // 客户端传入的超前时间戳绝不落库。
+    expect(stored?.updatedAt).toBeLessThan(9_999_999_999_999);
+  });
+
+  // 【墓碑重设计·新增契约】用户在墓碑后重新保存备注 = 显式复活：新活记录
+  // 覆盖墓碑并清除 deletedAt。
+  it('resurrects a live record over a tombstone via POST', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    setAliceRemarks({
+      [canonicalKey]: {
+        remark: '',
+        updatedAt: 100,
+        origin: 'manual',
+        deletedAt: 100,
+      },
+    });
+
+    await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: 'back again',
+          updatedAt: 1,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    expect(storedRemarks[canonicalKey]).toMatchObject({
+      remark: 'back again',
+    });
+    expect(storedRemarks[canonicalKey]?.deletedAt).toBeUndefined();
+    expect((storedRemarks[canonicalKey]?.updatedAt ?? 0) > 100).toBe(true);
+  });
+
+  // 【墓碑重设计·新增契约】过期墓碑（超过 30 天保留期）在读取视图中不可见：
+  // GET 全量不返回已 GC 的墓碑键。
+  it('hides expired tombstones from the full GET read view', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    const expired = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    setAliceRemarks({
+      [canonicalKey]: {
+        remark: '',
+        updatedAt: expired,
+        origin: 'manual',
+        deletedAt: expired,
+      },
+    });
+
+    const response = await GET(new NextRequest('http://localhost/api/remarks'));
+
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body[canonicalKey]).toBeUndefined();
+  });
+
+  // 【墓碑重设计·新增契约】写路径顺带物理回收过期墓碑：任意一次 POST 落库
+  // 后，过期的墓碑键从存储中消失（updateRemarks 的写回包含剪枝结果）。
+  it('physically prunes expired tombstones on the next write', async () => {
+    const expiredKey = buildContentIdentityKey('abc', 'gone');
+    const liveKey = buildContentIdentityKey('abc', '123');
+    const expired = Date.now() - 31 * 24 * 60 * 60 * 1000;
+    setAliceRemarks({
+      [expiredKey]: {
+        remark: '',
+        updatedAt: expired,
+        origin: 'manual',
+        deletedAt: expired,
+      },
+    });
+
+    await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: 'keep',
+          updatedAt: 1,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    expect(storedRemarks[expiredKey]).toBeUndefined();
+    expect(storedRemarks[liveKey]).toMatchObject({ remark: 'keep' });
+  });
+
+  // 【墓碑重设计·新增契约】旧隐式墓碑（[0683] 版本后端写的「空 remark +
+  // manual origin」）在读取时升格为显式墓碑（deletedAt = updatedAt），
+  // 存量数据无需迁移即获得统一判据。时间戳须取近期值：过老的墓碑会被
+  // 30 天保留期 GC 剪掉。
+  it('upgrades legacy implicit tombstones to explicit deletedAt on read', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    const recent = Date.now() - 1000;
+    setAliceRemarks({
+      [canonicalKey]: { remark: '', updatedAt: recent, origin: 'manual' },
+    });
+
+    const response = await GET(new NextRequest(requestUrl('abc', '123')));
+
+    expect(await response.json()).toMatchObject({
+      remark: '',
+      deletedAt: recent,
+    });
   });
 
   it('does not migrate or delete ambiguous legacy data', async () => {

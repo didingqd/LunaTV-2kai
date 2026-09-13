@@ -9,6 +9,12 @@ export type VideoRemarkRecord = {
   remark: string;
   updatedAt: number;
   origin: VideoRemarkOrigin;
+  /**
+   * 【墓碑重设计·新增】显式删除墓碑标记：有值即代表该记录已被用户删除。
+   * 与服务端 RemarkRecord.deletedAt 语义一致，详见
+   * Selene 仓库 docs/video-remark-sync-contract.md 的三端合并契约。
+   */
+  deletedAt?: number;
 };
 
 type RemarksMap = Record<string, VideoRemarkRecord>;
@@ -84,21 +90,62 @@ function normalizeOrigin(value: unknown): VideoRemarkOrigin {
   return value === BANGUMI_DATE_ORIGIN ? BANGUMI_DATE_ORIGIN : MANUAL_ORIGIN;
 }
 
+/** 【墓碑重设计·新增】记录是否为删除墓碑（deletedAt 有值）。 */
+function isTombstone(record: VideoRemarkRecord): boolean {
+  return record.deletedAt !== undefined;
+}
+
+/** 【墓碑重设计·新增】时间戳字段容错解析：非法/缺失时回退 fallback。 */
+function coalesceTimestamp(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 function normalizeRecord(value: unknown): VideoRemarkRecord | null {
   if (typeof value === 'string') {
-    return { remark: value.trim(), updatedAt: 0, origin: MANUAL_ORIGIN };
+    // 【墓碑重设计·修改】空字符串不再产生 updatedAt:0 的空 manual 记录
+    //（与服务端 normalizeRecord 对齐，空串视为无记录）。
+    const remark = value.trim();
+    return remark ? { remark, updatedAt: 0, origin: MANUAL_ORIGIN } : null;
   }
 
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const remark = typeof raw.remark === 'string' ? raw.remark.trim() : '';
   const origin = normalizeOrigin(raw.origin);
-  const updatedAt =
-    typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
-      ? raw.updatedAt
-      : 0;
+  const deletedAtRaw = raw.deletedAt;
+  const deletedAt =
+    typeof deletedAtRaw === 'number' && Number.isFinite(deletedAtRaw)
+      ? deletedAtRaw
+      : undefined;
 
-  return { remark, updatedAt, origin };
+  // 【墓碑重设计·新增】显式墓碑：deletedAt 有值即墓碑，remark 强制为空、
+  // origin 归一 manual（与服务端 normalizeRecord 同一判据）。
+  if (deletedAt !== undefined) {
+    return {
+      remark: '',
+      updatedAt: coalesceTimestamp(raw.updatedAt, deletedAt),
+      origin: MANUAL_ORIGIN,
+      deletedAt,
+    };
+  }
+
+  // 【墓碑重设计·新增】兼容旧隐式墓碑（服务端 [0683] 版本写入的
+  // 「空 remark + manual origin」）升格为显式墓碑，三端判据统一。
+  if (!remark && origin === MANUAL_ORIGIN) {
+    const updatedAt = coalesceTimestamp(raw.updatedAt, 0);
+    return {
+      remark: '',
+      updatedAt,
+      origin: MANUAL_ORIGIN,
+      deletedAt: updatedAt,
+    };
+  }
+
+  return {
+    remark,
+    updatedAt: coalesceTimestamp(raw.updatedAt, 0),
+    origin,
+  };
 }
 
 function normalizeMap(value: unknown): RemarksMap {
@@ -292,7 +339,18 @@ function mergeRemarks(
       continue;
     }
 
+    // 【墓碑重设计·新增·防复活核心】远端墓碑无条件获胜：本地非待上传的
+    // 旧副本不允许凭（可能超前的）客户端时间戳反超墓碑。旧实现按时间戳
+    // local-wins，另一端删除后本地旧副本时间戳更大就会重传，「删除了
+    // 过一会儿又回来」。墓碑代表明确的删除意图，只能被新写入覆盖。
+    if (remoteRecord && isTombstone(remoteRecord)) continue;
+
     if (!remoteRecord || localRecord.updatedAt > remoteRecord.updatedAt) {
+      // 【墓碑重设计·新增】本地墓碑仅在远端仍有活记录时才需要上传（传播
+      // 删除意图）；远端缺失（记录已被服务端 GC）时不再重放墓碑，否则
+      // 每轮 GC 后墓碑都会被重传重生，30 天保留期形同虚设。
+      if (isTombstone(localRecord) && !remoteRecord) continue;
+
       merged[key] = localRecord;
       const identity = resolveStoredIdentity(key);
       if (identity && identity.primaryKey === key) {
@@ -365,14 +423,56 @@ export async function deleteVideoRemark(source: string, id: string) {
     return false;
   }
 
-  deleteLocalVideoRemark(source, id);
+  // 【墓碑重设计·修改】删除不再本地物理删除记录，而是写入一条本地墓碑
+  //（deletedAt），并通过 POST 空 remark + manual origin 通道提交——与保存
+  // 共用同一条服务端盖章链路。旧实现（本地删键 + DELETE）：网络失败时本地
+  // 已无墓碑，下一次合并只能靠「远端仍缺该键」推断，任何旧副本都会按
+  // local-wins 复活。本地墓碑让删除意图在离线/失败窗口内持续可见。
+  const deletedAt = Date.now();
+  writePrincipalRemarks(principal, {
+    ...readPrincipalRemarks(principal),
+    [identity.primaryKey]: {
+      remark: '',
+      updatedAt: deletedAt,
+      origin: MANUAL_ORIGIN,
+      deletedAt,
+    },
+  });
 
   try {
-    await fetch('/api/remarks?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id), {
-      method: 'DELETE',
+    const response = await fetch('/api/remarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source,
+        id,
+        remark: '',
+        updatedAt: deletedAt,
+        origin: MANUAL_ORIGIN,
+      }),
     });
+
+    if (response.ok) {
+      const data = await response.json();
+      const serverRecord = normalizeRecord(data?.record);
+      // 采纳服务端盖章墓碑（服务端时钟），消除客户端时钟域差异；仅当本地
+      // 仍是本次发出的墓碑时采纳，防止覆盖请求期间的更新编辑。
+      const current = readPrincipalRemarks(principal)[identity.primaryKey];
+      if (
+        resolvePrincipal() === principal &&
+        serverRecord &&
+        isTombstone(serverRecord) &&
+        current &&
+        current.updatedAt === deletedAt
+      ) {
+        writePrincipalRemarks(principal, {
+          ...readPrincipalRemarks(principal),
+          [identity.primaryKey]: serverRecord,
+        });
+      }
+    }
   } catch {
-    // Keep the local deletion; a later sync can reconcile the server state.
+    // 离线删除：保留本地墓碑，后续 syncVideoRemarks 合并时按墓碑规则上传传播。
   }
 
   return true;
@@ -496,10 +596,20 @@ export async function saveVideoRemark(
 
     const data = await response.json();
     const serverRecord = normalizeRecord(data?.record);
+    // 【墓碑重设计·修改】服务端现在统一用服务端时钟盖章并返回落库记录；
+    // 只要本地仍是本次发出的乐观记录（未被请求期间的新编辑覆盖）就采纳
+    // 服务端时间戳。旧实现按「服务端时间戳 > 本地时间戳」判断，在客户端
+    // 时钟超前时永远不采纳，本地副本会每轮 sync 重复上传同一记录。
+    // ignored 响应（旧后端的 staleness 守卫/bangumi 守卫）不采纳，避免
+    // 把服务器上的旧内容覆盖掉用户刚输入的新内容。
+    const current = readPrincipalRemarks(principal)[key];
     if (
       resolvePrincipal() === principal &&
+      data?.ignored !== true &&
       serverRecord &&
-      serverRecord.updatedAt > record.updatedAt
+      !isTombstone(serverRecord) &&
+      current &&
+      current.updatedAt === record.updatedAt
     ) {
       writePrincipalRemarks(principal, {
         ...readPrincipalRemarks(principal),

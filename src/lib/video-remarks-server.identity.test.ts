@@ -9,10 +9,14 @@ jest.mock('@/lib/db', () => ({
 
 import {
   deleteRemarkEntries,
-  resolveRemarkEntry,
-  resolveRemarkWriteKey,
+  isTombstone,
+  manualRemarksOnly,
+  normalizeRecord,
+  pruneExpiredTombstones,
   type RemarkRecord,
   type RemarksMap,
+  resolveRemarkEntry,
+  resolveRemarkWriteKey,
 } from './video-remarks.server';
 
 const legacyRecord: RemarkRecord = {
@@ -99,5 +103,89 @@ describe('Video Remarks server identity', () => {
       migrated: false,
     });
     expect(remarks[buildContentIdentityKey('bangumi', '123')]).toBeUndefined();
+  });
+});
+
+// 【墓碑重设计·新增】墓碑判据 / 归一化升格 / GC / 导出过滤的单元契约。
+describe('Video Remarks tombstones', () => {
+  const now = Date.now();
+
+  it('treats records with deletedAt as tombstones and normalizes them', () => {
+    expect(isTombstone(legacyRecord)).toBe(false);
+
+    const tombstone = normalizeRecord({
+      remark: 'ignored content',
+      updatedAt: 10,
+      origin: 'manual',
+      deletedAt: 12,
+    });
+    // 显式墓碑：remark 强制为空、origin 归一 manual，防止脏数据借墓碑壳
+    // 带内容复活。
+    expect(tombstone).toEqual({
+      remark: '',
+      updatedAt: 10,
+      origin: 'manual',
+      deletedAt: 12,
+    });
+    expect(isTombstone(tombstone!)).toBe(true);
+  });
+
+  it('upgrades legacy implicit tombstones (empty manual remark) to deletedAt', () => {
+    const upgraded = normalizeRecord({
+      remark: '',
+      updatedAt: 55,
+      origin: 'manual',
+    });
+    expect(upgraded).toEqual({
+      remark: '',
+      updatedAt: 55,
+      origin: 'manual',
+      deletedAt: 55,
+    });
+
+    // 空的非 manual 记录仍是异常数据，直接丢弃。
+    expect(
+      normalizeRecord({ remark: '', updatedAt: 55, origin: 'bangumi_date' }),
+    ).toBeNull();
+  });
+
+  it('prunes expired tombstones and keeps fresh ones', () => {
+    const remarks: RemarksMap = {
+      expired: {
+        remark: '',
+        updatedAt: 1,
+        origin: 'manual',
+        deletedAt: now - 31 * 24 * 60 * 60 * 1000,
+      },
+      fresh: {
+        remark: '',
+        updatedAt: 2,
+        origin: 'manual',
+        deletedAt: now - 1000,
+      },
+      live: canonicalRecord,
+    };
+
+    expect(pruneExpiredTombstones(remarks, now)).toBe(true);
+    expect(remarks.expired).toBeUndefined();
+    expect(remarks.fresh).toBeDefined();
+    expect(remarks.live).toBeDefined();
+
+    // 无过期墓碑时返回 false（无变更）。
+    expect(pruneExpiredTombstones(remarks, now)).toBe(false);
+  });
+
+  it('excludes tombstones from manualRemarksOnly exports and pushes', () => {
+    const remarks: RemarksMap = {
+      live: legacyRecord,
+      tombstone: {
+        remark: '',
+        updatedAt: 3,
+        origin: 'manual',
+        deletedAt: 3,
+      },
+    };
+
+    expect(Object.keys(manualRemarksOnly(remarks))).toEqual(['live']);
   });
 });
