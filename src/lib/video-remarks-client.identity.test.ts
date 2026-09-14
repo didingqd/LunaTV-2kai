@@ -415,4 +415,134 @@ describe('Video Remarks client identity', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(client.getLocalVideoRemark('abc', '123')).toBe('');
   });
+
+  // 【复查加固·新增契约】sync 重放上传采纳服务端盖章：本地时间戳（客户端
+  // 时钟，可能超前）被服务端时钟替换后，下一轮 sync 不再重复上传同一条
+  // 记录。旧实现不读重放响应，时钟超前的端每轮 sync 都重传，且期间本端
+  // 旧内容会压掉其他设备的新编辑。
+  it('adopts server stamps for replayed uploads and stops re-uploading', async () => {
+    const client = loadClient();
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    // 本地记录时间戳超前 60s（客户端时钟快），远端是旧活记录 → 触发重放。
+    const ahead = Date.now() + 60_000;
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: 2,
+        legacy: {},
+        principals: {
+          alice: {
+            principal: 'alice',
+            data: {
+              [canonicalKey]: {
+                remark: 'local edit',
+                updatedAt: ahead,
+                origin: 'manual',
+              },
+            },
+          },
+        },
+      }),
+    );
+    const serverStamp = Date.now() + 1000;
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          [canonicalKey]: {
+            remark: 'remote old',
+            updatedAt: 100,
+            origin: 'manual',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          success: true,
+          record: {
+            remark: 'local edit',
+            updatedAt: serverStamp,
+            origin: 'manual',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          [canonicalKey]: {
+            remark: 'local edit',
+            updatedAt: serverStamp,
+            origin: 'manual',
+          },
+        }),
+      );
+
+    await client.syncVideoRemarks();
+
+    // 第一轮：GET + 重放 POST，且本地已采纳服务端盖章（时间域对齐）。
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(
+      readStoredEnvelope().principals.alice.data[canonicalKey],
+    ).toMatchObject({ remark: 'local edit', updatedAt: serverStamp });
+
+    await client.syncVideoRemarks();
+
+    // 第二轮：只有 GET。本地时间戳已等于服务端盖章值，不再触发重传。
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(global.fetch).toHaveBeenLastCalledWith('/api/remarks', {
+      cache: 'no-store',
+    });
+  });
+
+  // 【复查加固·新增契约】空备注保存 = 删除意图：转发到删除通道（本地墓碑
+  // + POST 空 remark），且 bangumi 自动日期备注不被空保存覆盖（守卫与
+  // App 端 saveRemark → deleteRemark 对齐；UI 此前已自行路由，无行为变化）。
+  it('routes an empty save through the delete channel without touching bangumi auto remarks', async () => {
+    const client = loadClient();
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: 2,
+        legacy: {},
+        principals: {
+          alice: {
+            principal: 'alice',
+            data: {
+              bangumi__123: {
+                remark: '2026-07-20',
+                updatedAt: 10,
+                origin: 'bangumi_date',
+              },
+            },
+          },
+        },
+      }),
+    );
+    global.fetch = jest.fn(async () => response({ record: null }));
+
+    // bangumi 自动备注守卫：删除通道拒绝删除自动备注，本地不动、无上传。
+    await client.saveVideoRemark('bangumi', '123', '   ');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(
+      readStoredEnvelope().principals.alice.data.bangumi__123,
+    ).toMatchObject({ remark: '2026-07-20', origin: 'bangumi_date' });
+
+    // 非 bangumi 场景：走本地墓碑 + POST 空 remark 墓碑通道。
+    const manualKey = buildContentIdentityKey('abc', '1');
+    (global.fetch as jest.Mock).mockClear();
+    await client.saveVideoRemark('abc', '1', '');
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/remarks',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"remark":""'),
+      }),
+    );
+    expect(readStoredEnvelope().principals.alice.data[manualKey]).toMatchObject(
+      {
+        deletedAt: expect.any(Number),
+      },
+    );
+  });
 });

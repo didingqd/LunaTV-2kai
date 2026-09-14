@@ -517,21 +517,62 @@ export async function syncVideoRemarks() {
 
     if (resolvePrincipal() !== principal) return merged;
 
-    await Promise.allSettled(
-      localWins.map(({ source, id, record }) =>
-        fetch('/api/remarks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+    // 【复查加固·修改】重放上传不再「发射后不管」：收集服务端盖章响应并在
+    // 上传后采纳落库记录。旧实现不读响应，本地时间戳停留在客户端时钟域：
+    // 时钟超前的端每轮 sync 都满足 localRecord.updatedAt >
+    // remoteRecord.updatedAt 而重复上传同一条记录（时钟偏差多久就重传多久），
+    // 且期间本端旧内容会压掉其他设备对同一备注的新编辑。采纳盖章后本地与
+    // 服务端时钟域对齐，一次收敛、不再重传（与 App 端 _syncFromServer 的
+    // adoptions 机制对齐，补齐契约「上传一次自愈，采纳服务端盖章收敛」的
+    // Web 半边）。
+    const uploads = await Promise.all(
+      localWins.map(async ({ source, id, record }) => {
+        try {
+          const response = await fetch('/api/remarks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source,
+              id,
+              remark: record.remark,
+              updatedAt: record.updatedAt,
+              origin: record.origin,
+            }),
+          });
+          if (!response.ok) return;
+          const data = await response.json();
+          return {
             source,
             id,
-            remark: record.remark,
-            updatedAt: record.updatedAt,
-            origin: record.origin,
-          }),
-        }),
-      ),
+            record,
+            serverRecord: normalizeRecord(data?.record),
+          };
+        } catch {
+          // 单条上传失败（离线/网络抖动）：保持本地乐观记录，下一轮 sync
+          // 继续（远端缺失或时间戳落后的活记录仍会触发重传，无需额外标记）。
+        }
+      }),
     );
+
+    // 采纳服务端盖章（含 ignored 响应——服务端现有记录即权威状态，采纳即
+    // 正确收敛）。still-sent 守卫：本地仍是本次发送的那条乐观记录（时间戳
+    // 未变）才覆盖，防止吞掉上传窗口内用户的新编辑；与 saveVideoRemark 的
+    // 采纳守卫同一范式。
+    if (resolvePrincipal() === principal) {
+      let next = readPrincipalRemarks(principal);
+      let changed = false;
+      for (const upload of uploads) {
+        if (!upload || !upload.serverRecord) continue;
+        const identity = resolveClientRemarkIdentity(upload.source, upload.id);
+        if (!identity) continue;
+        const current = next[identity.primaryKey];
+        if (current && current.updatedAt === upload.record.updatedAt) {
+          next = { ...next, [identity.primaryKey]: upload.serverRecord };
+          changed = true;
+        }
+      }
+      if (changed) writePrincipalRemarks(principal, next);
+    }
 
     return merged;
   })();
@@ -566,6 +607,17 @@ export async function saveVideoRemark(
   const principal = resolvePrincipal();
   const identity = resolveClientRemarkIdentity(source, id);
   if (!principal || !identity) return;
+
+  // 【复查加固·新增】空备注 = 删除意图，转发到删除通道（与 App 端
+  // saveRemark → deleteRemark 的行为对齐）。旧实现会本地写一条无
+  // deletedAt 的空 manual 记录并直接 POST：非 UI 调用方借此会绕过
+  // bangumi origin 守卫、用空保存覆盖掉自动日期备注（App 端有守卫，Web
+  // 缺失）。deleteVideoRemark 自带的守卫与墓碑通道补齐这个缺口。UI
+  //（VideoCard）此前已自行把空输入路由到删除，无行为变化。
+  if (!remark.trim()) {
+    await deleteVideoRemark(source, id);
+    return;
+  }
 
   const key = identity.primaryKey;
   const record: VideoRemarkRecord = {

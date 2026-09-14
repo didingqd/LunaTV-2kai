@@ -378,6 +378,103 @@ describe('/api/remarks ContentIdentity compatibility', () => {
     });
   });
 
+  // 【复查加固·新增契约】服务端长度上限：POST 超长 remark 静默截断到
+  // MAX_REMARK_LENGTH（200）而非 400 拒绝——拒绝会让 App 的 pending write
+  // 把 4xx 当网络失败永久重试（毒消息死循环）。
+  it('truncates remarks over the server-side length cap on POST', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+
+    const createResponse = await POST(
+      new NextRequest('http://localhost/api/remarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'abc',
+          id: '123',
+          remark: 'x'.repeat(500),
+          updatedAt: 1,
+          origin: 'manual',
+        }),
+      }),
+    );
+
+    expect(createResponse.status).toBe(200);
+    expect(storedRemarks[canonicalKey]?.remark).toHaveLength(200);
+    expect(storedRemarks[canonicalKey]?.remark).toBe('x'.repeat(200));
+  });
+
+  // 【复查加固·新增契约】无参 DELETE（全量清空）逐键写显式墓碑而非物理
+  // 清空：物理清空后 Web 端会按「远端缺失 + 活记录」重传复活全部数据，
+  // App 端却静默丢弃本地副本——两端行为相反。墓碑化后「全量删除」按统一
+  // 契约传播；盖章必须超过存量记录时间戳（含超前的客户端时钟值）。
+  it('turns a full clear DELETE into tombstones for every key', async () => {
+    const keyA = buildContentIdentityKey('abc', '1');
+    const keyB = buildContentIdentityKey('abc', '2');
+    const futureRecord = {
+      remark: 'future',
+      updatedAt: Date.now() + 60_000,
+      origin: 'manual' as const,
+    };
+    setAliceRemarks({
+      [keyA]: futureRecord,
+      [keyB]: record,
+    });
+
+    const response = await DELETE(
+      new NextRequest('http://localhost/api/remarks', { method: 'DELETE' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true });
+    for (const key of [keyA, keyB]) {
+      expect(storedRemarks[key]).toMatchObject({ remark: '' });
+      expect(storedRemarks[key]?.deletedAt).toBeDefined();
+    }
+    // 墓碑时间戳必须盖过存量记录（含超前值），否则目标端合并时输给旧副本。
+    expect((storedRemarks[keyA]?.updatedAt ?? 0) > futureRecord.updatedAt).toBe(
+      true,
+    );
+    expect((storedRemarks[keyB]?.updatedAt ?? 0) > record.updatedAt).toBe(true);
+  });
+
+  // 【复查加固·新增契约】admin push 单调盖章：目标用户残留带超前客户端
+  // 时间戳的墓碑时，推送记录的 updatedAt 仍须盖过它，否则推送会在目标端
+  // sync 的时间戳比较中输给旧墓碑而静默失效。
+  it('stamps admin pushes above a target tombstone with a future timestamp', async () => {
+    const canonicalKey = buildContentIdentityKey('abc', '123');
+    setAliceRemarks({
+      [canonicalKey]: { remark: 'pushed', updatedAt: 10, origin: 'manual' },
+    });
+    const future = Date.now() + 60_000;
+    cache.set(bobCacheKey, {
+      [canonicalKey]: {
+        remark: '',
+        updatedAt: future,
+        origin: 'manual',
+        deletedAt: future,
+      },
+    });
+
+    const response = await PUSH(
+      new NextRequest('http://localhost/api/admin/remarks/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'abc', id: '123' }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    // 不断言 insertedRecords 精确值：目标用户列表含 process.env.USERNAME
+    //（Windows 下非空），其计数随环境浮动；关键断言是 bob 的落库记录。
+    expect(body.insertedRecords).toBeGreaterThanOrEqual(1);
+    const pushed = (cache.get(bobCacheKey) ?? {})[canonicalKey];
+    expect(pushed?.remark).toBe('pushed');
+    // 推送写入的是活记录（墓碑被管理员显式分发覆盖，deletedAt 清除）。
+    expect(pushed?.deletedAt).toBeUndefined();
+    expect((pushed?.updatedAt ?? 0) > future).toBe(true);
+  });
+
   it('does not migrate or delete ambiguous legacy data', async () => {
     setAliceRemarks({ a____123: record });
 

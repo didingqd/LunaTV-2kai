@@ -13,6 +13,7 @@ import {
   BANGUMI_DATE_ORIGIN,
   deleteRemarkEntries,
   MANUAL_ORIGIN,
+  MAX_REMARK_LENGTH,
   normalizeOrigin,
   readRemarks,
   resolveRemarkEntry,
@@ -145,7 +146,13 @@ export async function POST(request: NextRequest) {
     const requestSize = Buffer.byteLength(JSON.stringify(body), 'utf8');
     const source = typeof body.source === 'string' ? body.source.trim() : '';
     const id = typeof body.id === 'string' ? body.id.trim() : '';
-    const remark = typeof body.remark === 'string' ? body.remark.trim() : '';
+    // 【复查加固·修改】remark 先按服务端上限截断（MAX_REMARK_LENGTH = 200）
+    // 再 trim：超长入参静默截断而非 400 拒绝——拒绝会让 App 的 pending write
+    // 把 4xx 当网络失败永久重试（毒消息死循环）。App UI 已限 30 字，此处
+    // 防的是直接调 API 写入任意大文本撑爆整份 KV map 并在全量同步中放大。
+    const remark = (typeof body.remark === 'string' ? body.remark : '')
+      .slice(0, MAX_REMARK_LENGTH)
+      .trim();
     const origin = normalizeOrigin(body.origin);
     // 【墓碑重设计·修改】客户端传入的 updatedAt 不再作为决胜依据（仅作
     // API 兼容字段忽略）。旧实现用客户端时钟做 last-write-wins：两端时钟
@@ -297,9 +304,23 @@ export async function DELETE(request: NextRequest) {
         return;
       }
 
-      Object.keys(remarks).forEach((key) => {
-        delete remarks[key];
-      });
+      // 【复查加固·修改】无参 DELETE（全量清空）改为**逐键写显式墓碑**，
+      // 不再物理清空：物理清空后，持有旧副本的 Web 端会按「远端缺失 + 活
+      // 记录」在下一次 sync 把数据全部重传回来（清空不生效），而 App 端却
+      // 会静默丢弃本地全部非 pending 备注——同一操作两端行为相反。逐键
+      // 墓碑让「全量删除」按统一的墓碑契约传播到所有端；盖章逻辑与单条
+      // DELETE 相同（max(服务器时钟, 原记录+1)，容忍存量数据携带超前的
+      // 客户端时间戳）。
+      for (const key of Object.keys(remarks)) {
+        const existing = remarks[key];
+        const stamped = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
+        remarks[key] = {
+          remark: '',
+          updatedAt: stamped,
+          origin: MANUAL_ORIGIN,
+          deletedAt: stamped,
+        };
+      }
     });
 
     return jsonResponse('DELETE', startTime, startMemory, 200, 0, {

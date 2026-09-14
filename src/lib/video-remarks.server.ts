@@ -27,11 +27,21 @@ export const MANUAL_ORIGIN: RemarkOrigin = 'manual';
 export const BANGUMI_DATE_ORIGIN: RemarkOrigin = 'bangumi_date';
 
 /**
- * 【墓碑重设计·新增】墓碑保留期：超过该时长未发生新写入的墓碑在读写路径上
+ * 【复查加固·新增】墓碑保留期：超过该时长未发生新写入的墓碑在读写路径上
  * 被物理回收。30 天足以覆盖所有常活端至少一轮同步；离线超过 30 天的端取回
  * 旧副本属可接受边缘（新客户端的防复活合并规则会丢弃非 pending 旧副本）。
  */
 const TOMBSTONE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 【复查加固·新增】单条备注长度上限：POST 入参超长时**静默截断**而非 400
+ * 拒绝——拒绝会让 App 的 pending write 把 4xx 当作网络失败永久重试，制造
+ * 毒消息死循环；截断无失败路径。App UI 已限 30 字（video_menu_bottom_sheet
+ * maxLength），Web 的 window.prompt 无上限，这里防的是直接调 API 写入任意
+ * 大文本撑爆整份 KV map 并在全量同步中放大到所有端。截断后经 trim，落库
+ * 值必然 ≤ 200 字符。
+ */
+export const MAX_REMARK_LENGTH = 200;
 
 /** 【墓碑重设计·新增】记录是否为删除墓碑（deletedAt 有值）。 */
 export function isTombstone(record: RemarkRecord): boolean {
@@ -329,13 +339,17 @@ export async function pushManualRemarksToUsers(
           continue;
         }
 
-        // 【墓碑重设计·注释】目标用户的墓碑（空 remark）不拦截推送：admin
-        // push 是管理员显式的分发动作，语义即"覆盖分发"，墓碑视为无内容
-        // 记录可被覆盖；推送写入的活记录自带新时间戳，会覆盖墓碑并清除
-        // deletedAt（接收方看到的是管理员重新分发的备注，非旧副本复活）。
+        // 【墓碑重设计·注释 + 复查加固·修改】目标用户的墓碑（空 remark）不
+        // 拦截推送：admin push 是管理员显式的分发动作，语义即"覆盖分发"，
+        // 墓碑视为无内容记录可被覆盖；接收方看到的是管理员重新分发的备注，
+        // 非旧副本复活。写入时间戳改为**单调盖章** max(服务器时钟, 目标现有
+        // 记录+1)——与 POST/DELETE 同一防回拨范式：目标用户可能残留带超前
+        // 客户端时间戳的存量墓碑/记录，直接写 Date.now() 会让推送记录在
+        // 目标端 sync 的时间戳比较中输给旧墓碑，推送静默失效。
+        const stamped = Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1);
         target[key] = {
           ...record,
-          updatedAt: Date.now(),
+          updatedAt: stamped,
           origin: MANUAL_ORIGIN,
         };
         insertedForTarget++;
