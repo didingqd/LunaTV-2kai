@@ -40,6 +40,13 @@ import {
 } from '@/lib/shortdrama-cache';
 import { ReleaseCalendarItem, ShortDramaItem } from '@/lib/types';
 import { DoubanItem } from '@/lib/types';
+// 【自定义标签·新增】收藏夹标签筛选：全局词表 + 逐项标签查询 + 变更订阅/同步。
+import {
+  getAllLocalTags,
+  getLocalVideoTags,
+  subscribeVideoTags,
+  syncVideoTags,
+} from '@/lib/video-tags.client';
 import { useClearFavoritesMutation } from '@/hooks/useFavoritesMutations';
 // 🚀 修改点：收藏夹排序（与 APP 同款 10 种排序）+ 追更 +N 徽章
 import { useFavoritesSortSelection } from '@/hooks/useFavoritesSortSelection';
@@ -191,6 +198,12 @@ function HomeClient({
   const [favoriteFilter, setFavoriteFilter] = useState<
     'all' | 'movie' | 'tv' | 'anime' | 'shortdrama' | 'live' | 'variety'
   >('all');
+  // 【自定义标签·新增】收藏夹自定义标签筛选：当前选中标签（null = 不筛）与
+  // 全局标签词表（当前用户在任意内容上用过的所有标签，与 App 端全局共享）。
+  const [favoriteTagFilter, setFavoriteTagFilter] = useState<string | null>(
+    null,
+  );
+  const [allTags, setAllTags] = useState<string[]>([]);
   // 修改点：原 favoriteSortBy（recent/title）升级为与 APP 同款的收藏排序偏好，
   // 持久化到 localStorage；默认「保存时间降序」与原「最近添加」行为完全一致
   const [isFavoritesSortOpen, setIsFavoritesSortOpen] = useState(false);
@@ -489,13 +502,22 @@ function HomeClient({
   }, []); // 空依赖，只在组件挂载时计算一次
 
   // 合并初始化逻辑 - 优化性能，减少重渲染
+  // 【自定义标签·新增】加载并订阅全局标签词表：进入页面即读当前用户全部
+  // 标签供收藏夹筛选按钮渲染；标签变更（编辑/同步）后刷新，并触发一次同步。
+  useEffect(() => {
+    const refreshTags = () => setAllTags(getAllLocalTags());
+    refreshTags();
+    const unsubscribe = subscribeVideoTags(refreshTags);
+    syncVideoTags().catch(() => {});
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     // 获取用户名
     const authInfo = getAuthInfoFromBrowserCookie();
     if (authInfo?.username) {
       dispatch({ type: 'SET_USERNAME', payload: authInfo.username });
     }
-
     // 读取清空确认设置
     if (typeof window !== 'undefined') {
       const savedRequireClearConfirmation = localStorage.getItem(
@@ -1304,6 +1326,43 @@ function HomeClient({
                 </div>
               )}
 
+              {/* 【自定义标签·新增】自定义标签筛选：来自全局词表，与分类 AND
+                  组合。仅在有标签且有收藏时渲染；点击选中/再点取消。 */}
+              {favoriteItems.length > 0 && allTags.length > 0 && (
+                <div className='mb-4 flex flex-wrap items-center gap-2'>
+                  <span className='text-xs text-gray-500 dark:text-gray-400 mr-1'>
+                    标签：
+                  </span>
+                  <button
+                    onClick={() => setFavoriteTagFilter(null)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      favoriteTagFilter === null
+                        ? 'bg-orange-500 text-white shadow'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    全部
+                  </button>
+                  {allTags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() =>
+                        setFavoriteTagFilter((prev) =>
+                          prev === tag ? null : tag,
+                        )
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        favoriteTagFilter === tag
+                          ? 'bg-orange-500 text-white shadow'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* 排序选项（修改点：升级为与 APP 同款的排序面板入口，含 10 种排序与升降序切换） */}
               {favoriteItems.length > 0 && (
                 <div className='mb-4 flex items-center gap-2 text-sm'>
@@ -1384,6 +1443,17 @@ function HomeClient({
                       // 向后兼容：暂无 fallback
                       return false;
                     });
+                  }
+
+                  // 【自定义标签·新增】自定义标签筛选（与上面的分类筛选 AND
+                  // 组合）：选中标签时，只保留该内容标签包含所选标签的项。
+                  // 标签数据来自全局 client 缓存，按内容身份查询。
+                  if (favoriteTagFilter) {
+                    filtered = filtered.filter((item) =>
+                      getLocalVideoTags(item.source, item.id).includes(
+                        favoriteTagFilter,
+                      ),
+                    );
                   }
 
                   // 排序（修改点：按与 APP 同款的收藏排序偏好排序；默认「保存时间降序」

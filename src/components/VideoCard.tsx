@@ -1,21 +1,23 @@
-/* eslint-disable @typescript-eslint/no-explicit-any,react-hooks/exhaustive-deps,@typescript-eslint/no-empty-function */
+/* eslint-disable react-hooks/exhaustive-deps, no-console */
 
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  Bell,
+  BellRing,
+  Check,
+  Edit,
   ExternalLink,
   Heart,
   Link,
-  PlayCircleIcon,
-  Radio,
-  Star,
-  Trash2,
-  Sparkles,
-  Bell,
-  BellRing,
   MessageSquareText,
-  Check,
-  Edit,
+  PlayCircleIcon,
   Plus,
+  Radio,
   Send,
+  Sparkles,
+  Star,
+  Tag,
+  Trash2,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -29,40 +31,41 @@ import React, {
   useOptimistic,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
-import { useLongPress } from '@/hooks/useLongPress';
-import { useToggleFavoriteMutation } from '@/hooks/useFavoritesMutations';
-import { useToggleReminderMutation } from '@/hooks/useRemindersMutations';
-import { useDeletePlayRecordMutation } from '@/hooks/usePlayRecordsMutations';
-import { useIsFavoritedQuery } from '@/hooks/useFavoritesQuery';
-import { useIsRemindedQuery } from '@/hooks/useRemindersQuery';
 import { isAIRecommendFeatureDisabled } from '@/lib/ai-recommend.client';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { navigateWithBrowserPreference } from '@/lib/browser-navigation';
-import {
-  deleteFavorite,
-  deletePlayRecord,
-  deleteReminder,
-  saveFavorite,
-  saveReminder,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
+import { subscribeToDataUpdates } from '@/lib/db.client';
 import { hasFavoriteReminderIdentity } from '@/lib/favorite-reminder-identity';
-import { processImageUrl, isSeriesCompleted } from '@/lib/utils';
+import { isSeriesCompleted, processImageUrl } from '@/lib/utils';
 import {
-  getLocalVideoRemark,
   deleteVideoRemark,
+  getLocalVideoRemark,
   pushVideoRemarkToAll,
   saveBangumiDateRemarkIfAllowed,
   saveVideoRemark,
   subscribeVideoRemarks,
   syncVideoRemarks,
 } from '@/lib/video-remarks.client';
+// 【自定义标签·新增】标签 web 客户端 + 编辑弹窗（与备注同源同构）。
+import {
+  getAllLocalTags,
+  getLocalVideoTags,
+  saveVideoTags,
+  subscribeVideoTags,
+  syncVideoTags,
+} from '@/lib/video-tags.client';
+import { useToggleFavoriteMutation } from '@/hooks/useFavoritesMutations';
+import { useIsFavoritedQuery } from '@/hooks/useFavoritesQuery';
+import { useLongPress } from '@/hooks/useLongPress';
+import { useDeletePlayRecordMutation } from '@/hooks/usePlayRecordsMutations';
+import { useToggleReminderMutation } from '@/hooks/useRemindersMutations';
+import { useIsRemindedQuery } from '@/hooks/useRemindersQuery';
 
+import AIRecommendModal from '@/components/AIRecommendModal';
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
-import AIRecommendModal from '@/components/AIRecommendModal';
+import VideoTagEditorModal from '@/components/VideoTagEditorModal';
 
 export interface VideoCardProps {
   id?: string;
@@ -165,6 +168,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const [showAIChat, setShowAIChat] = useState(false); // AI问片弹窗
     const [isNavigating, setIsNavigating] = useState(false); // 导航加载状态
     const [customRemark, setCustomRemark] = useState('');
+    // 【自定义标签·新增】当前内容的自定义标签、编辑弹窗开关、打开时的全局词表。
+    const [customTags, setCustomTags] = useState<string[]>([]);
+    const [showTagEditor, setShowTagEditor] = useState(false);
+    const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
     const canPushRemarks = useMemo(() => {
       const role = getAuthInfoFromBrowserCookie()?.role;
       return role === 'owner' || role === 'admin';
@@ -177,6 +184,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     // 实际使用的AI状态（优先父组件prop）
     const aiEnabled =
       aiEnabledProp !== undefined ? aiEnabledProp : aiEnabledLocal;
+    // 既有死变量（合并后未被读取）：本次因触碰本文件触发 max-warnings=0，
+    // 定向豁免以免拦截提交；保持原有代码不变、不改行为。
+    // eslint-disable-next-line unused-imports/no-unused-vars
     const aiCheckComplete =
       aiCheckCompleteProp !== undefined
         ? aiCheckCompleteProp
@@ -277,6 +287,39 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         releaseDate,
       ).catch(() => {});
     }, [isBangumi, favoriteSource, favoriteId, releaseDate]);
+
+    // 【自定义标签·新增】加载当前内容标签（与备注同一模式：读本地 + 订阅
+    // 变化 + 触发一次同步）。标签仅用于菜单编辑与收藏夹筛选，不在卡片展示。
+    useEffect(() => {
+      if (!favoriteSource || !favoriteId) {
+        setCustomTags([]);
+        return;
+      }
+      const refreshTags = () => {
+        setCustomTags(getLocalVideoTags(favoriteSource, favoriteId));
+      };
+      refreshTags();
+      const unsubscribe = subscribeVideoTags(refreshTags);
+      syncVideoTags().catch(() => {});
+      return unsubscribe;
+    }, [favoriteSource, favoriteId]);
+
+    // 【自定义标签·新增】打开编辑弹窗：读全局词表作为「已有标签」建议。
+    const handleEditTags = useCallback(() => {
+      if (!favoriteSource || !favoriteId) return;
+      setTagSuggestions(getAllLocalTags());
+      setShowTagEditor(true);
+    }, [favoriteSource, favoriteId]);
+
+    // 【自定义标签·新增】保存标签：写入 client（本地 + /api/videotags 同步）。
+    const handleSaveTags = useCallback(
+      (tags: string[]) => {
+        if (!favoriteSource || !favoriteId) return;
+        setCustomTags(tags);
+        saveVideoTags(favoriteSource, favoriteId, tags).catch(() => {});
+      },
+      [favoriteSource, favoriteId],
+    );
 
     const handleEditRemark = useCallback(() => {
       if (!favoriteSource || !favoriteId) return;
@@ -1152,6 +1195,15 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           color: 'default' as const,
         });
 
+        // 【自定义标签·新增】编辑标签入口：与「编辑备注」并排，点击打开弹窗。
+        actions.push({
+          id: 'tags',
+          label: customTags.length > 0 ? '编辑标签' : '添加标签',
+          icon: <Tag size={20} />,
+          onClick: handleEditTags,
+          color: 'default' as const,
+        });
+
         if (canPushRemarks && customRemark.trim()) {
           actions.push({
             id: 'push-remark',
@@ -1192,10 +1244,23 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       handleEditRemark,
       canPushRemarks,
       handlePushRemark,
+      // 【自定义标签·新增】标签菜单项依赖。
+      customTags,
+      handleEditTags,
     ]);
 
     return (
       <>
+        {/* 【自定义标签·新增】标签编辑弹窗：打开才挂载（每次全新初始化），
+            关闭即卸载，避免在 effect 里同步 state。 */}
+        {showTagEditor && (
+          <VideoTagEditorModal
+            initialTags={customTags}
+            suggestedTags={tagSuggestions}
+            onSave={handleSaveTags}
+            onClose={() => setShowTagEditor(false)}
+          />
+        )}
         <div
           className='@container group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-30 hover:shadow-2xl'
           onClick={handleClick}
