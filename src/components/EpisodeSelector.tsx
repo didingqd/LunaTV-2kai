@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 
-import { Gauge, RefreshCw, Wifi } from 'lucide-react';
+// 修改点：新增 ArrowDownWideNarrow 图标，用于「集数」降序排序按钮
+import { ArrowDownWideNarrow, Gauge, RefreshCw, Wifi } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import React, {
   useCallback,
@@ -86,18 +87,24 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     new Set(),
   );
 
-  // 排序模式状态：'original' | 'speed' | 'name'
-  const [sortMode, setSortMode] = useState<'original' | 'speed' | 'name'>(
-    () => {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('episodeSelectorSortMode');
-        if (saved === 'speed' || saved === 'name' || saved === 'original') {
-          return saved;
-        }
+  // 排序模式状态：'original' | 'speed' | 'name' | 'episodes'
+  // 修改点：新增 'episodes' 集数排序（集数多的在前、少的在后）
+  const [sortMode, setSortMode] = useState<
+    'original' | 'speed' | 'name' | 'episodes'
+  >(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('episodeSelectorSortMode');
+      if (
+        saved === 'speed' ||
+        saved === 'name' ||
+        saved === 'original' ||
+        saved === 'episodes'
+      ) {
+        return saved;
       }
-      return 'original';
-    },
-  );
+    }
+    return 'original';
+  });
 
   // 使用 ref 来避免闭包问题
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
@@ -688,6 +695,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               >
                 名称
               </button>
+              {/* 修改点：新增「集数」排序按钮（集数多的在前，集数相同时保持默认顺序） */}
+              <button
+                onClick={() => {
+                  setSortMode('episodes');
+                  localStorage.setItem('episodeSelectorSortMode', 'episodes');
+                }}
+                className={`flex items-center gap-0.5 px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
+                  sortMode === 'episodes'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+                title='按集数排序（多的在前）'
+              >
+                <ArrowDownWideNarrow className='w-3 h-3' />
+                集数
+              </button>
             </div>
 
             {/* 测速按钮 */}
@@ -811,6 +834,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         b.title || '',
                         'zh-CN',
                       );
+                    } else if (sortMode === 'episodes') {
+                      // 修改点：按集数排序（集数多的在前、少的在后）
+                      const aEpisodes = a.episodes?.length ?? 0;
+                      const bEpisodes = b.episodes?.length ?? 0;
+                      if (aEpisodes !== bEpisodes) {
+                        return bEpisodes - aEpisodes;
+                      }
+                      // 集数相同：不做额外比较，落到下方的默认顺序（sort 稳定，保持原始顺序）
                     }
 
                     // 默认保持原始顺序
