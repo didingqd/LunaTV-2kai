@@ -68,7 +68,8 @@
   }
 
   .user-notification-marquee.is-scrolling {
-    animation: user-notification-marquee var(--notification-marquee-duration, 24s) linear infinite;
+    animation: user-notification-marquee
+      var(--notification-marquee-duration, 24s) linear infinite;
   }
 
   .user-notification-marquee.is-scrolling:hover {
@@ -320,17 +321,23 @@ div[data-media-provider] video {
   letter-spacing: 0.01em;
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2),
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transition: opacity 0.18s ease, visibility 0.18s ease,
-    background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease,
+  transition:
+    opacity 0.18s ease,
+    visibility 0.18s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
     transform 0.2s ease;
 }
 
 .moontv-seek-side-controls-layer .moontv-seek-side-controls:hover {
   background: rgba(0, 0, 0, 0.42);
   border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24),
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
@@ -461,7 +468,9 @@ div[data-media-provider] video {
     opacity: 0;
     pointer-events: none;
     visibility: hidden;
-    transition: opacity 0.15s ease 0.3s, visibility 0s ease 0.45s; /* 0.3s隐藏延迟 */
+    transition:
+      opacity 0.15s ease 0.3s,
+      visibility 0s ease 0.45s; /* 0.3s隐藏延迟 */
   }
 
   /* 面板内部元素在显示时可交互 */
@@ -470,7 +479,7 @@ div[data-media-provider] video {
   }
 
   /* 防止进度条拖拽时弹窗干扰 */
-  .artplayer[data-dragging="true"] .artplayer-plugin-danmuku .apd-config-panel {
+  .artplayer[data-dragging='true'] .artplayer-plugin-danmuku .apd-config-panel {
     opacity: 0 !important;
     pointer-events: none !important;
     visibility: hidden !important;
@@ -586,15 +595,15 @@ html:not(.dark) .hover\:bg-slate-50:hover {
 
   /* 处理带有透明度的背景色 + backdrop-blur组合 */
   /* 例如: bg-white/80 backdrop-blur */
-  [class*="bg-white/"] {
+  [class*='bg-white/'] {
     background-color: rgba(255, 255, 255, 0.95) !important;
   }
 
-  [class*="bg-zinc-"][class*="/"] {
+  [class*='bg-zinc-'][class*='/'] {
     background-color: rgba(24, 24, 27, 0.95) !important;
   }
 
-  [class*="bg-gray-"][class*="/"] {
+  [class*='bg-gray-'][class*='/'] {
     background-color: rgba(31, 41, 55, 0.95) !important;
   }
 
