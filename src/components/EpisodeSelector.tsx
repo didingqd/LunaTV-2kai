@@ -866,7 +866,18 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     }
                   >
                     {/* 仅选中时显示方向图标，图标对应当前排序模式的正/倒序 */}
-                    {isActiveSort && <DirectionIcon className='w-3 h-3' />}
+                    {/* 修改点：图标加大加粗 + 方向配色 + 切换时翻转回弹动画，让正/倒序变化更醒目 */}
+                    {isActiveSort && (
+                      <DirectionIcon
+                        key={sortReversed ? 'reversed' : 'normal'}
+                        strokeWidth={2.75}
+                        className={`sort-direction-flip w-4 h-4 ${
+                          sortReversed
+                            ? 'text-amber-500 dark:text-amber-400'
+                            : 'text-emerald-500 dark:text-emerald-400'
+                        }`}
+                      />
+                    )}
                     {option.label}
                   </button>
                 );
