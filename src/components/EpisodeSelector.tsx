@@ -1,15 +1,16 @@
 /* eslint-disable @next/next/no-img-element */
 
-// 修改点：排序按钮改用「方向图标」，各排序模式的正/倒序对应不同图标
+// 修改点：排序按钮改用「方向图标」，正/倒序切换时箭头朝向与右侧字符一起变化
+// 约定：箭头始终指向「数值变大」的一侧（例如集数正序是多的在前，大值在上方，箭头朝上）
 import {
   ArrowDown,
   ArrowDown01,
-  ArrowDown10,
   ArrowDownAZ,
-  ArrowDownWideNarrow,
-  ArrowDownZA,
+  ArrowDownNarrowWide,
   ArrowUp,
-  ArrowUpNarrowWide,
+  ArrowUp10,
+  ArrowUpWideNarrow,
+  ArrowUpZA,
   type LucideIcon,
   RefreshCw,
   Wifi,
@@ -39,7 +40,8 @@ const RESPONSE_TIE_BREAKER_MS = 300;
 // 修改点：换源列表的排序模式（'episodes' 为新增的集数排序）
 type SortMode = 'original' | 'speed' | 'name' | 'episodes';
 
-// 修改点：排序按钮配置。图标仅在该模式被选中时显示，并随正/倒序切换成对应图标
+// 修改点：排序按钮配置。图标仅在该模式被选中时显示，正/倒序切换时箭头朝向与右侧字符同时变化。
+// 箭头朝向 = 数值变大的方向：列表顶部是大值时箭头朝上，底部是大值时箭头朝下。
 const SORT_MODE_OPTIONS: {
   mode: SortMode;
   label: string;
@@ -56,6 +58,7 @@ const SORT_MODE_OPTIONS: {
 }[] = [
   {
     mode: 'original',
+    // 原始顺序无数值大小，箭头表示下标递增方向：正序自上而下、倒序自下而上
     label: '原始',
     normalIcon: ArrowDown,
     reversedIcon: ArrowUp,
@@ -65,26 +68,29 @@ const SORT_MODE_OPTIONS: {
   },
   {
     mode: 'speed',
+    // 正序快的在前：宽条在上（快=大），箭头朝上；倒序反之
     label: '速度',
-    normalIcon: ArrowDownWideNarrow,
-    reversedIcon: ArrowUpNarrowWide,
+    normalIcon: ArrowUpWideNarrow,
+    reversedIcon: ArrowDownNarrowWide,
     normalHint: '按速度排序（快的在前）',
     reversedHint: '按速度排序（慢的在前）',
     activeClassName: 'text-blue-600 dark:text-blue-400',
   },
   {
     mode: 'name',
+    // 正序 A→Z：Z 在下方（字母递增向下），箭头朝下；倒序 Z→A 箭头朝上
     label: '名称',
     normalIcon: ArrowDownAZ,
-    reversedIcon: ArrowDownZA,
+    reversedIcon: ArrowUpZA,
     normalHint: '按名称排序（A→Z）',
     reversedHint: '按名称排序（Z→A）',
     activeClassName: 'text-gray-900 dark:text-white',
   },
   {
     mode: 'episodes',
+    // 正序多的在前：1 在上、0 在下（大值在上），箭头朝上；倒序少的在前箭头朝下
     label: '集数',
-    normalIcon: ArrowDown10,
+    normalIcon: ArrowUp10,
     reversedIcon: ArrowDown01,
     normalHint: '按集数排序（多的在前）',
     reversedHint: '按集数排序（少的在前）',
