@@ -49,7 +49,15 @@ import {
 } from 'lucide-react';
 import { GripVertical, KeyRound, MessageSquare } from 'lucide-react';
 import { pinyin } from 'pinyin-pro';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+// 【修改】新增 useRef，用于视频源表格横向滑动条
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import {
@@ -80,6 +88,8 @@ import CustomAdFilterConfig from '@/components/CustomAdFilterConfig';
 import WatchRoomConfig from '@/components/WatchRoomConfig';
 import WatchingUpdateCheckLogViewer from '@/components/WatchingUpdateCheckLogViewer';
 import HomePageConfig from '@/components/HomePageConfig';
+// 【新增】视频源表格横向滑动条
+import HorizontalScrollBar from '@/components/admin/HorizontalScrollBar';
 import PerformanceMonitor from '@/components/admin/PerformanceMonitor';
 import InviteCodeManager from '@/components/InviteCodeManager';
 import PageLayout from '@/components/PageLayout';
@@ -3734,6 +3744,8 @@ const VideoSourceConfig = ({
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [sources, setSources] = useState<DataSource[]>([]);
+  // 【新增】视频源表格滚动容器引用，供底部横向滑动条控制
+  const sourceTableScrollRef = useRef<HTMLDivElement>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [orderChanged, setOrderChanged] = useState(false);
   const [newSource, setNewSource] = useState<DataSource>({
@@ -5591,6 +5603,8 @@ const VideoSourceConfig = ({
 
       {/* 视频源表格 */}
       <div
+        ref={sourceTableScrollRef}
+        id='source-list-table'
         className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
         data-table='source-list'
       >
@@ -5658,6 +5672,12 @@ const VideoSourceConfig = ({
           </DndContext>
         </table>
       </div>
+
+      {/* 【新增】横向滑动条：原生滚动条被全局样式隐藏，用它可以拖动/点击左右查看完整列 */}
+      <HorizontalScrollBar
+        scrollRef={sourceTableScrollRef}
+        controlsId='source-list-table'
+      />
 
       {/* 保存排序按钮 */}
       {orderChanged && (
