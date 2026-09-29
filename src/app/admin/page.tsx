@@ -563,6 +563,9 @@ interface UserConfigProps {
 const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
+  // 【新增】用户列表 / 用户组列表滚动容器引用，供底部横向滑动条控制
+  const userTableScrollRef = useRef<HTMLDivElement>(null);
+  const userGroupTableScrollRef = useRef<HTMLDivElement>(null);
   const [showAddUserForm, setShowAddUserForm] = useState(false);
   const [showChangePasswordForm, setShowChangePasswordForm] = useState(false);
   const [showAddUserGroupForm, setShowAddUserGroupForm] = useState(false);
@@ -1690,7 +1693,11 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         </div>
 
         {/* 用户组列表 */}
-        <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[20rem] overflow-y-auto overflow-x-auto relative'>
+        <div
+          ref={userGroupTableScrollRef}
+          id='user-group-table'
+          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[20rem] overflow-y-auto overflow-x-auto relative'
+        >
           <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
             <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
               <tr>
@@ -1775,6 +1782,12 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
             </tbody>
           </table>
         </div>
+
+        {/* 【新增】横向滑动条：方便左右查看用户组的完整列 */}
+        <HorizontalScrollBar
+          scrollRef={userGroupTableScrollRef}
+          controlsId='user-group-table'
+        />
       </div>
 
       {/* 用户列表 */}
@@ -1997,6 +2010,8 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 
         {/* 用户列表 */}
         <div
+          ref={userTableScrollRef}
+          id='user-list-table'
           className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
           data-table='user-list'
         >
@@ -2371,6 +2386,12 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
             })()}
           </table>
         </div>
+
+        {/* 【新增】横向滑动条：方便左右查看用户列表的完整列 */}
+        <HorizontalScrollBar
+          scrollRef={userTableScrollRef}
+          controlsId='user-list-table'
+        />
       </div>
 
       {/* 配置用户采集源权限弹窗 */}
@@ -8065,6 +8086,8 @@ const LiveSourceConfig = ({
 }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
+  // 【新增】直播源表格滚动容器引用，供底部横向滑动条控制
+  const liveSourceTableScrollRef = useRef<HTMLDivElement>(null);
   const [liveSources, setLiveSources] = useState<LiveDataSource[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLiveSource, setEditingLiveSource] =
@@ -9093,6 +9116,8 @@ const LiveSourceConfig = ({
 
       {/* 直播源表格 */}
       <div
+        ref={liveSourceTableScrollRef}
+        id='live-source-list-table'
         className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
         data-table='live-source-list'
       >
@@ -9146,6 +9171,12 @@ const LiveSourceConfig = ({
           </DndContext>
         </table>
       </div>
+
+      {/* 【新增】横向滑动条：方便左右查看直播源的完整列 */}
+      <HorizontalScrollBar
+        scrollRef={liveSourceTableScrollRef}
+        controlsId='live-source-list-table'
+      />
 
       {/* 保存排序按钮 */}
       {orderChanged && (
