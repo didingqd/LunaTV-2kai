@@ -21,8 +21,8 @@ interface HorizontalScrollBarProps {
 
 // 滑块最小宽度占轨道的比例，避免内容极宽时滑块过小无法拖动
 const MIN_THUMB_RATIO = 0.08;
-// 键盘左右键单次滚动距离（px）
-const KEY_STEP = 80;
+// 【修改】单次滚动距离（px）：左右三角按钮点击与键盘左右键共用
+const SCROLL_STEP = 80;
 
 export default function HorizontalScrollBar({
   scrollRef,
@@ -117,6 +117,25 @@ export default function HorizontalScrollBar({
       ? Math.min(1, Math.max(0, scrollLeft / maxScroll))
       : 0;
 
+  // 【新增】左右三角按钮的可用状态（到达两端时置灰禁用）
+  const canScrollLeft = scrollLeft > 1;
+  const canScrollRight = scrollLeft < maxScroll - 1;
+
+  // 【新增】按固定步长滚动容器：左右三角按钮与键盘左右键共用
+  const scrollByStep = useCallback(
+    (direction: -1 | 1) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      // 直接读取真实尺寸，避免使用可能滞后的 state
+      const limit = Math.max(0, el.scrollWidth - el.clientWidth);
+      el.scrollLeft = Math.min(
+        limit,
+        Math.max(0, el.scrollLeft + direction * SCROLL_STEP),
+      );
+    },
+    [scrollRef],
+  );
+
   // 按像素偏移量滚动容器
   const scrollToThumbLeft = useCallback(
     (thumbLeft: number, thumbRange: number, max: number) => {
@@ -202,14 +221,13 @@ export default function HorizontalScrollBar({
 
   // 键盘左右键滚动
   const handleTrackKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const el = scrollRef.current;
-    if (!el || !scrollable) return;
+    if (!scrollable) return;
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      el.scrollLeft = Math.max(0, el.scrollLeft - KEY_STEP);
+      scrollByStep(-1);
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      el.scrollLeft = Math.min(maxScroll, el.scrollLeft + KEY_STEP);
+      scrollByStep(1);
     }
   };
 
@@ -218,6 +236,25 @@ export default function HorizontalScrollBar({
     <div
       className={`${scrollable ? 'flex' : 'hidden'} items-center gap-2 mt-2 px-1 ${className}`}
     >
+      {/* 【新增】向左小步滚动按钮（三角形） */}
+      <button
+        type='button'
+        onClick={() => scrollByStep(-1)}
+        disabled={!canScrollLeft}
+        aria-label='向左滚动'
+        title='向左滚动'
+        className='shrink-0 flex items-center justify-center h-6 w-6 rounded-md text-gray-500 dark:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
+      >
+        <svg
+          className='w-3 h-3'
+          viewBox='0 0 12 12'
+          fill='currentColor'
+          aria-hidden='true'
+        >
+          <path d='M9 2 L3 6 L9 10 Z' />
+        </svg>
+      </button>
+
       {/* 轨道 */}
       <div
         ref={trackRef}
@@ -250,12 +287,25 @@ export default function HorizontalScrollBar({
           }}
         />
       </div>
-      {/* 滚动进度提示 */}
-      <span className='shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500 w-10 text-right'>
-        {maxScroll > 0
-          ? `${Math.round((scrollLeft / maxScroll) * 100)}%`
-          : '0%'}
-      </span>
+
+      {/* 【新增】向右小步滚动按钮（三角形）；原进度百分比已按需求移除 */}
+      <button
+        type='button'
+        onClick={() => scrollByStep(1)}
+        disabled={!canScrollRight}
+        aria-label='向右滚动'
+        title='向右滚动'
+        className='shrink-0 flex items-center justify-center h-6 w-6 rounded-md text-gray-500 dark:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
+      >
+        <svg
+          className='w-3 h-3'
+          viewBox='0 0 12 12'
+          fill='currentColor'
+          aria-hidden='true'
+        >
+          <path d='M3 2 L9 6 L3 10 Z' />
+        </svg>
+      </button>
     </div>
   );
 }
