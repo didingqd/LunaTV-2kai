@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// 使用轻量级 switch-chinese 库（93.8KB vs opencc-js 5.6MB）
+import stcasc, { ChineseType } from 'switch-chinese';
 
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
 import { getCachedSearchPage, setCachedSearchPage } from '@/lib/search-cache';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 import { decorateSearchResultQuality } from '@/lib/video-quality';
-// 使用轻量级 switch-chinese 库（93.8KB vs opencc-js 5.6MB）
-import stcasc, { ChineseType } from 'switch-chinese';
 
 // 创建模块级别的繁简转换器实例
 const converter = stcasc();
@@ -22,7 +21,7 @@ function isMediaUrlGroup(urls: string[]): boolean {
 // 综合媒体链接优先级和集数长度，判断新分组是否应替换当前分组
 function isBetterEpisodeGroup(
   candidateUrls: string[],
-  currentUrls: string[]
+  currentUrls: string[],
 ): boolean {
   const candidateIsMedia = isMediaUrlGroup(candidateUrls);
   const currentIsMedia = isMediaUrlGroup(currentUrls);
@@ -54,7 +53,7 @@ async function searchWithCache(
   query: string,
   page: number,
   url: string,
-  timeoutMs = 8000
+  timeoutMs = 8000,
 ): Promise<{ results: SearchResult[]; pageCount?: number }> {
   // 先查缓存
   const cached = getCachedSearchPage(apiSite.key, query, page);
@@ -153,11 +152,17 @@ async function searchWithCache(
         remarks: item.vod_remarks,
         quality_tag: item.vod_remarks || item.type_name || item.vod_class || '',
       };
-      return decorateSearchResultQuality(result, item.vod_remarks, item.vod_class);
+      return decorateSearchResultQuality(
+        result,
+        item.vod_remarks,
+        item.vod_class,
+      );
     });
 
     // 过滤掉集数为 0 的结果
-    const results = allResults.filter((result: SearchResult) => result.episodes.length > 0);
+    const results = allResults.filter(
+      (result: SearchResult) => result.episodes.length > 0,
+    );
 
     const pageCount = page === 1 ? data.pagecount || 1 : undefined;
     // 写入缓存（成功）
@@ -166,7 +171,10 @@ async function searchWithCache(
   } catch (error: any) {
     clearTimeout(timeoutId);
     // 识别被 AbortController 中止（超时）
-    const aborted = error?.name === 'AbortError' || error?.code === 20 || error?.message?.includes('aborted');
+    const aborted =
+      error?.name === 'AbortError' ||
+      error?.code === 20 ||
+      error?.message?.includes('aborted');
     if (aborted) {
       setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
     }
@@ -177,7 +185,7 @@ async function searchWithCache(
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
-  precomputedVariants?: string[] // 新增：预计算的变体
+  precomputedVariants?: string[], // 新增：预计算的变体
 ): Promise<SearchResult[]> {
   try {
     const apiBaseUrl = apiSite.api;
@@ -186,17 +194,28 @@ export async function searchFromApi(
     const searchVariants = precomputedVariants || generateSearchVariants(query);
 
     // 调试：输出搜索变体
+    // eslint-disable-next-line no-console
     console.log(`[DEBUG] 搜索变体 for "${query}":`, searchVariants);
 
     // 🚀 并行搜索所有变体（关键优化：不再串行等待）
     const variantPromises = searchVariants.map(async (variant, index) => {
-      const apiUrl = apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(variant);
-      console.log(`[DEBUG] 并行搜索变体 ${index + 1}/${searchVariants.length}: "${variant}"`);
+      const apiUrl =
+        apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(variant);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[DEBUG] 并行搜索变体 ${index + 1}/${searchVariants.length}: "${variant}"`,
+      );
 
       try {
         const result = await searchWithCache(apiSite, variant, 1, apiUrl, 8000);
-        return { variant, index, results: result.results, pageCount: result.pageCount };
+        return {
+          variant,
+          index,
+          results: result.results,
+          pageCount: result.pageCount,
+        };
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.log(`[DEBUG] 变体 "${variant}" 搜索失败:`, error);
         return { variant, index, results: [], pageCount: undefined };
       }
@@ -213,9 +232,17 @@ export async function searchFromApi(
     // 按原始顺序处理结果（保持优先级）
     variantResults.sort((a, b) => a.index - b.index);
 
-    for (const { variant, index, results: variantData, pageCount } of variantResults) {
+    for (const {
+      variant,
+      index,
+      results: variantData,
+      pageCount,
+    } of variantResults) {
       if (variantData.length > 0) {
-        console.log(`[DEBUG] 变体 "${variant}" 找到 ${variantData.length} 个结果`);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[DEBUG] 变体 "${variant}" 找到 ${variantData.length} 个结果`,
+        );
 
         // 记录第一个变体的页数
         if (index === 0 && pageCount) {
@@ -223,7 +250,7 @@ export async function searchFromApi(
         }
 
         // 去重添加结果
-        variantData.forEach(result => {
+        variantData.forEach((result) => {
           const uniqueKey = `${result.source}_${result.id}`;
           if (!seenIds.has(uniqueKey)) {
             seenIds.add(uniqueKey);
@@ -231,6 +258,7 @@ export async function searchFromApi(
           }
         });
       } else {
+        // eslint-disable-next-line no-console
         console.log(`[DEBUG] 变体 "${variant}" 无结果`);
       }
     }
@@ -240,6 +268,7 @@ export async function searchFromApi(
       return [];
     }
 
+    // eslint-disable-next-line no-console
     console.log(`[DEBUG] 最终找到 ${results.length} 个唯一结果`);
 
     // 使用原始查询进行后续分页
@@ -266,7 +295,13 @@ export async function searchFromApi(
 
         const pagePromise = (async () => {
           // 使用新的缓存搜索函数处理分页
-          const pageResult = await searchWithCache(apiSite, query, page, pageUrl, 8000);
+          const pageResult = await searchWithCache(
+            apiSite,
+            query,
+            page,
+            pageUrl,
+            8000,
+          );
           return pageResult.results;
         })();
 
@@ -285,7 +320,7 @@ export async function searchFromApi(
     }
 
     return results;
-  } catch (error) {
+  } catch {
     return [];
   }
 }
@@ -296,8 +331,15 @@ export async function searchFromApi(
  * @param variant 搜索变体
  * @param results 搜索结果
  * @returns 相关性分数（越高越相关）
+ *
+ * 目前没有调用方（保留作为搜索排序的备用实现），按项目 lint 规则以下划线
+ * 前缀标记为「有意保留的未使用符号」，不删除以免丢失这段评分逻辑。
  */
-function calculateRelevanceScore(originalQuery: string, variant: string, results: SearchResult[]): number {
+function _calculateRelevanceScore(
+  originalQuery: string,
+  variant: string,
+  results: SearchResult[],
+): number {
   let score = 0;
 
   // 基础分数：结果数量（越多越好，但有上限）
@@ -314,15 +356,19 @@ function calculateRelevanceScore(originalQuery: string, variant: string, results
   // 移除数字变体加分逻辑，依赖智能匹配处理
 
   // 结果质量分数：检查结果标题的匹配程度
-  const originalWords = originalQuery.toLowerCase().replace(/[^\w\s\u4e00-\u9fff]/g, '').split(/\s+/).filter(w => w.length > 0);
+  const originalWords = originalQuery
+    .toLowerCase()
+    .replace(/[^\w\s\u4e00-\u9fff]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
 
-  results.forEach(result => {
+  results.forEach((result) => {
     const title = result.title.toLowerCase();
     let titleScore = 0;
 
     // 检查原始查询中的每个词是否在标题中
     let matchedWords = 0;
-    originalWords.forEach(word => {
+    originalWords.forEach((word) => {
       if (title.includes(word)) {
         // 较长的词（如"血脉诅咒"）给予更高权重
         const wordWeight = word.length > 2 ? 100 : 50;
@@ -367,10 +413,30 @@ const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
 // 中文数字映射表（用于智能数字变体生成）
 const CHINESE_TO_ARABIC: { [key: string]: string } = {
-  '一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
-  '六': '6', '七': '7', '八': '8', '九': '9', '十': '10',
+  一: '1',
+  二: '2',
+  三: '3',
+  四: '4',
+  五: '5',
+  六: '6',
+  七: '7',
+  八: '8',
+  九: '9',
+  十: '10',
 };
-const ARABIC_TO_CHINESE = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+const ARABIC_TO_CHINESE = [
+  '',
+  '一',
+  '二',
+  '三',
+  '四',
+  '五',
+  '六',
+  '七',
+  '八',
+  '九',
+  '十',
+];
 
 /**
  * 智能生成数字变体（仅在检测到季/部/集数字格式时触发）
@@ -504,12 +570,49 @@ function generatePunctuationVariant(query: string): string | null {
 
 export async function getDetailFromApi(
   apiSite: ApiSite,
-  id: string
+  id: string,
 ): Promise<SearchResult> {
+  // 【追更检测回落修复】配置了 detail 字段的源（特殊 HTML 详情页站点）优先走
+  // HTML 解析；但 HTML 页面可能因为站点 WAF/Cloudflare 防护、页面改版、超时等
+  // 原因完全不可用。此前这里直接 `return handleSpecialSourceDetail(...)`，没有
+  // 任何回落，于是这类源在服务端追更检测（CmsLatestEpisodeProvider）里会一直
+  // 抛错、永远拿不到集数——表现为「前端剧集列表能看到新集，但追更永远没有
+  // 提醒」。App 端 RemoteSearchProvider.detail() 已有「HTML 失败 → 回落标准
+  // JSON 采集接口」的相同策略，这里补齐对齐。
   if (apiSite.detail) {
-    return handleSpecialSourceDetail(id, apiSite);
+    try {
+      const htmlDetail = await handleSpecialSourceDetail(id, apiSite);
+      if (htmlDetail.episodes.length > 0) {
+        return htmlDetail;
+      }
+      // 回落必须留痕：这个 bug 当初难定位的原因就是失败完全静默。日志等级与
+      // 本文件既有的 console 诊断一致，仅对 no-console 做定向豁免。
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[downstream] HTML 详情页未解析出剧集，回落 JSON 采集接口: ${apiSite.key}#${id}`,
+      );
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[downstream] HTML 详情页请求失败，回落 JSON 采集接口: ${apiSite.key}#${id}`,
+        error,
+      );
+    }
   }
 
+  return getDetailFromJsonApi(apiSite, id);
+}
+
+/**
+ * 标准 JSON 采集接口详情解析（`?ac=videolist&ids=`）。
+ *
+ * 由 getDetailFromApi 拆分而来，供 HTML 详情页失败时回落复用；解析逻辑与拆分
+ * 前逐行一致，未改变任何既有源的返回内容。
+ */
+async function getDetailFromJsonApi(
+  apiSite: ApiSite,
+  id: string,
+): Promise<SearchResult> {
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
 
   const controller = new AbortController();
@@ -589,14 +692,22 @@ export async function getDetailFromApi(
     type_name: videoDetail.type_name,
     douban_id: videoDetail.vod_douban_id,
     remarks: videoDetail.vod_remarks,
-    quality_tag: videoDetail.vod_remarks || videoDetail.type_name || videoDetail.vod_class || '',
+    quality_tag:
+      videoDetail.vod_remarks ||
+      videoDetail.type_name ||
+      videoDetail.vod_class ||
+      '',
   };
-  return decorateSearchResultQuality(result, videoDetail.vod_remarks, videoDetail.vod_class);
+  return decorateSearchResultQuality(
+    result,
+    videoDetail.vod_remarks,
+    videoDetail.vod_class,
+  );
 }
 
 async function handleSpecialSourceDetail(
   id: string,
-  apiSite: ApiSite
+  apiSite: ApiSite,
 ): Promise<SearchResult> {
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
@@ -637,7 +748,7 @@ async function handleSpecialSourceDetail(
 
   // 根据 matches 数量生成剧集标题
   const episodes_titles = Array.from({ length: matches.length }, (_, i) =>
-    (i + 1).toString()
+    (i + 1).toString(),
   );
 
   // 提取标题
@@ -646,7 +757,7 @@ async function handleSpecialSourceDetail(
 
   // 提取描述
   const descMatch = html.match(
-    /<div[^>]*class=["']sketch["'][^>]*>([\s\S]*?)<\/div>/
+    /<div[^>]*class=["']sketch["'][^>]*>([\s\S]*?)<\/div>/,
   );
   const descText = descMatch ? cleanHtmlTags(descMatch[1]) : '';
 
