@@ -8,11 +8,16 @@
 // 上下三角按钮步进、键盘上下键；内容未纵向溢出时自动隐藏。
 //
 // 【关键】不挤压显示内容框：
-// 滑动条用绝对定位悬浮在滚动容器右边缘之上，完全不参与父容器（表格容器）的布局计算，
-// 因此不会占用表格宽度。小屏 / 手机端表格本来就很窄，若把滑动条放进 flex 行内会明显压缩内容，
-// 所以这里采用悬浮方案；同时容器本身 pointer-events-none，只有轨道与两个三角按钮可交互，
-// 避免挡住表格右侧（操作列）的点击。
-// 使用时需要把它放在一个 position: relative 且恰好包裹滚动容器的父元素内。
+// 滑动条用绝对定位放在滚动容器右侧【框外】，完全不参与父容器（表格容器）的布局计算，
+// 因此不会占用表格宽度：小屏 / 手机端表格本来就很窄，若把滑动条放进 flex 行内会明显压缩内容。
+// 它通过 translate-x-full 平移到容器右边界之外，落在页面本身的右侧留白里
+// （管理后台的 CollapsibleTab 内容区是 px-6，正好有 24px 留白可供摆放），
+// 因此既不会遮住表格内容，也不会把页面撑出横向滚动条。
+// 容器本身 pointer-events-none，只有轨道与两个三角按钮可交互，不拦截留白处的其他点击。
+//
+// 使用要求：
+// 1. 放在一个 position: relative 且恰好包裹滚动容器的父元素内；
+// 2. 该父元素右侧需要有约 20px 的留白（如 CollapsibleTab 的 px-6），否则滑条会被裁切。
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -240,9 +245,10 @@ export default function VerticalScrollBar({
   };
 
   return (
-    // 内容未纵向溢出时隐藏滑动条；absolute 悬浮在右边缘，不占用表格宽度
+    // 内容未纵向溢出时隐藏滑动条；absolute + translate-x-full 移到表格容器右侧框外，
+    // 不占用表格宽度也不会遮挡内容，视觉与底部横向滑动条保持一致
     <div
-      className={`${scrollable ? 'flex' : 'hidden'} pointer-events-none absolute top-0 right-0 bottom-0 z-20 w-6 flex-col items-center gap-1 py-1 ${className}`}
+      className={`${scrollable ? 'flex' : 'hidden'} pointer-events-none absolute top-0 right-0 bottom-0 z-20 w-5 translate-x-full flex-col items-center gap-1 py-1 ${className}`}
     >
       {/* 向上小步滚动按钮（三角形） */}
       <button
@@ -252,7 +258,7 @@ export default function VerticalScrollBar({
         aria-label='向上滚动'
         title='向上滚动'
         tabIndex={-1}
-        className='pointer-events-auto shrink-0 flex items-center justify-center h-5 w-5 rounded-md bg-white/85 dark:bg-gray-800/85 text-gray-500 dark:text-gray-400 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
+        className='pointer-events-auto shrink-0 flex items-center justify-center h-5 w-5 rounded-md text-gray-500 dark:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
       >
         <svg
           className='w-2.5 h-2.5'
@@ -282,8 +288,8 @@ export default function VerticalScrollBar({
         onPointerCancel={handleThumbPointerUp}
         onKeyDown={handleTrackKeyDown}
         // w-4 + px-1 + bg-clip-content：交互热区 16px，视觉凹槽仍为 8px，
-        // 手机端更容易按住拖动，同时不过多遮挡表格内容
-        className='pointer-events-auto relative flex-1 min-h-0 w-4 px-1 rounded-full bg-gray-400/40 dark:bg-gray-500/40 bg-clip-content cursor-pointer select-none touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
+        // 手机端更容易按住拖动；颜色与底部横向滑动条保持一致
+        className='pointer-events-auto relative flex-1 min-h-0 w-4 px-1 rounded-full bg-gray-200 dark:bg-gray-700 bg-clip-content cursor-pointer select-none touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
       >
         {/* 滑块 */}
         <div
@@ -291,7 +297,7 @@ export default function VerticalScrollBar({
           onPointerMove={handleThumbPointerMove}
           onPointerUp={handleThumbPointerUp}
           onPointerCancel={handleThumbPointerUp}
-          className='absolute left-1 w-2 rounded-full bg-gray-500 dark:bg-gray-400 hover:bg-blue-500 dark:hover:bg-blue-500 active:bg-blue-600 dark:active:bg-blue-600 cursor-grab active:cursor-grabbing transition-colors touch-none'
+          className='absolute left-1 w-2 rounded-full bg-gray-400 dark:bg-gray-500 hover:bg-blue-500 dark:hover:bg-blue-500 active:bg-blue-600 dark:active:bg-blue-600 cursor-grab active:cursor-grabbing transition-colors touch-none'
           style={{
             height: `${thumbRatio * 100}%`,
             top: `${thumbTopRatio * (1 - thumbRatio) * 100}%`,
@@ -307,7 +313,7 @@ export default function VerticalScrollBar({
         aria-label='向下滚动'
         title='向下滚动'
         tabIndex={-1}
-        className='pointer-events-auto shrink-0 flex items-center justify-center h-5 w-5 rounded-md bg-white/85 dark:bg-gray-800/85 text-gray-500 dark:text-gray-400 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
+        className='pointer-events-auto shrink-0 flex items-center justify-center h-5 w-5 rounded-md text-gray-500 dark:text-gray-400 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:bg-gray-200 dark:enabled:hover:bg-gray-700 enabled:hover:text-blue-600 dark:enabled:hover:text-blue-400'
       >
         <svg
           className='w-2.5 h-2.5'

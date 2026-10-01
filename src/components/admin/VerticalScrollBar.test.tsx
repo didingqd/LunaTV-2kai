@@ -85,12 +85,14 @@ describe('VerticalScrollBar', () => {
     expect(thumb.style.top).toBe('0%');
   });
 
-  it('滑动条为绝对定位悬浮层，不占用表格容器的布局空间', () => {
+  it('滑动条为绝对定位且平移到表格容器框外，不占用表格布局空间', () => {
     const { wrapper } = renderBar(1000, 250);
 
-    // absolute + 不参与指针事件，保证既不会挤压内容宽度也不会挡住表格点击
+    // absolute + translate-x-full：整体移到容器右边界之外（落在页面右侧留白里），
+    // 既不挤压内容宽度也不遮挡表格内容；pointer-events-none 保证不拦截留白处的点击
     expect(wrapper.className).toContain('absolute');
     expect(wrapper.className).toContain('right-0');
+    expect(wrapper.className).toContain('translate-x-full');
     expect(wrapper.className).toContain('pointer-events-none');
   });
 

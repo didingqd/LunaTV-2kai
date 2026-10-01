@@ -1785,7 +1785,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               </tbody>
             </table>
           </div>
-          {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+          {/* 【新增】竖向滑动条：平移到表格容器右侧框外，利用外层 px-6 留白摆放，不占用表格宽度也不遮挡内容 */}
           <VerticalScrollBar
             scrollRef={userGroupTableScrollRef}
             controlsId='user-group-table'
@@ -2396,7 +2396,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               })()}
             </table>
           </div>
-          {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+          {/* 【新增】竖向滑动条：平移到表格容器右侧框外，利用外层 px-6 留白摆放，不占用表格宽度也不遮挡内容 */}
           <VerticalScrollBar
             scrollRef={userTableScrollRef}
             controlsId='user-list-table'
@@ -5710,7 +5710,7 @@ const VideoSourceConfig = ({
             </DndContext>
           </table>
         </div>
-        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        {/* 【新增】竖向滑动条：平移到表格容器右侧框外，利用外层 px-6 留白摆放，不占用表格宽度也不遮挡内容 */}
         <VerticalScrollBar
           scrollRef={sourceTableScrollRef}
           controlsId='source-list-table'
@@ -6296,7 +6296,7 @@ const CategoryConfig = ({
             </DndContext>
           </table>
         </div>
-        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        {/* 【新增】竖向滑动条：平移到表格容器右侧框外，利用外层 px-6 留白摆放，不占用表格宽度也不遮挡内容 */}
         <VerticalScrollBar
           scrollRef={categoryTableScrollRef}
           controlsId='category-list-table'
@@ -9208,7 +9208,7 @@ const LiveSourceConfig = ({
             </DndContext>
           </table>
         </div>
-        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        {/* 【新增】竖向滑动条：平移到表格容器右侧框外，利用外层 px-6 留白摆放，不占用表格宽度也不遮挡内容 */}
         <VerticalScrollBar
           scrollRef={liveSourceTableScrollRef}
           controlsId='live-source-list-table'
