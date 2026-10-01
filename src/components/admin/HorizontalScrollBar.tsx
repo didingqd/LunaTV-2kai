@@ -272,7 +272,9 @@ export default function HorizontalScrollBar({
         onPointerUp={handleThumbPointerUp}
         onPointerCancel={handleThumbPointerUp}
         onKeyDown={handleTrackKeyDown}
-        className='relative flex-1 h-3 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer select-none touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
+        // 【修改】h-4 + py-1 + bg-clip-content：交互热区 16px，视觉凹槽仍为 8px，
+        // 与竖向滑动条（VerticalScrollBar）的粗细保持一致
+        className='relative flex-1 h-4 py-1 rounded-full bg-gray-200 dark:bg-gray-700 bg-clip-content cursor-pointer select-none touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50'
       >
         {/* 滑块 */}
         <div
@@ -280,7 +282,7 @@ export default function HorizontalScrollBar({
           onPointerMove={handleThumbPointerMove}
           onPointerUp={handleThumbPointerUp}
           onPointerCancel={handleThumbPointerUp}
-          className='absolute top-0 h-full rounded-full bg-gray-400 dark:bg-gray-500 hover:bg-blue-500 dark:hover:bg-blue-500 active:bg-blue-600 dark:active:bg-blue-600 cursor-grab active:cursor-grabbing transition-colors touch-none'
+          className='absolute top-1 h-2 rounded-full bg-gray-400 dark:bg-gray-500 hover:bg-blue-500 dark:hover:bg-blue-500 active:bg-blue-600 dark:active:bg-blue-600 cursor-grab active:cursor-grabbing transition-colors touch-none'
           style={{
             width: `${thumbRatio * 100}%`,
             left: `${thumbLeftRatio * (1 - thumbRatio) * 100}%`,

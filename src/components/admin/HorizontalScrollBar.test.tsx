@@ -175,4 +175,16 @@ describe('HorizontalScrollBar', () => {
 
     expect(wrapper.textContent).toBe('');
   });
+
+  it('轨道视觉粗细为 8px，与竖向滑动条保持一致', () => {
+    const { track, thumb } = renderBar(1000, 250);
+
+    // 轨道元素 16px 高，去掉上下各 4px 内边距后背景只绘制 8px（bg-clip-content）
+    expect(track.className).toContain('h-4');
+    expect(track.className).toContain('py-1');
+    expect(track.className).toContain('bg-clip-content');
+    // 滑块同样是 8px 高，居中在 16px 的交互热区内
+    expect(thumb.className).toContain('h-2');
+    expect(thumb.className).toContain('top-1');
+  });
 });

@@ -53,7 +53,9 @@ const makeScrollContainer = (scrollHeight: number, clientHeight: number) => {
 const renderBar = (scrollHeight: number, clientHeight: number) => {
   const container = makeScrollContainer(scrollHeight, clientHeight);
   const scrollRef = { current: container } as RefObject<HTMLDivElement>;
-  const { container: dom } = render(<VerticalScrollBar scrollRef={scrollRef} />);
+  const { container: dom } = render(
+    <VerticalScrollBar scrollRef={scrollRef} />,
+  );
 
   const track = dom.querySelector('[role="scrollbar"]') as HTMLElement;
   const thumb = track.firstElementChild as HTMLElement;
@@ -185,5 +187,17 @@ describe('VerticalScrollBar', () => {
     expect(track.getAttribute('aria-orientation')).toBe('vertical');
     expect(track.getAttribute('aria-valuemax')).toBe('750');
     expect(track.getAttribute('aria-valuenow')).toBe('0');
+  });
+
+  it('轨道视觉粗细为 8px，与底部横向滑动条保持一致', () => {
+    const { track, thumb } = renderBar(1000, 250);
+
+    // 轨道元素 16px 宽，去掉左右各 4px 内边距后背景只绘制 8px（bg-clip-content）
+    expect(track.className).toContain('w-4');
+    expect(track.className).toContain('px-1');
+    expect(track.className).toContain('bg-clip-content');
+    // 滑块同样是 8px 宽，居中在 16px 的交互热区内
+    expect(thumb.className).toContain('w-2');
+    expect(thumb.className).toContain('left-1');
   });
 });
