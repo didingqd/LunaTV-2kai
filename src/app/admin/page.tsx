@@ -90,6 +90,8 @@ import WatchingUpdateCheckLogViewer from '@/components/WatchingUpdateCheckLogVie
 import HomePageConfig from '@/components/HomePageConfig';
 // 【新增】视频源表格横向滑动条
 import HorizontalScrollBar from '@/components/admin/HorizontalScrollBar';
+// 【新增】表格竖向滑动条（悬浮在容器右侧，不挤压表格宽度）
+import VerticalScrollBar from '@/components/admin/VerticalScrollBar';
 import PerformanceMonitor from '@/components/admin/PerformanceMonitor';
 import InviteCodeManager from '@/components/InviteCodeManager';
 import PageLayout from '@/components/PageLayout';
@@ -1693,94 +1695,101 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         </div>
 
         {/* 用户组列表 */}
-        <div
-          ref={userGroupTableScrollRef}
-          id='user-group-table'
-          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[20rem] overflow-y-auto overflow-x-auto relative'
-        >
-          <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-            <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
-              <tr>
-                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                  用户组名称
-                </th>
-                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                  可用视频源
-                </th>
-                <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-              {userGroups.map((group) => (
-                <tr
-                  key={group.name}
-                  className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors'
-                >
-                  <td className='px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100'>
-                    {group.name}
-                  </td>
-                  <td className='px-6 py-4 whitespace-nowrap'>
-                    <div className='flex items-center space-x-2'>
-                      <span className='text-sm text-gray-900 dark:text-gray-100'>
-                        {group.enabledApis && group.enabledApis.length > 0
-                          ? `${group.enabledApis.length} 个源`
-                          : '无限制'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-                    <button
-                      onClick={() => handleStartEditUserGroup(group)}
-                      disabled={isLoading(`userGroup_edit_${group.name}`)}
-                      className={`${buttonStyles.roundedPrimary} ${isLoading(`userGroup_edit_${group.name}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      编辑
-                    </button>
-                    <button
-                      onClick={() => handleDeleteUserGroup(group.name)}
-                      className={buttonStyles.roundedDanger}
-                    >
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {userGroups.length === 0 && (
+        <div className='relative'>
+          <div
+            ref={userGroupTableScrollRef}
+            id='user-group-table'
+            className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[20rem] overflow-y-auto overflow-x-auto relative'
+          >
+            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+              <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
                 <tr>
-                  <td colSpan={3} className='px-6 py-12'>
-                    <div className='flex flex-col items-center justify-center'>
-                      <div className='relative mb-4'>
-                        <div className='w-16 h-16 bg-linear-to-br from-blue-100 to-indigo-200 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-2xl flex items-center justify-center shadow-lg'>
-                          <svg
-                            className='w-8 h-8 text-blue-500 dark:text-blue-400'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth='2'
-                              d='M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'
-                            ></path>
-                          </svg>
-                        </div>
-                        <div className='absolute -top-1 -right-1 w-3 h-3 bg-blue-400 rounded-full animate-ping'></div>
-                      </div>
-                      <p className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
-                        暂无用户组
-                      </p>
-                      <p className='text-xs text-gray-500 dark:text-gray-400'>
-                        请添加用户组来管理用户权限
-                      </p>
-                    </div>
-                  </td>
+                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    用户组名称
+                  </th>
+                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    可用视频源
+                  </th>
+                  <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    操作
+                  </th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                {userGroups.map((group) => (
+                  <tr
+                    key={group.name}
+                    className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors'
+                  >
+                    <td className='px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100'>
+                      {group.name}
+                    </td>
+                    <td className='px-6 py-4 whitespace-nowrap'>
+                      <div className='flex items-center space-x-2'>
+                        <span className='text-sm text-gray-900 dark:text-gray-100'>
+                          {group.enabledApis && group.enabledApis.length > 0
+                            ? `${group.enabledApis.length} 个源`
+                            : '无限制'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+                      <button
+                        onClick={() => handleStartEditUserGroup(group)}
+                        disabled={isLoading(`userGroup_edit_${group.name}`)}
+                        className={`${buttonStyles.roundedPrimary} ${isLoading(`userGroup_edit_${group.name}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUserGroup(group.name)}
+                        className={buttonStyles.roundedDanger}
+                      >
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {userGroups.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className='px-6 py-12'>
+                      <div className='flex flex-col items-center justify-center'>
+                        <div className='relative mb-4'>
+                          <div className='w-16 h-16 bg-linear-to-br from-blue-100 to-indigo-200 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-2xl flex items-center justify-center shadow-lg'>
+                            <svg
+                              className='w-8 h-8 text-blue-500 dark:text-blue-400'
+                              fill='none'
+                              stroke='currentColor'
+                              viewBox='0 0 24 24'
+                            >
+                              <path
+                                strokeLinecap='round'
+                                strokeLinejoin='round'
+                                strokeWidth='2'
+                                d='M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'
+                              ></path>
+                            </svg>
+                          </div>
+                          <div className='absolute -top-1 -right-1 w-3 h-3 bg-blue-400 rounded-full animate-ping'></div>
+                        </div>
+                        <p className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
+                          暂无用户组
+                        </p>
+                        <p className='text-xs text-gray-500 dark:text-gray-400'>
+                          请添加用户组来管理用户权限
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+          <VerticalScrollBar
+            scrollRef={userGroupTableScrollRef}
+            controlsId='user-group-table'
+          />
         </div>
 
         {/* 【新增】横向滑动条：方便左右查看用户组的完整列 */}
@@ -2009,382 +2018,389 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         )}
 
         {/* 用户列表 */}
-        <div
-          ref={userTableScrollRef}
-          id='user-list-table'
-          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
-          data-table='user-list'
-        >
-          <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-            <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
-              <tr>
-                <th className='w-4' />
-                <th className='w-10 px-1 py-3 text-center'>
-                  {(() => {
-                    // 检查是否有权限操作任何用户
-                    const hasAnyPermission = config?.UserConfig?.Users?.some(
-                      (user) =>
+        <div className='relative'>
+          <div
+            ref={userTableScrollRef}
+            id='user-list-table'
+            className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+            data-table='user-list'
+          >
+            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+              <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
+                <tr>
+                  <th className='w-4' />
+                  <th className='w-10 px-1 py-3 text-center'>
+                    {(() => {
+                      // 检查是否有权限操作任何用户
+                      const hasAnyPermission = config?.UserConfig?.Users?.some(
+                        (user) =>
+                          role === 'owner' ||
+                          (role === 'admin' &&
+                            (user.role === 'user' ||
+                              user.username === currentUsername)),
+                      );
+
+                      return hasAnyPermission ? (
+                        <input
+                          type='checkbox'
+                          checked={selectAllUsers}
+                          onChange={(e) => handleSelectAllUsers(e.target.checked)}
+                          className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
+                        />
+                      ) : (
+                        <div className='w-4 h-4' />
+                      );
+                    })()}
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    用户名
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    角色
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    状态
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    用户组
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    采集源权限
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    追更授权
+                  </th>
+                  <th
+                    scope='col'
+                    className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                  >
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              {/* 按规则排序用户：自己 -> 站长(若非自己) -> 管理员 -> 其他 */}
+              {(() => {
+                const sortedUsers = [...config.UserConfig.Users]
+                  .sort((a, b) => {
+                    type UserInfo = (typeof config.UserConfig.Users)[number];
+                    const priority = (u: UserInfo) => {
+                      if (u.username === currentUsername) return 0;
+                      if (u.role === 'owner') return 1;
+                      if (u.role === 'admin') return 2;
+                      return 3;
+                    };
+                    return priority(a) - priority(b);
+                  })
+                  .filter((user) => {
+                    // 用户名搜索过滤
+                    if (filterUsername.trim()) {
+                      if (
+                        !user.username
+                          .toLowerCase()
+                          .includes(filterUsername.trim().toLowerCase())
+                      ) {
+                        return false;
+                      }
+                    }
+                    // 根据选择的用户组筛选用户
+                    if (filterUserGroup === 'all') {
+                      return true; // 显示所有用户
+                    } else if (filterUserGroup === 'none') {
+                      return !user.tags || user.tags.length === 0; // 显示无用户组的用户
+                    } else {
+                      return user.tags && user.tags.includes(filterUserGroup); // 显示包含指定用户组的用户
+                    }
+                  });
+                return (
+                  <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                    {sortedUsers.map((user) => {
+                      // 修改密码权限：站长可修改管理员和普通用户密码，管理员可修改普通用户和自己的密码，但任何人都不能修改站长密码
+                      const canChangePassword =
+                        user.role !== 'owner' && // 不能修改站长密码
+                        (role === 'owner' || // 站长可以修改管理员和普通用户密码
+                          (role === 'admin' &&
+                            (user.role === 'user' ||
+                              user.username === currentUsername))); // 管理员可以修改普通用户和自己的密码
+
+                      // 删除用户权限：站长可删除除自己外的所有用户，管理员仅可删除普通用户
+                      const canDeleteUser =
+                        user.username !== currentUsername &&
+                        (role === 'owner' || // 站长可以删除除自己外的所有用户
+                          (role === 'admin' && user.role === 'user')); // 管理员仅可删除普通用户
+
+                      // 其他操作权限：不能操作自己，站长可操作所有用户，管理员可操作普通用户
+                      const canOperate =
+                        user.username !== currentUsername &&
+                        (role === 'owner' ||
+                          (role === 'admin' && user.role === 'user'));
+                      const canConfigurePermissions =
                         role === 'owner' ||
                         (role === 'admin' &&
                           (user.role === 'user' ||
-                            user.username === currentUsername)),
-                    );
-
-                    return hasAnyPermission ? (
-                      <input
-                        type='checkbox'
-                        checked={selectAllUsers}
-                        onChange={(e) => handleSelectAllUsers(e.target.checked)}
-                        className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
-                      />
-                    ) : (
-                      <div className='w-4 h-4' />
-                    );
-                  })()}
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  用户名
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  角色
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  状态
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  用户组
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  采集源权限
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  追更授权
-                </th>
-                <th
-                  scope='col'
-                  className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
-                >
-                  操作
-                </th>
-              </tr>
-            </thead>
-            {/* 按规则排序用户：自己 -> 站长(若非自己) -> 管理员 -> 其他 */}
-            {(() => {
-              const sortedUsers = [...config.UserConfig.Users]
-                .sort((a, b) => {
-                  type UserInfo = (typeof config.UserConfig.Users)[number];
-                  const priority = (u: UserInfo) => {
-                    if (u.username === currentUsername) return 0;
-                    if (u.role === 'owner') return 1;
-                    if (u.role === 'admin') return 2;
-                    return 3;
-                  };
-                  return priority(a) - priority(b);
-                })
-                .filter((user) => {
-                  // 用户名搜索过滤
-                  if (filterUsername.trim()) {
-                    if (
-                      !user.username
-                        .toLowerCase()
-                        .includes(filterUsername.trim().toLowerCase())
-                    ) {
-                      return false;
-                    }
-                  }
-                  // 根据选择的用户组筛选用户
-                  if (filterUserGroup === 'all') {
-                    return true; // 显示所有用户
-                  } else if (filterUserGroup === 'none') {
-                    return !user.tags || user.tags.length === 0; // 显示无用户组的用户
-                  } else {
-                    return user.tags && user.tags.includes(filterUserGroup); // 显示包含指定用户组的用户
-                  }
-                });
-              return (
-                <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                  {sortedUsers.map((user) => {
-                    // 修改密码权限：站长可修改管理员和普通用户密码，管理员可修改普通用户和自己的密码，但任何人都不能修改站长密码
-                    const canChangePassword =
-                      user.role !== 'owner' && // 不能修改站长密码
-                      (role === 'owner' || // 站长可以修改管理员和普通用户密码
-                        (role === 'admin' &&
-                          (user.role === 'user' ||
-                            user.username === currentUsername))); // 管理员可以修改普通用户和自己的密码
-
-                    // 删除用户权限：站长可删除除自己外的所有用户，管理员仅可删除普通用户
-                    const canDeleteUser =
-                      user.username !== currentUsername &&
-                      (role === 'owner' || // 站长可以删除除自己外的所有用户
-                        (role === 'admin' && user.role === 'user')); // 管理员仅可删除普通用户
-
-                    // 其他操作权限：不能操作自己，站长可操作所有用户，管理员可操作普通用户
-                    const canOperate =
-                      user.username !== currentUsername &&
-                      (role === 'owner' ||
-                        (role === 'admin' && user.role === 'user'));
-                    const canConfigurePermissions =
-                      role === 'owner' ||
-                      (role === 'admin' &&
-                        (user.role === 'user' ||
-                          user.username === currentUsername));
-                    return (
-                      <tr
-                        key={user.username}
-                        className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors'
-                      >
-                        <td className='w-4' />
-                        <td className='w-10 px-1 py-3 text-center'>
-                          {role === 'owner' ||
-                          (role === 'admin' &&
-                            (user.role === 'user' ||
-                              user.username === currentUsername)) ? (
-                            <input
-                              type='checkbox'
-                              checked={selectedUsers.has(user.username)}
-                              onChange={(e) =>
-                                handleSelectUser(
-                                  user.username,
-                                  e.target.checked,
-                                )
-                              }
-                              className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
-                            />
-                          ) : (
-                            <div className='w-4 h-4' />
-                          )}
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100'>
-                          {user.username}
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap'>
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              user.role === 'owner'
-                                ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300'
-                                : user.role === 'admin'
-                                  ? 'bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300'
-                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                            }`}
-                          >
-                            {user.role === 'owner'
-                              ? '站长'
-                              : user.role === 'admin'
-                                ? '管理员'
-                                : '普通用户'}
-                          </span>
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap'>
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              !user.banned
-                                ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                                : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300'
-                            }`}
-                          >
-                            {!user.banned ? '正常' : '已封禁'}
-                          </span>
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap'>
-                          <div className='flex items-center space-x-2'>
-                            <span className='text-sm text-gray-900 dark:text-gray-100'>
-                              {user.tags && user.tags.length > 0
-                                ? user.tags.join(', ')
-                                : '无用户组'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap'>
-                          <div className='flex items-center space-x-2'>
-                            <span className='text-sm text-gray-900 dark:text-gray-100'>
-                              {(() => {
-                                // 计算用户的有效 API 权限
-                                const userApis = user.enabledApis || [];
-                                const tagApis: string[] = [];
-
-                                // 从用户组获取 API 权限
-                                if (user.tags && user.tags.length > 0) {
-                                  user.tags.forEach((tagName) => {
-                                    const tag = config.UserConfig.Tags?.find(
-                                      (t) => t.name === tagName,
-                                    );
-                                    if (tag && tag.enabledApis) {
-                                      tagApis.push(...tag.enabledApis);
-                                    }
-                                  });
+                            user.username === currentUsername));
+                      return (
+                        <tr
+                          key={user.username}
+                          className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors'
+                        >
+                          <td className='w-4' />
+                          <td className='w-10 px-1 py-3 text-center'>
+                            {role === 'owner' ||
+                            (role === 'admin' &&
+                              (user.role === 'user' ||
+                                user.username === currentUsername)) ? (
+                              <input
+                                type='checkbox'
+                                checked={selectedUsers.has(user.username)}
+                                onChange={(e) =>
+                                  handleSelectUser(
+                                    user.username,
+                                    e.target.checked,
+                                  )
                                 }
-
-                                // 合并去重
-                                const allApis = [
-                                  ...new Set([...userApis, ...tagApis]),
-                                ];
-
-                                if (allApis.length > 0) {
-                                  return `${allApis.length} 个源`;
-                                }
-                                return '无限制';
-                              })()}
-                            </span>
-                          </div>
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap'>
-                          {user.role === 'owner' ? (
+                                className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
+                              />
+                            ) : (
+                              <div className='w-4 h-4' />
+                            )}
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100'>
+                            {user.username}
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap'>
                             <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                config.SystemConfig?.updateCheckBackendEnabled
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                user.role === 'owner'
+                                  ? 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300'
+                                  : user.role === 'admin'
+                                    ? 'bg-purple-100 dark:bg-purple-900/20 text-purple-800 dark:text-purple-300'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                               }`}
-                              title='站长追更模式跟随系统总开关'
                             >
-                              跟随总开关
+                              {user.role === 'owner'
+                                ? '站长'
+                                : user.role === 'admin'
+                                  ? '管理员'
+                                  : '普通用户'}
                             </span>
-                          ) : (
-                            <button
-                              type='button'
-                              aria-label={`${user.username} 追更授权`}
-                              aria-pressed={
-                                user.updateCheckBackendEnabled === true
-                              }
-                              disabled={isLoading(
-                                `updateCheckPermission_${user.username}`,
-                              )}
-                              onClick={() =>
-                                handleToggleUpdateCheckPermission(user)
-                              }
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-wait disabled:opacity-60 ${
-                                user.updateCheckBackendEnabled === true
-                                  ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50'
-                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap'>
+                            <span
+                              className={`px-2 py-1 text-xs rounded-full ${
+                                !user.banned
+                                  ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                                  : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300'
                               }`}
-                              title={
-                                config.SystemConfig?.updateCheckBackendEnabled
-                                  ? user.updateCheckBackendEnabled === true
-                                    ? '已使用后端计算，点击切换为本地计算'
-                                    : '当前使用本地计算，点击授权后端计算'
-                                  : user.updateCheckBackendEnabled === true
-                                    ? '已授权，但系统总开关关闭；点击取消授权'
-                                    : '未授权，当前使用本地计算；点击授权'
-                              }
                             >
-                              {isLoading(
-                                `updateCheckPermission_${user.username}`,
-                              )
-                                ? '切换中'
-                                : user.updateCheckBackendEnabled === true
-                                  ? '已授权'
-                                  : '未授权'}
-                            </button>
-                          )}
-                        </td>
-                        <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-                          {canConfigurePermissions && (
-                            <button
-                              onClick={() => setPermissionSettingsUser(user)}
-                              className={buttonStyles.roundedPrimary}
-                            >
-                              权限设置
-                            </button>
-                          )}
-                          {/* 修改密码按钮 */}
-                          {canChangePassword && (
-                            <button
-                              onClick={() =>
-                                handleShowChangePasswordForm(user.username)
-                              }
-                              className={buttonStyles.roundedPrimary}
-                            >
-                              修改密码
-                            </button>
-                          )}
-                          {canOperate && (
-                            <>
-                              {/* 其他操作按钮 */}
-                              {user.role === 'user' && (
-                                <button
-                                  onClick={() => handleSetAdmin(user.username)}
-                                  disabled={isLoading(
-                                    `setAdmin_${user.username}`,
-                                  )}
-                                  className={`${buttonStyles.roundedPurple} ${isLoading(`setAdmin_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                  设为管理
-                                </button>
-                              )}
-                              {user.role === 'admin' && (
-                                <button
-                                  onClick={() =>
-                                    handleRemoveAdmin(user.username)
+                              {!user.banned ? '正常' : '已封禁'}
+                            </span>
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap'>
+                            <div className='flex items-center space-x-2'>
+                              <span className='text-sm text-gray-900 dark:text-gray-100'>
+                                {user.tags && user.tags.length > 0
+                                  ? user.tags.join(', ')
+                                  : '无用户组'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap'>
+                            <div className='flex items-center space-x-2'>
+                              <span className='text-sm text-gray-900 dark:text-gray-100'>
+                                {(() => {
+                                  // 计算用户的有效 API 权限
+                                  const userApis = user.enabledApis || [];
+                                  const tagApis: string[] = [];
+
+                                  // 从用户组获取 API 权限
+                                  if (user.tags && user.tags.length > 0) {
+                                    user.tags.forEach((tagName) => {
+                                      const tag = config.UserConfig.Tags?.find(
+                                        (t) => t.name === tagName,
+                                      );
+                                      if (tag && tag.enabledApis) {
+                                        tagApis.push(...tag.enabledApis);
+                                      }
+                                    });
                                   }
-                                  disabled={isLoading(
-                                    `removeAdmin_${user.username}`,
-                                  )}
-                                  className={`${buttonStyles.roundedSecondary} ${isLoading(`removeAdmin_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                  取消管理
-                                </button>
-                              )}
-                              {user.role !== 'owner' &&
-                                (!user.banned ? (
+
+                                  // 合并去重
+                                  const allApis = [
+                                    ...new Set([...userApis, ...tagApis]),
+                                  ];
+
+                                  if (allApis.length > 0) {
+                                    return `${allApis.length} 个源`;
+                                  }
+                                  return '无限制';
+                                })()}
+                              </span>
+                            </div>
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap'>
+                            {user.role === 'owner' ? (
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                                  config.SystemConfig?.updateCheckBackendEnabled
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                                }`}
+                                title='站长追更模式跟随系统总开关'
+                              >
+                                跟随总开关
+                              </span>
+                            ) : (
+                              <button
+                                type='button'
+                                aria-label={`${user.username} 追更授权`}
+                                aria-pressed={
+                                  user.updateCheckBackendEnabled === true
+                                }
+                                disabled={isLoading(
+                                  `updateCheckPermission_${user.username}`,
+                                )}
+                                onClick={() =>
+                                  handleToggleUpdateCheckPermission(user)
+                                }
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-wait disabled:opacity-60 ${
+                                  user.updateCheckBackendEnabled === true
+                                    ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                                }`}
+                                title={
+                                  config.SystemConfig?.updateCheckBackendEnabled
+                                    ? user.updateCheckBackendEnabled === true
+                                      ? '已使用后端计算，点击切换为本地计算'
+                                      : '当前使用本地计算，点击授权后端计算'
+                                    : user.updateCheckBackendEnabled === true
+                                      ? '已授权，但系统总开关关闭；点击取消授权'
+                                      : '未授权，当前使用本地计算；点击授权'
+                                }
+                              >
+                                {isLoading(
+                                  `updateCheckPermission_${user.username}`,
+                                )
+                                  ? '切换中'
+                                  : user.updateCheckBackendEnabled === true
+                                    ? '已授权'
+                                    : '未授权'}
+                              </button>
+                            )}
+                          </td>
+                          <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+                            {canConfigurePermissions && (
+                              <button
+                                onClick={() => setPermissionSettingsUser(user)}
+                                className={buttonStyles.roundedPrimary}
+                              >
+                                权限设置
+                              </button>
+                            )}
+                            {/* 修改密码按钮 */}
+                            {canChangePassword && (
+                              <button
+                                onClick={() =>
+                                  handleShowChangePasswordForm(user.username)
+                                }
+                                className={buttonStyles.roundedPrimary}
+                              >
+                                修改密码
+                              </button>
+                            )}
+                            {canOperate && (
+                              <>
+                                {/* 其他操作按钮 */}
+                                {user.role === 'user' && (
                                   <button
-                                    onClick={() => handleBanUser(user.username)}
+                                    onClick={() => handleSetAdmin(user.username)}
                                     disabled={isLoading(
-                                      `banUser_${user.username}`,
+                                      `setAdmin_${user.username}`,
                                     )}
-                                    className={`${buttonStyles.roundedDanger} ${isLoading(`banUser_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`${buttonStyles.roundedPurple} ${isLoading(`setAdmin_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                   >
-                                    封禁
+                                    设为管理
                                   </button>
-                                ) : (
+                                )}
+                                {user.role === 'admin' && (
                                   <button
                                     onClick={() =>
-                                      handleUnbanUser(user.username)
+                                      handleRemoveAdmin(user.username)
                                     }
                                     disabled={isLoading(
-                                      `unbanUser_${user.username}`,
+                                      `removeAdmin_${user.username}`,
                                     )}
-                                    className={`${buttonStyles.roundedSuccess} ${isLoading(`unbanUser_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`${buttonStyles.roundedSecondary} ${isLoading(`removeAdmin_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                   >
-                                    解封
+                                    取消管理
                                   </button>
-                                ))}
-                            </>
-                          )}
-                          {/* 删除用户按钮 - 放在最后，使用更明显的红色样式 */}
-                          {canDeleteUser && (
-                            <button
-                              onClick={() => handleDeleteUser(user.username)}
-                              className={buttonStyles.roundedDanger}
-                            >
-                              删除用户
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              );
-            })()}
-          </table>
+                                )}
+                                {user.role !== 'owner' &&
+                                  (!user.banned ? (
+                                    <button
+                                      onClick={() => handleBanUser(user.username)}
+                                      disabled={isLoading(
+                                        `banUser_${user.username}`,
+                                      )}
+                                      className={`${buttonStyles.roundedDanger} ${isLoading(`banUser_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
+                                      封禁
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() =>
+                                        handleUnbanUser(user.username)
+                                      }
+                                      disabled={isLoading(
+                                        `unbanUser_${user.username}`,
+                                      )}
+                                      className={`${buttonStyles.roundedSuccess} ${isLoading(`unbanUser_${user.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    >
+                                      解封
+                                    </button>
+                                  ))}
+                              </>
+                            )}
+                            {/* 删除用户按钮 - 放在最后，使用更明显的红色样式 */}
+                            {canDeleteUser && (
+                              <button
+                                onClick={() => handleDeleteUser(user.username)}
+                                className={buttonStyles.roundedDanger}
+                              >
+                                删除用户
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                );
+              })()}
+            </table>
+          </div>
+          {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+          <VerticalScrollBar
+            scrollRef={userTableScrollRef}
+            controlsId='user-list-table'
+          />
         </div>
 
         {/* 【新增】横向滑动条：方便左右查看用户列表的完整列 */}
@@ -5623,75 +5639,82 @@ const VideoSourceConfig = ({
         )}
 
       {/* 视频源表格 */}
-      <div
-        ref={sourceTableScrollRef}
-        id='source-list-table'
-        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
-        data-table='source-list'
-      >
-        <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-          <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
-            <tr>
-              <th className='w-8' />
-              <th className='w-12 px-2 py-3 text-center'>
-                <input
-                  type='checkbox'
-                  checked={selectAll}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
-                />
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                名称
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                Key
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                API 地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                Detail 地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                状态
-              </th>
-              <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                成人资源
-              </th>
-              <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                源类型
-              </th>
-              <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                权重
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                有效性
-              </th>
-              <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                操作
-              </th>
-            </tr>
-          </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            autoScroll={false}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
-            <SortableContext
-              items={sources.map((s) => s.key)}
-              strategy={verticalListSortingStrategy}
+      <div className='relative'>
+        <div
+          ref={sourceTableScrollRef}
+          id='source-list-table'
+          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+          data-table='source-list'
+        >
+          <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+            <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
+              <tr>
+                <th className='w-8' />
+                <th className='w-12 px-2 py-3 text-center'>
+                  <input
+                    type='checkbox'
+                    checked={selectAll}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
+                  />
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  名称
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  Key
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  API 地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  Detail 地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  状态
+                </th>
+                <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  成人资源
+                </th>
+                <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  源类型
+                </th>
+                <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  权重
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  有效性
+                </th>
+                <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              autoScroll={false}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
             >
-              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                {sources.map((source) => (
-                  <DraggableRow key={source.key} source={source} />
-                ))}
-              </tbody>
-            </SortableContext>
-          </DndContext>
-        </table>
+              <SortableContext
+                items={sources.map((s) => s.key)}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                  {sources.map((source) => (
+                    <DraggableRow key={source.key} source={source} />
+                  ))}
+                </tbody>
+              </SortableContext>
+            </DndContext>
+          </table>
+        </div>
+        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        <VerticalScrollBar
+          scrollRef={sourceTableScrollRef}
+          controlsId='source-list-table'
+        />
       </div>
 
       {/* 【新增】横向滑动条：原生滚动条被全局样式隐藏，用它可以拖动/点击左右查看完整列 */}
@@ -5871,6 +5894,8 @@ const CategoryConfig = ({
 }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
+  // 【新增】自定义分类表格滚动容器引用，供竖向滑动条控制
+  const categoryTableScrollRef = useRef<HTMLDivElement>(null);
   const [categories, setCategories] = useState<CustomCategory[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [orderChanged, setOrderChanged] = useState(false);
@@ -6221,50 +6246,61 @@ const CategoryConfig = ({
       )}
 
       {/* 分类表格 */}
-      <div className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'>
-        <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-          <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
-            <tr>
-              <th className='w-8' />
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                分类名称
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                类型
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                搜索关键词
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                状态
-              </th>
-              <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                操作
-              </th>
-            </tr>
-          </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            autoScroll={false}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
-            <SortableContext
-              items={categories.map((c) => `${c.query}:${c.type}`)}
-              strategy={verticalListSortingStrategy}
+      <div className='relative'>
+        <div
+          ref={categoryTableScrollRef}
+          id='category-list-table'
+          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+        >
+          <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+            <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
+              <tr>
+                <th className='w-8' />
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  分类名称
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  类型
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  搜索关键词
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  状态
+                </th>
+                <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              autoScroll={false}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
             >
-              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                {categories.map((category) => (
-                  <DraggableRow
-                    key={`${category.query}:${category.type}`}
-                    category={category}
-                  />
-                ))}
-              </tbody>
-            </SortableContext>
-          </DndContext>
-        </table>
+              <SortableContext
+                items={categories.map((c) => `${c.query}:${c.type}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                  {categories.map((category) => (
+                    <DraggableRow
+                      key={`${category.query}:${category.type}`}
+                      category={category}
+                    />
+                  ))}
+                </tbody>
+              </SortableContext>
+            </DndContext>
+          </table>
+        </div>
+        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        <VerticalScrollBar
+          scrollRef={categoryTableScrollRef}
+          controlsId='category-list-table'
+        />
       </div>
 
       {/* 保存排序按钮 */}
@@ -9115,61 +9151,68 @@ const LiveSourceConfig = ({
       )}
 
       {/* 直播源表格 */}
-      <div
-        ref={liveSourceTableScrollRef}
-        id='live-source-list-table'
-        className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
-        data-table='live-source-list'
-      >
-        <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-          <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
-            <tr>
-              <th className='w-8' />
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                名称
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                Key
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                M3U 地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                节目单地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                自定义 UA
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                频道数
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                状态
-              </th>
-              <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                操作
-              </th>
-            </tr>
-          </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            autoScroll={false}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
-            <SortableContext
-              items={liveSources.map((s) => s.key)}
-              strategy={verticalListSortingStrategy}
+      <div className='relative'>
+        <div
+          ref={liveSourceTableScrollRef}
+          id='live-source-list-table'
+          className='border border-gray-200 dark:border-gray-700 rounded-lg max-h-[28rem] overflow-y-auto overflow-x-auto relative'
+          data-table='live-source-list'
+        >
+          <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+            <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
+              <tr>
+                <th className='w-8' />
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  名称
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  Key
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  M3U 地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  节目单地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  自定义 UA
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  频道数
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  状态
+                </th>
+                <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              autoScroll={false}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
             >
-              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                {liveSources.map((liveSource) => (
-                  <DraggableRow key={liveSource.key} liveSource={liveSource} />
-                ))}
-              </tbody>
-            </SortableContext>
-          </DndContext>
-        </table>
+              <SortableContext
+                items={liveSources.map((s) => s.key)}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                  {liveSources.map((liveSource) => (
+                    <DraggableRow key={liveSource.key} liveSource={liveSource} />
+                  ))}
+                </tbody>
+              </SortableContext>
+            </DndContext>
+          </table>
+        </div>
+        {/* 【新增】竖向滑动条：absolute 悬浮在右边缘，不占用表格宽度，小屏/手机端不会挤压内容 */}
+        <VerticalScrollBar
+          scrollRef={liveSourceTableScrollRef}
+          controlsId='live-source-list-table'
+        />
       </div>
 
       {/* 【新增】横向滑动条：方便左右查看直播源的完整列 */}
