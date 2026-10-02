@@ -197,11 +197,12 @@ export default async function RootLayout({
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script
           dangerouslySetInnerHTML={{
-            // 转义 < 与分隔符，避免站点名/公告等配置内容中的 </script> 提前闭合脚本标签
+            // 转义 < 与行分隔符，避免站点名/公告等配置内容中的 </script> 提前闭合脚本标签
+            // （修改点：上游此处正则与替换写反，会误把配置里出现的字面量 2028/2029 替换成行分隔符，已修正）
             __html: `window.RUNTIME_CONFIG = ${JSON.stringify(runtimeConfig)
               .replace(/</g, '\\u003c')
-              .replace(/2028/g, '\u2028')
-              .replace(/2029/g, '\u2029')};`,
+              .replace(/\u2028/g, '\\u2028')
+              .replace(/\u2029/g, '\\u2029')};`,
           }}
         />
       </head>
